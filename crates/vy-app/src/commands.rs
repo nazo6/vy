@@ -460,6 +460,10 @@ pub enum BuiltinCommand {
     LastVisual,
     InsertHere,
     InsertAfter,
+    InsertLineEnd,
+    InsertLineStart,
+    OpenBelow,
+    OpenAbove,
     SelectMode,
     NormalMode,
     Undo,
@@ -511,6 +515,10 @@ impl BuiltinCommand {
             Self::LastVisual => "vy.edit.last_visual",
             Self::InsertHere => "vy.mode.insert",
             Self::InsertAfter => "vy.mode.insert_after",
+            Self::InsertLineEnd => "vy.mode.insert_line_end",
+            Self::InsertLineStart => "vy.mode.insert_line_start",
+            Self::OpenBelow => "vy.mode.open_below",
+            Self::OpenAbove => "vy.mode.open_above",
             Self::SelectMode => "vy.mode.select",
             Self::NormalMode => "vy.mode.normal",
             Self::Undo => "vy.history.undo",
@@ -550,7 +558,7 @@ impl BuiltinCommand {
 
     /// Every built-in command. Used by `commands.getCommands`.
     pub fn all() -> &'static [BuiltinCommand] {
-        const COMMANDS: [BuiltinCommand; 45] = [
+        const COMMANDS: [BuiltinCommand; 49] = [
             BuiltinCommand::MoveLeft,
             BuiltinCommand::MoveRight,
             BuiltinCommand::MoveUp,
@@ -569,6 +577,10 @@ impl BuiltinCommand {
             BuiltinCommand::LastVisual,
             BuiltinCommand::InsertHere,
             BuiltinCommand::InsertAfter,
+            BuiltinCommand::InsertLineEnd,
+            BuiltinCommand::InsertLineStart,
+            BuiltinCommand::OpenBelow,
+            BuiltinCommand::OpenAbove,
             BuiltinCommand::SelectMode,
             BuiltinCommand::NormalMode,
             BuiltinCommand::Undo,

@@ -34,7 +34,7 @@ use self::operator::{
     Operator, TextObject, TextObjectKind, is_operator_command, is_text_object_command,
 };
 use self::register::{Register, register_index};
-use self::repeat::Repeat;
+use self::repeat::{InsertKind, Repeat};
 
 pub struct Editor {
     text: Text,
@@ -64,6 +64,8 @@ pub struct Editor {
     last_visual: Option<Range>,
     /// Text inserted in the current Insert session, replayed by `.`.
     insert_buffer: String,
+    /// The kind of Insert session started (e.g. `o` or `O`).
+    insert_kind: InsertKind,
     /// Column kept across vertical moves. Updated by horizontal moves and dropped by others.
     preferred_character: Option<u32>,
 }
@@ -92,6 +94,7 @@ impl Editor {
             last_change: None,
             last_visual: None,
             insert_buffer: String::new(),
+            insert_kind: InsertKind::Normal,
             preferred_character: None,
         };
         editor.select_one_char(Position::new(0, 0));
@@ -106,6 +109,7 @@ impl Editor {
         self.last_edit = None;
         self.last_visual = None;
         self.insert_buffer.clear();
+        self.insert_kind = InsertKind::Normal;
         self.preferred_character = None;
         self.select_one_char(Position::new(0, 0));
     }
@@ -358,6 +362,22 @@ impl Editor {
                 self.begin_insert(end, end);
                 Action::None
             }
+            BuiltinCommand::InsertLineEnd => {
+                let line = self.current().line;
+                let end = self.text.line_len_utf16(line as usize).unwrap_or(0);
+                let at = Position::new(line, end);
+                self.begin_insert(at, at);
+                Action::None
+            }
+            BuiltinCommand::InsertLineStart => {
+                let line = self.current().line;
+                let start = self.line_first_non_blank(line as usize);
+                let at = Position::new(line, start);
+                self.begin_insert(at, at);
+                Action::None
+            }
+            BuiltinCommand::OpenBelow => self.open_below(),
+            BuiltinCommand::OpenAbove => self.open_above(),
             BuiltinCommand::SelectMode => {
                 self.set_mode(Mode::Select);
                 Action::None
@@ -695,6 +715,73 @@ impl Editor {
         let line = position.line.min(self.last_line());
         let length = self.text.line_len_utf16(line as usize).unwrap_or_default();
         Position::new(line, position.character.min(length))
+    }
+
+    fn line_first_non_blank(&self, line: usize) -> u32 {
+        let Some(text) = self.text.line_string(line) else {
+            return 0;
+        };
+        let mut offset = 0;
+        for ch in text.chars() {
+            if ch == '\n' || ch == '\r' {
+                break;
+            }
+            if !ch.is_whitespace() {
+                return offset;
+            }
+            offset += ch.len_utf16() as u32;
+        }
+        offset
+    }
+
+    pub(super) fn open_below(&mut self) -> Action {
+        self.insert_buffer.clear();
+        self.insert_kind = InsertKind::OpenBelow;
+        let line = self.current().line;
+        let end = self.text.line_len_utf16(line as usize).unwrap_or(0);
+        let at = Position::new(line, end);
+        let cursor = Position::new(line + 1, 0);
+        self.commit(
+            vec![TextEdit::new(Range::empty(at), "\n")],
+            cursor,
+            Mode::Insert,
+        )
+    }
+
+    pub(super) fn open_above(&mut self) -> Action {
+        self.insert_buffer.clear();
+        self.insert_kind = InsertKind::OpenAbove;
+        let line = self.current().line;
+        let at = Position::new(line, 0);
+        let cursor = Position::new(line, 0);
+        self.commit(
+            vec![TextEdit::new(Range::empty(at), "\n")],
+            cursor,
+            Mode::Insert,
+        )
+    }
+
+    pub(super) fn repeat_open_below(&mut self, text: &str) -> Action {
+        let line = self.current().line;
+        let end = self.text.line_len_utf16(line as usize).unwrap_or(0);
+        let at = Position::new(line, end);
+        let content = format!("\n{text}");
+        self.insert_at(at, &content)
+    }
+
+    pub(super) fn repeat_open_above(&mut self, text: &str) -> Action {
+        let line = self.current().line;
+        let at = Position::new(line, 0);
+        let content = format!("{text}\n");
+        let cursor = if text.is_empty() {
+            Position::new(line, 0)
+        } else {
+            let last = text.chars().next_back().unwrap();
+            let char_len = last.len_utf16() as u32;
+            let total_len = text.chars().map(|c| c.len_utf16() as u32).sum::<u32>();
+            Position::new(line, total_len.saturating_sub(char_len))
+        };
+        self.insert_at_with_cursor(at, &content, cursor)
     }
 }
 

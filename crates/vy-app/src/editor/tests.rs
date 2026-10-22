@@ -559,3 +559,105 @@ fn gv_restores_the_last_visual_range() {
     assert_eq!(editor.mode(), Mode::Select);
     assert_eq!(editor.selection(), range);
 }
+
+#[test]
+fn insert_at_line_end_with_shift_a() {
+    let mut editor = Editor::with_text("hello\nworld", 0);
+    press(&mut editor, "l");
+    assert_eq!(editor.cursor(), at(0, 1));
+
+    press(&mut editor, "A");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(0, 5));
+
+    typed(&mut editor, "!");
+    assert_eq!(editor.text(), "hello!\nworld");
+}
+
+#[test]
+fn insert_at_line_start_with_shift_i() {
+    let mut editor = Editor::with_text("  hello\nworld", 0);
+    press(&mut editor, "I");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(0, 2));
+
+    typed(&mut editor, "!");
+    assert_eq!(editor.text(), "  !hello\nworld");
+
+    // On an empty line, inserts at column 0.
+    let mut editor = Editor::with_text("", 0);
+    press(&mut editor, "I");
+    assert_eq!(editor.cursor(), at(0, 0));
+}
+
+#[test]
+fn opens_line_below_with_o_and_replays() {
+    let mut editor = Editor::with_text("first\nsecond", 0);
+    press(&mut editor, "o");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(1, 0));
+    assert_eq!(editor.text(), "first\n\nsecond");
+
+    typed(&mut editor, "new");
+    editor.handle_key(Key::Esc);
+    assert_eq!(editor.mode(), Mode::Normal);
+    assert_eq!(editor.text(), "first\nnew\nsecond");
+
+    // Dot repeats the open-below and typed content.
+    press(&mut editor, ".");
+    assert_eq!(editor.text(), "first\nnew\nnew\nsecond");
+}
+
+#[test]
+fn opens_line_above_with_shift_o_and_replays() {
+    let mut editor = Editor::with_text("first\nsecond", 0);
+    press(&mut editor, "j");
+    assert_eq!(editor.cursor(), at(1, 0));
+
+    press(&mut editor, "O");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(1, 0));
+    assert_eq!(editor.text(), "first\n\nsecond");
+
+    typed(&mut editor, "new");
+    editor.handle_key(Key::Esc);
+    assert_eq!(editor.mode(), Mode::Normal);
+    assert_eq!(editor.text(), "first\nnew\nsecond");
+
+    // Dot repeats the open-above and typed content.
+    press(&mut editor, ".");
+    assert_eq!(editor.text(), "first\nnew\nnew\nsecond");
+}
+
+#[test]
+fn select_mode_transitions_with_shift_a_and_shift_i() {
+    let mut editor = Editor::with_text("  hello", 0);
+    press(&mut editor, "v");
+    press(&mut editor, "e");
+    assert_eq!(editor.mode(), Mode::Select);
+
+    press(&mut editor, "A");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(0, 7));
+
+    let mut editor = Editor::with_text("  hello", 0);
+    press(&mut editor, "v");
+    press(&mut editor, "e");
+    press(&mut editor, "I");
+    assert_eq!(editor.mode(), Mode::Insert);
+    assert_eq!(editor.cursor(), at(0, 2));
+}
+
+#[test]
+fn dot_repeats_open_below_with_count() {
+    let mut editor = Editor::with_text("first\nsecond", 0);
+    press(&mut editor, "o");
+    typed(&mut editor, "x");
+    editor.handle_key(Key::Esc);
+    assert_eq!(editor.text(), "first\nx\nsecond");
+
+    // 3. repeats open-below and repeats "x" 3 times
+    press(&mut editor, "3");
+    press(&mut editor, ".");
+    assert_eq!(editor.text(), "first\nx\nxxx\nsecond");
+}

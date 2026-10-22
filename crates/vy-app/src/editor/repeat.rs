@@ -7,6 +7,15 @@ use super::Editor;
 use super::action::Action;
 use super::register::RegisterKind;
 
+/// The kind of Insert session, remembered for `.`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum InsertKind {
+    #[default]
+    Normal,
+    OpenBelow,
+    OpenAbove,
+}
+
 /// A change that  can repeat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Repeat {
@@ -20,11 +29,16 @@ pub(super) enum Repeat {
         kind: RegisterKind,
         before: bool,
     },
+    /// Opens a line below and inserts text.
+    OpenBelow { text: String },
+    /// Opens a line above and inserts text.
+    OpenAbove { text: String },
 }
 
 impl Editor {
     /// Enters Insert mode with the caret collapsed at `at`.
     pub(super) fn begin_insert(&mut self, anchor: Position, at: Position) {
+        self.insert_kind = InsertKind::Normal;
         self.insert_buffer.clear();
         self.set_mode(Mode::Insert);
         self.anchor = anchor;
@@ -33,11 +47,21 @@ impl Editor {
 
     /// Ends the Insert session and remembers its text for `.`.
     pub(super) fn finish_insert(&mut self) {
-        if !self.insert_buffer.is_empty() {
-            self.last_change = Some(Repeat::Insert {
-                text: std::mem::take(&mut self.insert_buffer),
-            });
+        let text = std::mem::take(&mut self.insert_buffer);
+        match self.insert_kind {
+            InsertKind::Normal => {
+                if !text.is_empty() {
+                    self.last_change = Some(Repeat::Insert { text });
+                }
+            }
+            InsertKind::OpenBelow => {
+                self.last_change = Some(Repeat::OpenBelow { text });
+            }
+            InsertKind::OpenAbove => {
+                self.last_change = Some(Repeat::OpenAbove { text });
+            }
         }
+        self.insert_kind = InsertKind::Normal;
         self.insert_buffer.clear();
     }
 
@@ -53,6 +77,14 @@ impl Editor {
             }
             Some(Repeat::Paste { text, kind, before }) => {
                 self.paste_text(&text, kind, before, count)
+            }
+            Some(Repeat::OpenBelow { text }) => {
+                let text = text.repeat(count as usize);
+                self.repeat_open_below(&text)
+            }
+            Some(Repeat::OpenAbove { text }) => {
+                let text = text.repeat(count as usize);
+                self.repeat_open_above(&text)
             }
             None => Action::None,
         }

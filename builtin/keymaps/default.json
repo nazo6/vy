@@ -140,9 +140,29 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "I",
+        "command": "vy.mode.insert_line_start",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "a",
         "command": "vy.mode.insert_after",
         "when": "mode != 'insert'"
+    },
+    {
+        "keys": "A",
+        "command": "vy.mode.insert_line_end",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "o",
+        "command": "vy.mode.open_below",
+        "when": "normalMode"
+    },
+    {
+        "keys": "O",
+        "command": "vy.mode.open_above",
+        "when": "normalMode"
     },
     {
         "keys": "v",
