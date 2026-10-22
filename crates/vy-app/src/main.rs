@@ -30,14 +30,15 @@ use vy_app::plugin_host::{
     self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext, WorkspaceInfo,
 };
 use vy_app::rpc::Client;
+use vy_app::statusline::{Statusline, StatuslineAlignment};
 use vy_core::{LayoutNode, PaneId, Range, Selection, SplitDirection, TextEdit};
 use vy_js::{HostRequest, ScriptEvent};
 use vy_proto::{PROTOCOL_VERSION, RpcMessage, RpcResult, get, object};
 
 /// Lines drawn before the window has been measured.
 const VISIBLE_LINES: usize = 30;
-/// Space taken by the header, the footer, and the padding around them.
-const CHROME_HEIGHT: f32 = 100.0;
+/// Height of the global statusline.
+const STATUSLINE_HEIGHT: f32 = 24.0;
 /// Width of one character at the default font size. Used to size the gutter.
 const CHARACTER_WIDTH: f32 = 10.0;
 /// Width of the bar that marks the insertion point.
@@ -85,6 +86,7 @@ impl DocumentState {
 
 /// One pane in the layout tree.
 struct PaneState {
+    #[allow(dead_code)]
     id: PaneId,
     document_id: Option<u64>,
     /// Cursor, selection, and mode of this pane.
@@ -165,6 +167,8 @@ struct EditorView {
     last_frame: Option<Instant>,
     /// Set once the input handler has been registered with the platform.
     input_registered: bool,
+    /// Statusline slots registered by scripts or default.
+    statusline: Statusline,
 }
 
 impl EditorView {
@@ -228,6 +232,7 @@ impl EditorView {
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
             input_registered: false,
+            statusline: Statusline::new(),
         };
 
         match Client::spawn() {
@@ -548,6 +553,7 @@ impl EditorView {
             workspace: &workspace,
             paths: &self.paths,
             script: Some(plugin.script()),
+            statusline: Some(&mut self.statusline),
         };
         let outcome = plugin_host::handle_request(context, request);
 
@@ -2028,46 +2034,18 @@ impl Render for EditorView {
         let started = Instant::now();
 
         // Fit the viewport to the window before choosing which lines to draw.
-        let height = f32::from(window.viewport_size().height) - CHROME_HEIGHT;
+        let chrome_height = STATUSLINE_HEIGHT
+            + if self.ex.is_some() {
+                STATUSLINE_HEIGHT
+            } else {
+                0.0
+            };
+        let height = f32::from(window.viewport_size().height) - chrome_height;
         let rows = ((height / self.line_height()).floor().max(1.0)) as usize;
         if let Some(pane) = self.active_pane_state_mut() {
             pane.viewport_rows = rows;
         }
         self.clamp_scroll();
-
-        let header = div()
-            .flex()
-            .justify_between()
-            .text_sm()
-            .text_color(rgb(0x9a9a9a))
-            .child(format!(
-                "vy {} / {} pane{}",
-                env!("CARGO_PKG_VERSION"),
-                self.panes.len(),
-                if self.panes.len() == 1 { "" } else { "s" }
-            ))
-            .child(self.status.clone());
-
-        let active_view = self.active_view().unwrap_or_default();
-        let cursor = active_view.cursor();
-        let footer = div()
-            .flex()
-            .justify_between()
-            .text_sm()
-            .text_color(rgb(0x9a9a9a))
-            .child(format!(
-                "{}  {}:{}",
-                active_view.mode().label(),
-                cursor.line + 1,
-                cursor.character + 1
-            ))
-            .child(format!(
-                "pane {} / version {}",
-                self.active_pane
-                    .map(|pane| pane.to_string())
-                    .unwrap_or_else(|| "-".into()),
-                self.editor().version()
-            ));
 
         let content = match self.layout.clone() {
             Some(layout) => self.render_node(&layout, cx, window),
@@ -2092,9 +2070,6 @@ impl Render for EditorView {
             .text_color(rgb(0xd4d4d4))
             .font_family(self.config.font_family())
             .text_size(px(self.config.font_size()))
-            .p_4()
-            .gap_2()
-            .child(header)
             .child(
                 div()
                     .relative()
@@ -2103,8 +2078,8 @@ impl Render for EditorView {
                     .child(content)
                     .children(self.palette.as_ref().map(|_| self.render_palette())),
             )
-            .children(self.ex.as_ref().map(|_| self.render_ex()))
-            .child(footer);
+            .child(self.render_statusline())
+            .children(self.ex.as_ref().map(|_| self.render_ex()));
 
         self.log_frame(started);
         element
@@ -2152,6 +2127,126 @@ impl EditorView {
         }
     }
 
+    fn render_statusline(&self) -> Div {
+        if self.statusline.is_empty() {
+            let active_view = self.active_view().unwrap_or_default();
+            let cursor = active_view.cursor();
+
+            let mode_label = match active_view.mode() {
+                Mode::Normal => "NORMAL",
+                Mode::Insert => "INSERT",
+                Mode::Select => "VISUAL",
+            };
+
+            let mode_bg = match active_view.mode() {
+                Mode::Normal => rgb(0x007acc),
+                Mode::Insert => rgb(0x008000),
+                Mode::Select => rgb(0xaf00db),
+            };
+
+            let document = self.active_document();
+            let uri = document
+                .map(|d| d.uri.strip_prefix("file://").unwrap_or(&d.uri))
+                .unwrap_or("[No Name]");
+
+            let left = div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .px_1()
+                        .bg(mode_bg)
+                        .text_color(rgb(0xffffff))
+                        .child(mode_label),
+                )
+                .child(div().text_color(rgb(0xcccccc)).child(uri.to_string()))
+                .children(if !self.status.is_empty() {
+                    Some(
+                        div()
+                            .text_color(rgb(0x9cdcfe))
+                            .child(format!(" | {}", self.status)),
+                    )
+                } else {
+                    None
+                });
+
+            let doc_line_count = document.map(|d| d.editor.line_count() as u32).unwrap_or(1);
+            let progress = if cursor.line == 0 {
+                "Top".to_string()
+            } else if cursor.line + 1 >= doc_line_count {
+                "Bot".to_string()
+            } else {
+                let pct = ((cursor.line + 1) as f32 / doc_line_count as f32 * 100.0) as u32;
+                format!("{pct}%")
+            };
+
+            let right = div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .text_color(rgb(0x9a9a9a))
+                .child(format!("{}:{}", cursor.line + 1, cursor.character + 1))
+                .child(progress);
+
+            div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .h(px(STATUSLINE_HEIGHT))
+                .px_2()
+                .bg(rgb(0x181818))
+                .text_xs()
+                .child(left)
+                .child(right)
+        } else {
+            let left_items: Vec<Div> = self
+                .statusline
+                .items_for(StatuslineAlignment::Left)
+                .into_iter()
+                .map(|item| {
+                    div()
+                        .text_color(color_for_token(item.color.as_deref()))
+                        .child(item.text.clone())
+                })
+                .collect();
+
+            let center_items: Vec<Div> = self
+                .statusline
+                .items_for(StatuslineAlignment::Center)
+                .into_iter()
+                .map(|item| {
+                    div()
+                        .text_color(color_for_token(item.color.as_deref()))
+                        .child(item.text.clone())
+                })
+                .collect();
+
+            let right_items: Vec<Div> = self
+                .statusline
+                .items_for(StatuslineAlignment::Right)
+                .into_iter()
+                .map(|item| {
+                    div()
+                        .text_color(color_for_token(item.color.as_deref()))
+                        .child(item.text.clone())
+                })
+                .collect();
+
+            div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .h(px(STATUSLINE_HEIGHT))
+                .px_2()
+                .bg(rgb(0x181818))
+                .text_xs()
+                .child(div().flex().items_center().gap_2().children(left_items))
+                .child(div().flex().items_center().gap_2().children(center_items))
+                .child(div().flex().items_center().gap_2().children(right_items))
+        }
+    }
+
     fn render_ex(&self) -> Div {
         let Some(ex) = self.ex.as_ref() else {
             return div();
@@ -2183,7 +2278,20 @@ impl EditorView {
             .flex_shrink_0()
             .bg(rgb(0xd4d4d4))
     }
+}
 
+fn color_for_token(token: Option<&str>) -> gpui::Rgba {
+    match token {
+        Some("primary" | "info") => rgb(0x007acc),
+        Some("success") => rgb(0x4ec9b0),
+        Some("warning") => rgb(0xce9178),
+        Some("danger" | "error") => rgb(0xf44747),
+        Some("secondary" | "muted") => rgb(0x8a8a8a),
+        _ => rgb(0xd4d4d4),
+    }
+}
+
+impl EditorView {
     fn render_palette(&self) -> Div {
         let Some(palette) = self.palette.as_ref() else {
             return div();
@@ -2319,10 +2427,6 @@ impl EditorView {
             .and_then(|id| self.documents.get(&id));
         let active = self.active_pane == Some(pane_id);
 
-        let title = match (pane, document) {
-            (Some(pane), Some(document)) => format!("{}  ·  pane {}", document.uri, pane.id),
-            _ => format!("pane {pane_id} (empty)"),
-        };
         let lines = match (pane, document) {
             (Some(pane), Some(document)) => self.visible_lines(pane, document, window),
             _ => Vec::new(),
@@ -2367,7 +2471,13 @@ impl EditorView {
             );
         }
 
-        let border = if active { rgb(0x2b5e8c) } else { rgb(0x2d2d2d) };
+        let border = if active && self.panes.len() > 1 {
+            rgb(0x2b5e8c)
+        } else if self.panes.len() > 1 {
+            rgb(0x2d2d2d)
+        } else {
+            rgb(0x1e1e1e)
+        };
 
         div()
             .flex()
@@ -2375,16 +2485,6 @@ impl EditorView {
             .size_full()
             .border_1()
             .border_color(border)
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .px_1()
-                    .text_xs()
-                    .text_color(if active { rgb(0x9cdcfe) } else { rgb(0x8a8a8a) })
-                    .child(title)
-                    .child(if active { "[active]" } else { "" }),
-            )
             .child(area)
     }
 }

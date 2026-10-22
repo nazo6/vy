@@ -23,6 +23,7 @@ use crate::config::Config;
 use crate::editor::{Action, Editor, Mode, Transaction};
 use crate::keymap::Keymap;
 use crate::paths::Paths;
+use crate::statusline::{Statusline, StatuslineAlignment, StatuslineItem};
 use crate::when;
 
 /// Everything the shim knows about the open document.
@@ -185,6 +186,7 @@ pub struct RequestContext<'a> {
     pub workspace: &'a WorkspaceInfo,
     pub paths: &'a Paths,
     pub script: Option<&'a ScriptHost>,
+    pub statusline: Option<&'a mut Statusline>,
 }
 
 /// The effect of one request on the client.
@@ -451,6 +453,52 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
             );
             request.respond_value(Value::Null);
         }
+        "ui.statusline.createItem" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            let alignment_str =
+                text_param(&params, "alignment").unwrap_or_else(|| "left".to_string());
+            let alignment =
+                StatuslineAlignment::parse(&alignment_str).unwrap_or(StatuslineAlignment::Left);
+            let priority = params.get("priority").and_then(Value::as_i64).unwrap_or(0) as i32;
+            let text = text_param(&params, "text").unwrap_or_default();
+            let color = text_param(&params, "color");
+            let command = text_param(&params, "command");
+
+            if let Some(statusline) = context.statusline {
+                let mut item = StatuslineItem::new(id, alignment, priority, text);
+                item.color = color;
+                item.command = command;
+                statusline.set_item(item);
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.statusline.updateItem" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            let text = text_param(&params, "text");
+            let color = if params.get("color").is_some() {
+                Some(text_param(&params, "color"))
+            } else {
+                None
+            };
+            let command = if params.get("command").is_some() {
+                Some(text_param(&params, "command"))
+            } else {
+                None
+            };
+            let visible = params.get("visible").and_then(Value::as_bool);
+
+            if let Some(statusline) = context.statusline {
+                statusline.update_item(&id, text, color, command, visible);
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.statusline.disposeItem" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            if let Some(statusline) = context.statusline {
+                statusline.dispose_item(&id);
+            }
+            request.respond_value(Value::Null);
+        }
         other => {
             request.respond_error("InvalidState", format!("unknown host method: {other}"));
         }
@@ -553,6 +601,7 @@ mod tests {
             workspace,
             paths,
             script: None,
+            statusline: None,
         }
     }
 
@@ -738,6 +787,7 @@ commands.registerCommand("user.hello", async () => {
                     workspace: &workspace,
                     paths: &paths,
                     script: Some(host.script()),
+                    statusline: None,
                 };
                 let outcome = handle_request(context, request);
                 assert!(outcome.action == HostAction::None);
@@ -837,5 +887,88 @@ commands.registerCommand("user.hello", async () => {
             panic!("expected a value");
         };
         assert_eq!(value, json!({ "line": 0, "character": 3 }));
+    }
+
+    #[test]
+    fn ui_statusline_creates_updates_and_disposes() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+        let mut statusline = Statusline::new();
+
+        let (req1, rec1) = HostRequest::new(
+            "ui.statusline.createItem",
+            json!({
+                "id": "my_mode",
+                "alignment": "left",
+                "priority": 50,
+                "text": "NORMAL",
+                "color": "primary"
+            }),
+        );
+        let mut ctx1 = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        ctx1.statusline = Some(&mut statusline);
+        handle_request(ctx1, req1);
+        let reply1 = rec1.recv().expect("reply");
+        assert!(matches!(reply1, vy_js::HostReply::Ok(_)));
+
+        let left = statusline.items_for(StatuslineAlignment::Left);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].text, "NORMAL");
+        assert_eq!(left[0].color.as_deref(), Some("primary"));
+
+        let (req2, rec2) = HostRequest::new(
+            "ui.statusline.updateItem",
+            json!({
+                "id": "my_mode",
+                "text": "INSERT"
+            }),
+        );
+        let mut ctx2 = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        ctx2.statusline = Some(&mut statusline);
+        handle_request(ctx2, req2);
+        let reply2 = rec2.recv().expect("reply");
+        assert!(matches!(reply2, vy_js::HostReply::Ok(_)));
+        assert_eq!(
+            statusline.items_for(StatuslineAlignment::Left)[0].text,
+            "INSERT"
+        );
+
+        let (req3, rec3) = HostRequest::new(
+            "ui.statusline.disposeItem",
+            json!({
+                "id": "my_mode"
+            }),
+        );
+        let mut ctx3 = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        ctx3.statusline = Some(&mut statusline);
+        handle_request(ctx3, req3);
+        let reply3 = rec3.recv().expect("reply");
+        assert!(matches!(reply3, vy_js::HostReply::Ok(_)));
+        assert!(statusline.is_empty());
     }
 }

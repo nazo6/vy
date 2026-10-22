@@ -227,6 +227,69 @@ export const remote = {
   pathSeparator: env.remote?.pathSeparator ?? "/",
 };
 
+let nextStatuslineItemId = 1;
+
+export const ui = {
+  statusline: {
+    createItem(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("ui.statusline.createItem needs options object");
+      }
+      const id = options.id || `statusline_item_${nextStatuslineItemId++}`;
+      let text = options.text || "";
+      let color = options.color || null;
+      let command = options.command || null;
+      const alignment = options.alignment || "left";
+      const priority = typeof options.priority === "number" ? options.priority : 0;
+
+      call("ui.statusline.createItem", {
+        id,
+        alignment,
+        priority,
+        text,
+        color,
+        command,
+      });
+
+      return {
+        get id() {
+          return id;
+        },
+        get text() {
+          return text;
+        },
+        set text(value) {
+          text = String(value);
+          call("ui.statusline.updateItem", { id, text });
+        },
+        get color() {
+          return color;
+        },
+        set color(value) {
+          color = value ? String(value) : null;
+          call("ui.statusline.updateItem", { id, color });
+        },
+        get command() {
+          return command;
+        },
+        set command(value) {
+          command = value ? String(value) : null;
+          call("ui.statusline.updateItem", { id, command });
+        },
+        show() {
+          call("ui.statusline.updateItem", { id, visible: true });
+        },
+        hide() {
+          call("ui.statusline.updateItem", { id, visible: false });
+        },
+        dispose() {
+          call("ui.statusline.disposeItem", { id });
+        },
+      };
+    },
+  },
+};
+
 function covers(declared, requested) {
   if (declared === requested) {
     return true;

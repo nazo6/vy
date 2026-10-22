@@ -123,6 +123,35 @@ export interface RemoteApi {
   readonly pathSeparator: string;
 }
 
+/** Options for creating a statusline item slot. */
+export interface StatuslineItemOptions {
+  id?: string;
+  alignment: "left" | "center" | "right";
+  priority?: number;
+  text: string;
+  color?: string;
+  command?: string;
+}
+
+/** A controllable statusline slot item. */
+export interface StatuslineItem extends Disposable {
+  readonly id: string;
+  text: string;
+  color?: string;
+  command?: string;
+  show(): void;
+  hide(): void;
+  dispose(): void;
+}
+
+export interface StatuslineApi {
+  createItem(options: StatuslineItemOptions): StatuslineItem;
+}
+
+export interface UiApi {
+  readonly statusline: StatuslineApi;
+}
+
 export interface PluginContext {
   readonly pluginId: string;
   readonly version: string;
@@ -138,4 +167,5 @@ export const workspace: WorkspaceApi;
 export const notifications: NotificationsApi;
 export const log: LogApi;
 export const remote: RemoteApi;
+export const ui: UiApi;
 export const context: PluginContext;

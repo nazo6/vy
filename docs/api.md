@@ -338,6 +338,32 @@ ID、進捗の値です。任意のレイアウトは渡せません。自由な
 ビューのウィジェット木を使います。Webview は、Web
 の文書を表示するときだけ使います。
 
+#### ステータスライン API
+
+ステータスラインはウィンドウ最下部に配置されるグローバルスロットです（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）。
+
+```typescript
+export interface StatuslineItemOptions {
+  id?: string;
+  alignment: "left" | "center" | "right";
+  priority?: number; // 数値が大きいほど外側（左ならより左、右ならより右）に配置
+  text: string;
+  color?: string; // テーマのトークン名
+  command?: string; // クリック時に実行されるコマンド ID
+}
+
+export interface StatuslineItem extends Disposable {
+  text: string;
+  color?: string;
+  command?: string;
+  show(): void;
+  hide(): void;
+  dispose(): void;
+}
+```
+
+既定では標準 Vim 相当の項目（モード、ファイル名、変更状態、カーソル位置、進捗）が登録されます。利用者は `init.ts` やプラグインから項目を個別に追加・更新・破棄（`dispose()`）できます。
+
 ## 14. テーマ
 
 | API                           | 実行場所 | ケイパビリティ | 優先度 |

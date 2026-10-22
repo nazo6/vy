@@ -110,7 +110,10 @@ Phase 3 で仕上げます。
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
   - `webview` は Phase 6
 - [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
-- [ ] スロット（ステータスライン、ピッカー、ホバー、ガター）
+- [ ] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
+  - [ ] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
+  - [ ] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
+  - [ ] ピッカー（`ui.picker`）、ホバー（`ui.hover`）、ガター（`ui.gutter`）
 - [ ] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する

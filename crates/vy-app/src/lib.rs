@@ -10,4 +10,5 @@ pub mod keymap;
 pub mod paths;
 pub mod plugin_host;
 pub mod rpc;
+pub mod statusline;
 pub mod when;
