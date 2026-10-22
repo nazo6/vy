@@ -170,18 +170,21 @@ impl Invocation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiCommand {
     CommandPalette,
+    ExCommandLine,
 }
 
 impl UiCommand {
     pub fn id(self) -> &'static str {
         match self {
             Self::CommandPalette => "vy.ui.command_palette",
+            Self::ExCommandLine => "vy.ui.ex_command_line",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Self::CommandPalette => "Command Palette",
+            Self::ExCommandLine => "Ex Command Line",
         }
     }
 
@@ -193,7 +196,129 @@ impl UiCommand {
     }
 
     pub fn all() -> &'static [Self] {
-        &[Self::CommandPalette]
+        &[Self::CommandPalette, Self::ExCommandLine]
+    }
+}
+
+/// One parsed Ex command line, without the leading `:`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExCommandLine {
+    pub name: String,
+    pub bang: bool,
+    pub args: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExParseError {
+    Empty,
+}
+
+impl std::fmt::Display for ExParseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("empty Ex command"),
+        }
+    }
+}
+
+/// Parses `name[!] [args]`. Ranges are reserved for a later step.
+pub fn parse_ex_line(input: &str) -> Result<ExCommandLine, ExParseError> {
+    let input = input.trim_start();
+    if input.is_empty() {
+        return Err(ExParseError::Empty);
+    }
+
+    let name_end = input
+        .char_indices()
+        .find(|(_, character)| character.is_whitespace() || *character == '!')
+        .map(|(index, _)| index)
+        .unwrap_or(input.len());
+    let name = input[..name_end].to_string();
+    if name.is_empty() {
+        return Err(ExParseError::Empty);
+    }
+
+    let rest = &input[name_end..];
+    let (bang, rest) = match rest.strip_prefix('!') {
+        Some(rest) => (true, rest),
+        None => (false, rest),
+    };
+
+    Ok(ExCommandLine {
+        name,
+        bang,
+        args: rest.trim_start().to_string(),
+    })
+}
+
+/// An Ex name and the command it calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExAlias {
+    pub name: &'static str,
+    pub id: &'static str,
+}
+
+pub const EX_ALIASES: &[ExAlias] = &[
+    ExAlias {
+        name: "sp",
+        id: "vy.pane.split_down",
+    },
+    ExAlias {
+        name: "vsp",
+        id: "vy.pane.split_right",
+    },
+    ExAlias {
+        name: "close",
+        id: "vy.pane.close",
+    },
+    ExAlias {
+        name: "q",
+        id: "vy.pane.close",
+    },
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExResolveError {
+    Unknown(String),
+    Ambiguous {
+        name: String,
+        candidates: Vec<String>,
+    },
+}
+
+impl std::fmt::Display for ExResolveError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown(name) => write!(formatter, "unknown Ex command: {name}"),
+            Self::Ambiguous { name, candidates } => {
+                write!(
+                    formatter,
+                    "ambiguous Ex command `{name}`: {}",
+                    candidates.join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// Resolves an exact name or a unique prefix to a command id.
+pub fn resolve_ex_name(name: &str) -> Result<&'static str, ExResolveError> {
+    if let Some(alias) = EX_ALIASES.iter().find(|alias| alias.name == name) {
+        return Ok(alias.id);
+    }
+
+    let candidates: Vec<&ExAlias> = EX_ALIASES
+        .iter()
+        .filter(|alias| alias.name.starts_with(name))
+        .collect();
+
+    match candidates.as_slice() {
+        [] => Err(ExResolveError::Unknown(name.to_string())),
+        [alias] => Ok(alias.id),
+        aliases => Err(ExResolveError::Ambiguous {
+            name: name.to_string(),
+            candidates: aliases.iter().map(|alias| alias.name.to_string()).collect(),
+        }),
     }
 }
 
@@ -550,7 +675,10 @@ impl CommandRegistry {
         for command in UiCommand::all() {
             let mut descriptor =
                 CommandDescriptor::new(command.id(), command.title(), CommandSource::Ui);
-            descriptor.hidden = *command == UiCommand::CommandPalette;
+            descriptor.hidden = matches!(
+                command,
+                UiCommand::CommandPalette | UiCommand::ExCommandLine
+            );
             descriptors.push(descriptor);
         }
         for id in self.script_commands() {
@@ -647,8 +775,67 @@ mod tests {
             UiCommand::parse("vy.ui.command_palette"),
             Some(UiCommand::CommandPalette)
         );
+        assert_eq!(
+            UiCommand::parse("vy.ui.ex_command_line"),
+            Some(UiCommand::ExCommandLine)
+        );
         assert_eq!(UiCommand::parse("vy.ui.unknown"), None);
         assert_eq!(UiCommand::CommandPalette.title(), "Command Palette");
+        assert_eq!(UiCommand::ExCommandLine.title(), "Ex Command Line");
+    }
+
+    #[test]
+    fn parses_ex_names_arguments_and_bang() {
+        assert_eq!(
+            parse_ex_line("sp"),
+            Ok(ExCommandLine {
+                name: "sp".to_string(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("  close!"),
+            Ok(ExCommandLine {
+                name: "close".to_string(),
+                bang: true,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("e  src/main.rs"),
+            Ok(ExCommandLine {
+                name: "e".to_string(),
+                bang: false,
+                args: "src/main.rs".to_string(),
+            })
+        );
+        assert_eq!(parse_ex_line("   "), Err(ExParseError::Empty));
+    }
+
+    #[test]
+    fn resolves_exact_names_and_unique_prefixes() {
+        assert_eq!(resolve_ex_name("sp"), Ok("vy.pane.split_down"));
+        assert_eq!(resolve_ex_name("s"), Ok("vy.pane.split_down"));
+        assert_eq!(resolve_ex_name("vsp"), Ok("vy.pane.split_right"));
+        assert_eq!(resolve_ex_name("close"), Ok("vy.pane.close"));
+        assert_eq!(resolve_ex_name("q"), Ok("vy.pane.close"));
+        assert_eq!(
+            resolve_ex_name("zz"),
+            Err(ExResolveError::Unknown("zz".to_string()))
+        );
+        assert_eq!(
+            resolve_ex_name(""),
+            Err(ExResolveError::Ambiguous {
+                name: String::new(),
+                candidates: vec![
+                    "sp".to_string(),
+                    "vsp".to_string(),
+                    "close".to_string(),
+                    "q".to_string()
+                ],
+            })
+        );
     }
 
     #[test]

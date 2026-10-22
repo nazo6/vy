@@ -5,6 +5,11 @@
         "when": "normalMode"
     },
     {
+        "keys": ":",
+        "command": "vy.ui.ex_command_line",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "h",
         "command": "vy.motion.left",
         "when": "mode != 'insert'"

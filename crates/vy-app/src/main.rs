@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use vy_app::commands::{
     BuiltinCommand, CommandDescriptor, CommandRegistry, Invocation, InvocationArgs, PaneCommand,
-    UiCommand,
+    UiCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction, ViewState};
@@ -111,6 +111,12 @@ struct PaletteState {
     selected: usize,
 }
 
+#[derive(Debug, Default)]
+struct ExState {
+    input: String,
+    history_index: Option<usize>,
+}
+
 struct EditorView {
     client: Option<Client>,
     pending: HashMap<u64, Pending>,
@@ -138,6 +144,9 @@ struct EditorView {
     fallback: DocumentState,
     /// Open command palette, if any.
     palette: Option<PaletteState>,
+    /// Open Ex command line, if any.
+    ex: Option<ExState>,
+    ex_history: Vec<String>,
     /// Commands waiting to run. Only one command runs at a time.
     command_queue: VecDeque<Invocation>,
     /// The script command that is currently running, if any.
@@ -202,6 +211,8 @@ impl EditorView {
             documents: HashMap::new(),
             fallback,
             palette: None,
+            ex: None,
+            ex_history: Vec::new(),
             command_queue: VecDeque::new(),
             running_command: None,
             focus_handle: cx.focus_handle(),
@@ -909,6 +920,15 @@ impl EditorView {
     fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let key = convert_key(&event.keystroke);
 
+        if self.ex.is_some() {
+            if let Some(key) = key {
+                self.handle_ex_key(key);
+            }
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+
         if self.palette.is_some() {
             if let Some(key) = key {
                 self.handle_palette_key(key);
@@ -948,6 +968,7 @@ impl EditorView {
         let before = self.active_view();
         let before_version = self.editor().version();
         let before_palette = self.palette.is_some();
+        let before_ex = self.ex.is_some();
 
         let selection = self.editor().selection();
         let context = KeyContext {
@@ -975,7 +996,8 @@ impl EditorView {
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
         let changed = before != self.active_view()
             || before_version != self.editor().version()
-            || before_palette != self.palette.is_some();
+            || before_palette != self.palette.is_some()
+            || before_ex != self.ex.is_some();
 
         self.ensure_cursor_visible();
         changed
@@ -1163,8 +1185,107 @@ impl EditorView {
 
     fn open_palette(&mut self) {
         self.clear_preedit();
+        self.ex = None;
         self.palette = Some(PaletteState::default());
         self.status = "command palette".into();
+    }
+
+    fn open_ex(&mut self) {
+        self.clear_preedit();
+        self.palette = None;
+        self.ex = Some(ExState::default());
+        self.status = "ex command".into();
+    }
+
+    fn handle_ex_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                self.ex = None;
+                return;
+            }
+            Key::Enter => {
+                let Some(state) = self.ex.take() else {
+                    return;
+                };
+                let line = state.input.trim().to_string();
+                if line.is_empty() {
+                    return;
+                }
+                self.ex_history.retain(|entry| entry != &line);
+                self.ex_history.push(line.clone());
+                self.execute_ex_line(&line);
+                return;
+            }
+            Key::Up | Key::Ctrl('p') => {
+                self.ex_history_move(-1);
+                return;
+            }
+            Key::Down | Key::Ctrl('n') => {
+                self.ex_history_move(1);
+                return;
+            }
+            _ => {}
+        }
+
+        let Some(state) = self.ex.as_mut() else {
+            return;
+        };
+        match key {
+            Key::Backspace => {
+                state.input.pop();
+                state.history_index = None;
+            }
+            Key::Ctrl('u') => {
+                state.input.clear();
+                state.history_index = None;
+            }
+            Key::Char(character) => {
+                state.input.push(character);
+                state.history_index = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn ex_history_move(&mut self, delta: isize) {
+        if self.ex_history.is_empty() {
+            return;
+        }
+        let Some(state) = self.ex.as_mut() else {
+            return;
+        };
+        let len = self.ex_history.len() as isize;
+        let index = match state.history_index {
+            Some(index) => (index as isize + delta).clamp(0, len - 1) as usize,
+            None if delta < 0 => self.ex_history.len() - 1,
+            None => return,
+        };
+        state.history_index = Some(index);
+        state.input = self.ex_history[index].clone();
+    }
+
+    fn execute_ex_line(&mut self, line: &str) {
+        let parsed = match parse_ex_line(line) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                self.status = format!("{error}").into();
+                return;
+            }
+        };
+        if parsed.bang {
+            self.status = format!("{}: `!` is not supported yet", parsed.name).into();
+            return;
+        }
+        let id = match resolve_ex_name(&parsed.name) {
+            Ok(id) => id,
+            Err(error) => {
+                self.status = format!("{error}").into();
+                return;
+            }
+        };
+
+        self.status = format!(":{}", parsed.name).into();
+        self.enqueue_command(Invocation::ex(id, parsed.args));
     }
 
     fn handle_palette_key(&mut self, key: Key) -> bool {
@@ -1282,6 +1403,7 @@ impl EditorView {
     fn run_ui_command(&mut self, command: UiCommand) {
         match command {
             UiCommand::CommandPalette => self.open_palette(),
+            UiCommand::ExCommandLine => self.open_ex(),
         }
     }
 
@@ -1808,6 +1930,7 @@ impl Render for EditorView {
                     .child(content)
                     .children(self.palette.as_ref().map(|_| self.render_palette())),
             )
+            .children(self.ex.as_ref().map(|_| self.render_ex()))
             .child(footer);
 
         self.log_frame(started);
@@ -1854,6 +1977,23 @@ impl EditorView {
                 row.size_full().child(first_wrapper).child(second_wrapper)
             }
         }
+    }
+
+    fn render_ex(&self) -> Div {
+        let Some(ex) = self.ex.as_ref() else {
+            return div();
+        };
+
+        div()
+            .flex()
+            .gap_1()
+            .items_center()
+            .px_2()
+            .py_1()
+            .bg(rgb(0x252526))
+            .text_sm()
+            .child(div().text_color(rgb(0x9a9a9a)).child(":"))
+            .child(ex.input.clone())
     }
 
     fn render_palette(&self) -> Div {
