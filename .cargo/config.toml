@@ -1,0 +1,4 @@
+[env]
+# ts-rs writes one file per exported type here. `cargo test -p vy-core -p
+# vy-proto export_bindings` regenerates them; CI checks `git diff --exit-code`.
+TS_RS_EXPORT_DIR = { value = "packages/vy-api-types", relative = true }

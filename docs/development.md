@@ -72,5 +72,14 @@ cargo fmt --all --check
 - コアの変更は、ヘッドレスのテストで確かめます。
 - プロトコルの変更は、`vy-proto` の往復テストと `vy-server`
   の結合テストを足します。
+- クライアントの GPUI に依存しない部分は `cargo test -p vy-app --lib`
+  で確かめます。キーマップ、設定、コマンド、`init.ts`
+  のホストは画面なしで動きます。
+- プロトコル境界の型を変えたら、`cargo test -p vy-core -p vy-proto export_bindings`
+  を実行し、`packages/vy-api-types` を一緒にコミットします。CI では生成後に
+  `git diff --exit-code packages/vy-api-types` で差分がないことを
+  確かめます。生成先は `.cargo/config.toml` の `TS_RS_EXPORT_DIR` です。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
+- `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
+  で変更可）と状態行で確認します。

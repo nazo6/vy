@@ -23,8 +23,12 @@ use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
 use vy_app::paths::Paths;
+use vy_app::plugin_host::{
+    self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext, WorkspaceInfo,
+};
 use vy_app::rpc::Client;
 use vy_core::{Range, Selection, TextEdit};
+use vy_js::{HostRequest, ScriptEvent};
 use vy_proto::{PROTOCOL_VERSION, RpcMessage, RpcResult, get, object};
 
 /// Lines drawn before the window has been measured.
@@ -53,6 +57,13 @@ struct EditorView {
     settings_stamp: Option<SystemTime>,
     keymap: Keymap,
     commands: CommandRegistry,
+    /// The script thread and `init.ts` bookkeeping.
+    plugin: Option<PluginHost>,
+    /// Bumped whenever the script thread is replaced, so old pumps stop.
+    script_generation: u64,
+    /// Whether `init.ts` was evaluated since the last document load.
+    init_evaluated: bool,
+    uri: String,
     document_id: Option<u64>,
     pane_id: Option<u64>,
     editor: Editor,
@@ -94,6 +105,13 @@ impl EditorView {
             }
         };
 
+        let uri = document_uri();
+        let (env, trusted_warnings) = plugin_host::script_env(&workspace_info(), &paths);
+        for warning in &trusted_warnings {
+            eprintln!("vy: trusted.json: {warning}");
+        }
+        let plugin = Some(PluginHost::spawn(env, paths.init_ts()));
+
         let mut view = Self {
             client: None,
             pending: HashMap::new(),
@@ -103,6 +121,10 @@ impl EditorView {
             settings_stamp,
             keymap,
             commands: CommandRegistry::new(),
+            plugin,
+            script_generation: 0,
+            init_evaluated: false,
+            uri,
             document_id: None,
             pane_id: None,
             editor,
@@ -143,7 +165,159 @@ impl EditorView {
 
         view.start_receiving(cx);
         view.start_config_watch(cx);
+        view.start_script(cx);
         view
+    }
+
+    /// Starts listeners for the script thread. Events and host requests arrive on
+    /// separate channels; neither blocks the UI.
+    fn start_script(&mut self, cx: &mut Context<Self>) {
+        let Some(plugin) = self.plugin.as_ref() else {
+            return;
+        };
+        let events = plugin.events();
+        let requests = plugin.requests();
+        let generation = self.script_generation;
+
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = events.recv().await {
+                let updated = this.update(cx, |this, cx| {
+                    if this.script_generation == generation {
+                        this.handle_script_event(event);
+                        cx.notify();
+                    }
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx| {
+            while let Ok(request) = requests.recv().await {
+                let updated = this.update(cx, |this, cx| {
+                    if this.script_generation == generation {
+                        this.handle_host_request(request);
+                        cx.notify();
+                    }
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Starts a fresh runtime and evaluates `init.ts`. Registrations from the
+    /// previous runtime are dropped first.
+    fn reload_init(&mut self, cx: &mut Context<Self>) {
+        self.commands
+            .unregister_owner(&vy_app::commands::Owner::Init);
+        self.keymap.unbind_owner(&vy_app::commands::Owner::Init);
+        self.config.clear_memory();
+
+        let (env, warnings) = plugin_host::script_env(&workspace_info(), &self.paths);
+        for warning in &warnings {
+            eprintln!("vy: trusted.json: {warning}");
+        }
+        self.plugin = Some(PluginHost::spawn(env, self.paths.init_ts()));
+        self.script_generation += 1;
+        self.start_script(cx);
+        self.evaluate_init();
+    }
+
+    /// Hands `init.ts` to the script thread. Missing files are not an error.
+    fn evaluate_init(&mut self) {
+        let Some(plugin) = self.plugin.as_mut() else {
+            return;
+        };
+        match plugin.evaluate_init() {
+            InitLoad::Missing => {
+                self.status = "no init.ts".into();
+            }
+            InitLoad::Loaded => {
+                self.status = "loading init.ts".into();
+            }
+            InitLoad::Failed(message) => {
+                eprintln!("vy: {message}");
+                self.status = message.into();
+            }
+        }
+    }
+
+    fn handle_script_event(&mut self, event: ScriptEvent) {
+        match event {
+            ScriptEvent::Evaluated => {
+                self.status = "init.ts loaded".into();
+            }
+            ScriptEvent::CommandFinished { id } => {
+                if self.frame_log {
+                    eprintln!("vy: command {id} finished");
+                }
+            }
+            ScriptEvent::Error { message } => {
+                // The log file already has the message; the status line is the
+                // shortest path to the user.
+                eprintln!("vy: init.ts: {message}");
+                self.status = format!("init.ts: {message}").into();
+            }
+            ScriptEvent::Stopped => {
+                self.status = "the script host stopped".into();
+            }
+        }
+    }
+
+    /// Answers a call from the shim with the current client state.
+    fn handle_host_request(&mut self, request: HostRequest) {
+        let document = self.document_info();
+        let workspace = workspace_info();
+        let Some(plugin) = self.plugin.as_ref() else {
+            request.respond_error("RemoteDisconnected", "the script host is not running");
+            return;
+        };
+
+        let context = RequestContext {
+            editor: &mut self.editor,
+            config: &mut self.config,
+            keymap: &mut self.keymap,
+            commands: &mut self.commands,
+            document,
+            workspace: &workspace,
+            paths: &self.paths,
+            script: Some(plugin.script()),
+        };
+        let outcome = plugin_host::handle_request(context, request);
+
+        if let Some(status) = outcome.status.clone() {
+            self.status = status.into();
+        }
+
+        if !outcome.config_changed.is_empty() {
+            self.editor
+                .set_transaction_idle(Duration::from_millis(self.config.transaction_idle_ms()));
+            self.keymap
+                .set_sequence_timeout(Duration::from_millis(self.config.sequence_timeout_ms()));
+            plugin.emit_config_change(outcome.config_changed.clone());
+        }
+
+        match outcome.action {
+            HostAction::None => {}
+            HostAction::Edit(transaction) => self.send_transaction(transaction),
+            HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
+            HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
+        }
+
+        self.ensure_cursor_visible();
+    }
+
+    fn document_info(&self) -> Option<DocumentInfo> {
+        self.document_id.map(|id| DocumentInfo {
+            id,
+            uri: self.uri.clone(),
+            language_id: "text".to_string(),
+        })
     }
 
     /// Receives messages as they arrive. The reader thread pushes into an async
@@ -185,7 +359,13 @@ impl EditorView {
                     .await;
 
                 let updated = this.update(cx, |this, cx| {
-                    if this.reload_config_if_changed() {
+                    let config_changed = this.reload_config_if_changed();
+                    // Editing `init.ts` starts a fresh runtime, so registrations
+                    // from the previous evaluation cannot pile up.
+                    if this.plugin.as_ref().is_some_and(PluginHost::changed) {
+                        this.reload_init(cx);
+                    }
+                    if config_changed {
                         cx.notify();
                     }
                 });
@@ -216,8 +396,14 @@ impl EditorView {
         self.keymap
             .set_sequence_timeout(Duration::from_millis(self.config.sequence_timeout_ms()));
 
-        if let Some(key) = self.config.changed_keys(&previous).last() {
+        let changed = self.config.changed_keys(&previous);
+        if let Some(key) = changed.last().cloned() {
             self.status = format!("settings: {key} changed").into();
+        }
+        if !changed.is_empty()
+            && let Some(plugin) = self.plugin.as_ref()
+        {
+            plugin.emit_config_change(changed);
         }
         true
     }
@@ -272,7 +458,7 @@ impl EditorView {
     }
 
     fn open_document(&mut self) {
-        let uri = document_uri();
+        let uri = self.uri.clone();
         self.request(
             "pane/open",
             object([("uri", Value::from(uri))]),
@@ -325,6 +511,13 @@ impl EditorView {
                 .unwrap_or_else(|| "-".into())
         )
         .into();
+
+        // `init.ts` reads documents and settings, so it runs after the first
+        // snapshot and before any user command.
+        if !self.init_evaluated {
+            self.init_evaluated = true;
+            self.evaluate_init();
+        }
     }
 
     fn received_history(&mut self, value: &Value) {
@@ -402,7 +595,20 @@ impl EditorView {
                         Action::Redo => self.send_history("buffer/redo", Pending::Redo),
                     }
                 } else if self.commands.is_registered(&id) {
-                    self.status = format!("{id} needs the script host").into();
+                    // Script commands run on the script thread. Any edits they
+                    // make come back as host requests.
+                    if let Some(plugin) = self.plugin.as_ref() {
+                        plugin.execute(
+                            id.clone(),
+                            serde_json::json!({
+                                "count": args.count,
+                                "register": args.register.map(|register| register.to_string()),
+                            }),
+                        );
+                        self.status = format!("running {id}").into();
+                    } else {
+                        self.status = format!("{id}: the script host is not running").into();
+                    }
                 } else {
                     self.status = format!("unknown command: {id}").into();
                 }
@@ -1163,6 +1369,25 @@ fn workspace_uri() -> String {
     match std::env::current_dir() {
         Ok(directory) => format!("file://{}", directory.display()),
         Err(_) => "file:///".to_string(),
+    }
+}
+
+/// The workspace values scripts see through `workspace.*`.
+fn workspace_info() -> WorkspaceInfo {
+    let root = std::env::current_dir().ok();
+    let root_uri = root
+        .as_ref()
+        .map(|path| format!("file://{}", path.display()));
+    let name = root
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .map(str::to_string);
+
+    WorkspaceInfo {
+        folders: root_uri.iter().cloned().collect(),
+        root_uri,
+        name,
     }
 }
 

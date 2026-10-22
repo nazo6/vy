@@ -288,9 +288,32 @@ impl Editor {
         self.text.slice_utf16(range)
     }
 
-    #[cfg(test)]
+    /// The whole text of the client's copy. Scripts read it through
+    /// `document.getText`, and large documents stay in the client's rope.
     pub fn text(&self) -> String {
         self.text.as_string()
+    }
+
+    /// The current cursor as an anchor and a head, in the shape scripts use.
+    pub fn selections(&self) -> Vec<Selection> {
+        vec![self.selection_state()]
+    }
+
+    /// Moves the cursor. Positions are clamped to the document.
+    pub fn set_selections(&mut self, selections: &[Selection]) {
+        let Some(selection) = selections.first().copied() else {
+            return;
+        };
+        self.anchor = self.clamp(selection.anchor);
+        self.head = self.clamp(selection.head);
+        self.preferred_character = None;
+    }
+
+    fn selection_state(&self) -> Selection {
+        Selection {
+            anchor: self.anchor,
+            head: self.head,
+        }
     }
 
     /// Text of the unnamed register. Only used by tests.
@@ -971,6 +994,37 @@ impl Editor {
         self.insert_text(text)
     }
 
+    /// Applies edits requested by a script as one transaction.
+    ///
+    /// The edits are sorted into the coordinate space `Text::apply` expects;
+    /// overlapping edits are still rejected. The caller sends the transaction to
+    /// the core. A failure leaves the mirror and the version untouched.
+    pub fn apply_edits(&mut self, edits: Vec<TextEdit>) -> Result<Transaction, EditError> {
+        let selection_before = vec![self.selection_state()];
+        let base_version = self.version;
+        let transaction_id = self.next_transaction_id();
+
+        // `Text::apply` needs a sorted batch. A stable sort keeps the order of
+        // insertions at the same position.
+        let mut edits = edits;
+        edits.sort_by_key(|edit| (edit.range.start, edit.range.end));
+
+        self.text.apply(&edits)?;
+        self.version += 1;
+        self.last_edit = Some(Instant::now());
+        self.preferred_character = None;
+        self.anchor = self.clamp(self.anchor);
+        self.head = self.clamp(self.head);
+
+        Ok(Transaction {
+            transaction_id,
+            base_version,
+            edits,
+            selection_before,
+            selection_after: vec![self.selection_state()],
+        })
+    }
+
     /// Applies the undo or redo result returned by the core.
     ///
     /// The core sends ordered batches, each using the coordinate space after the
@@ -1266,7 +1320,8 @@ impl Editor {
         self.next_transaction_id.max(1)
     }
 
-    fn set_mode(&mut self, mode: Mode) {
+    /// Changes the mode. Scripts call this through `editor.setMode`.
+    pub fn set_mode(&mut self, mode: Mode) {
         if self.mode != mode {
             self.mode = mode;
             // A mode change starts a new undo entry for the next edit.
@@ -1751,6 +1806,21 @@ mod tests {
 
         assert!(editor.apply_history(&batches, 2, &[]).is_err());
         assert_eq!(editor.text(), "abc");
+        assert_eq!(editor.version(), 1);
+    }
+
+    #[test]
+    fn applies_script_edits_in_any_order() {
+        let mut editor = Editor::with_text("one\ntwo\n", 0);
+        let transaction = editor
+            .apply_edits(vec![
+                TextEdit::new(Range::new(at(1, 0), at(1, 3)), "TWO"),
+                TextEdit::new(Range::empty(at(0, 0)), "# "),
+            ])
+            .expect("apply");
+
+        assert_eq!(editor.text(), "# one\nTWO\n");
+        assert_eq!(transaction.base_version, 0);
         assert_eq!(editor.version(), 1);
     }
 

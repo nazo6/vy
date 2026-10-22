@@ -118,3 +118,37 @@ cargo run -p vy-app -- README.md
 `ui.lineNumbers` は `absolute`、`relative`、`off`
 のいずれかです。ファイルを保存すると再読み込みします。`~/.config/vy` の場所は
 `VY_CONFIG_HOME` で変更できます。
+
+### init.ts（Phase 2）
+
+`~/.config/vy/init.ts` を置くと、起動時に評価します。`settings.json`
+より優先され、値はメモリ上だけに反映します。保存し直すとランタイムを作り直して
+再評価し、前回のコマンドとキーバインドは破棄します。
+
+```typescript
+// ~/.config/vy/init.ts
+import { commands, config, editor, notifications } from "vy-api";
+
+config.set({ "ui.fontSize": 16, "ui.lineNumbers": "relative" });
+
+commands.registerCommand("user.uppercase-document", async () => {
+  const document = await editor.activeDocument();
+  if (!document) return;
+  const text = await document.getText();
+  await editor.edit((builder) => {
+    builder.replace(document.fullRange(), text.toUpperCase());
+  });
+  await notifications.show("Uppercased the document");
+});
+```
+
+`keymap.bind("space u", "user.uppercase-document", { when: "normalMode" })`
+のようにキーを割り当てられます。評価できる API は [`docs/api.md`](./docs/api.md)
+の「Phase 2 の実装状況」にまとめました。型定義は
+[`packages/vy-api/index.d.ts`](./packages/vy-api/index.d.ts) にあり、プロトコル
+の型は [`packages/vy-api-types`](./packages/vy-api-types) に Rust
+から生成します。`examples/init.ts` も参照してください。
+
+初期化は 1 秒、コマンド実行は 5 秒で打ち切り、メモリは 64 MiB に制限します。
+無限ループを書いてもアプリは落ちず、状態行にエラーが出ます。ログは
+`~/.cache/vy/logs/init.log` に書きます。

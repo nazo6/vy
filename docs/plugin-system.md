@@ -24,13 +24,12 @@ ID の重複を防ぐためです。
 import { commands, config, editor, keymap } from "vy-api";
 
 config.set({
-  "ui.theme": "one-dark",
   "ui.fontFamily": "JetBrains Mono",
   "ui.fontSize": 14,
   "ui.lineNumbers": "relative",
 });
 
-keymap.bind("normal", "space f f", "vy.find_files");
+keymap.bind("space u", "user.uppercase-selection", { when: "normalMode" });
 
 commands.registerCommand("user.uppercase-selection", async () => {
   const document = await editor.activeDocument();
@@ -73,6 +72,20 @@ commands.registerCommand("user.uppercase-selection", async () => {
 
 UI
 の設定はクライアントが即座に反映します。言語サーバーや整形の設定は、リモートのコアに送ってから反映します。どちらの層が値を持つかは、キーの先頭（`ui.`、`editor.`、`lsp.`）で決まります。
+
+### 1.4 Phase 2 の範囲
+
+- 評価するのは `init.ts` だけです。外部プラグインの探索、マニフェスト、
+  `activationEvents`、承認 UI は Phase 3 です。
+- `init.ts` は常に信頼します。ケイパビリティの宣言、glob 照合、 `trusted.json`
+  の読み書きは `vy-capabilities`
+  に実装済みですが、承認を求めるのは外部プラグインだけです。
+- `init.ts` は Oxc で型だけを除去してから QuickJS
+  で評価します。構文の変換はしません。壊れたスクリプトは位置付きのエラーになり、アプリは落ちません。
+- 評価は専用スレッドで行い、UI は待ちません。初期化は 1 秒、コマンド実行は 5
+  秒で打ち切り、メモリは 64 MiB に制限します。
+- ファイルの変更を検出すると、ランタイムを作り直して再評価します。コマンド、キーバインド、メモリ層の設定、リスナーは前回のぶんをすべて捨てます。
+- ログは `~/.cache/vy/logs/init.log` に JSON Lines で書きます。
 
 ---
 
@@ -279,6 +292,12 @@ backend.registerHandler("search", async (message) => {
 リロードは、そのプラグインのコンテキストを作り直します。`deactivate`
 を呼び、登録を破棄し、`activate`
 を呼び直します。開発中はファイルの変更で自動的にリロードします。
+
+Phase 2 の `init.ts` も同じ扱いです。ファイルの mtime が変わると QuickJS
+のランタイムごと作り直し、`init.ts`
+が登録したコマンド、キーバインド、メモリ層の設定、`config.onDidChange`
+のリスナーをすべて捨ててから評価し直します。既定のキーマップと `settings.json`
+の層は残ります。
 
 次の場合は、そのセッションの間だけプラグインを無効にします。利用者が原因を直したあと、手動で有効に戻せます。
 

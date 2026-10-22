@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::paths::Paths;
@@ -63,7 +64,8 @@ impl LineNumbers {
 }
 
 /// Every layer's value for one key, plus the value that is in effect.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Inspect {
     pub default: Option<Value>,
     pub user: Option<Value>,
@@ -137,6 +139,19 @@ impl Config {
         let had_values = !memory.is_empty();
         memory.clear();
         had_values
+    }
+
+    /// Sets several memory values at once, as `config.set` does. Returns the keys
+    /// whose effective value changed.
+    pub fn apply(&mut self, values: &Map<String, Value>) -> Vec<String> {
+        let mut changed = Vec::new();
+        for (key, value) in values {
+            if self.set(key.clone(), value.clone()) {
+                changed.push(key.clone());
+            }
+        }
+        changed.sort();
+        changed
     }
 
     /// Replaces a whole layer. Used by reloads and tests.

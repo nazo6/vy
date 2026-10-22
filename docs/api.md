@@ -453,7 +453,41 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 `RemoteDisconnected`
 を受け取ったプラグインは、自動で再接続しません。再同期はコアクライアントが行います。
 
-## 21. 未決定事項
+## 21. Phase 2 の実装状況
+
+Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しました。型は
+[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts) にあります。
+
+| 名前空間        | 実装済み                                                                                                |
+| :-------------- | :------------------------------------------------------------------------------------------------------ |
+| `commands`      | `registerCommand`、`execute`、`getCommands`                                                             |
+| `keymap`        | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
+| `config`        | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
+| `editor`        | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
+| `document`      | `getText`、`lineAt`、`positionAt`、`offsetAt`、`fullRange`                                              |
+| `workspace`     | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
+| `notifications` | `show`                                                                                                  |
+| `log`           | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
+| `remote`        | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
+| `context`       | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
+
+先送りしたもの:
+
+- `document.save`、`editor.open`、`workspace.state`、`fs`、`process`、`net`。
+- `document.onDidChangeContent`、`editor.onDidChangeSelection` などのイベント。
+  発火するには UI から JS へのイベント経路がもう1本必要です。
+- `config.define`、`ui` ビュー、スロット、テーマ、Webview。
+- `editor.undo()` と `editor.redo()` は要求を送るところまでです。結果の適用は
+  コアの応答で行うため、返り値は `void` です。
+- `commands.execute` の返り値は `null` です。JS 側の戻り値を返すのは Phase 3
+  です。
+- `editor.edit` は1回の呼び出しを1トランザクションにしますが、複数カーソルの
+  選択はまだ扱いません。
+
+`init.ts` は常に信頼し、ケイパビリティの承認を求めません。外部プラグインの
+マニフェストと承認 UI は Phase 3 です。
+
+## 22. 未決定事項
 
 - 補完プロバイダをフロントとリモートのどちらで実行するか。候補入力の遅延を抑えるならフロント、言語サーバーに近い方がよければリモートです。
 - `secrets` の保存先を OS のキーリングにするか、暗号化したファイルにするか。
@@ -464,3 +498,5 @@ API の失敗は例外で返します。例外は `code` を持ちます。
   ビューの木の上限、読み取り専用テキストのモーション、テキスト入力の既定モードなどは
   [`ui.md`](./ui.md) にまとめました。
 - レイアウトの未決定事項は [`panes.md`](./panes.md) にまとめました。
+- CRLF と EOL の扱い。`document.eol` と `document.setEol` をいつ入れるか、
+  改行コードをクライアントとコアのどちらで保持するか。Phase 2 では扱いません。

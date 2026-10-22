@@ -10,3 +10,4 @@ rmp-serde.workspace = true
 rmpv.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+ts-rs.workspace = true

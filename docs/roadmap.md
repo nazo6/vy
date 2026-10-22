@@ -55,18 +55,21 @@ flowchart TD
 
 ### Phase 2: TypeScript設定 & プラグイン実行基盤
 
-- [ ] `rquickjs` をクライアントに統合し、Promise を進めるジョブキューを回す
-- [ ] `~/.config/vy/init.ts` と `settings.json` の読み込みと反映
-  - `settings.json` の 4
-    層（既定値、ユーザー、プロジェクト、メモリ）は実装済み。`init.ts` は未実装
-- [ ] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
+- [x] `rquickjs` をクライアントに統合し、Promise を進めるジョブキューを回す
+- [x] `~/.config/vy/init.ts` と `settings.json` の読み込みと反映
+  - `settings.json` の 4 層（既定値、ユーザー、プロジェクト、メモリ）と
+    `init.ts` の評価・再評価を実装した
+- [x] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
+  - シムは `crates/vy-js/src/shim.js`。プロトコル境界の型は ts-rs で
+    `packages/vy-api-types` に生成し、名前空間の API は手書き
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`
-    とテキストオブジェクトは実装済み
-  - `init.ts` からの登録はスクリプトホスト待ち
+    とテキストオブジェクトを実装した
+  - `init.ts` からの登録はスクリプトホスト経由で動く
 - [ ] ケイパビリティの宣言と承認の記録（`trusted.json`）
+  - `vy-capabilities` にパース、glob 照合、`trusted.json`
+    の読み書きを実装した。マニフェストの読み込みと承認 UI は Phase 3
 - [x] 設定の4層の解決（既定値、ユーザー、プロジェクト、`init.ts`）
-  - `init.ts` 層はメモリ上に用意し、スクリプトホストから書く経路を残している
 
 #### Phase 2 の進捗
 
@@ -76,10 +79,14 @@ flowchart TD
   非依存にした
 - 2B: `paths` と `config`（4 層、`ui.*` の反映、mtime 監視）
 - 2C: `keymap`（キー列、`when`、カウント、レジスタ、タイムアウト）と `commands`
+- 2D: `vy-js`（QuickJS の専用スレッド、Oxc による型の除去、`vy-api`
+  シム、`init.ts` の評価と再評価）と `vy-capabilities`
 - 2E: `y` / `Y`、演算子 `d` /
   `y`、テキストオブジェクト、行単位レジスタ、単語クラス
-- 残り: 2D（QuickJS、Oxc、`vy-api`、`init.ts`、ケイパビリティ）と
-  2F（型生成、ドキュメント）
+- 2F: ts-rs による `packages/vy-api-types` の生成、
+  `packages/vy-api/index.d.ts`、`examples/init.ts`、ドキュメント
+- 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents` （Phase
+  3）。`editor.onDidChangeSelection` などのイベント API も Phase 3
 
 ### Phase 3: ペイン・ビュー・Webview
 
@@ -110,30 +117,34 @@ flowchart TD
 
 先に決めた項目です。詳細は各ドキュメントにあります。
 
-| 決定                   | 内容                                                                               | 記録                                                                             |
-| :--------------------- | :--------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                                | [ADR 0001](./adr/0001-ui-framework.md)                                           |
-| プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ   | [ADR 0002](./adr/0002-process-model.md)                                          |
-| 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                                 | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md) |
-| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                         | [`panes.md`](./panes.md)                                                         |
-| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                               | [`plugin-system.md`](./plugin-system.md)                                         |
-| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                   | [`plugin-system.md`](./plugin-system.md)                                         |
-| API の形               | 名前空間の import と async ファースト                                              | [`api.md`](./api.md)                                                             |
-| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                             | [`layout.md`](./layout.md)                                                       |
-| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                         | [`protocol.md`](./protocol.md)                                                   |
-| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る              | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
-| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す     | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)         |
-| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                 | [`architecture.md`](./architecture.md)                                           |
-| フレームの形式         | 長さはリトルエンディアンの u32。上限 64 MiB。読み書きは各1本のスレッドに固定       | [`protocol.md`](./protocol.md)                                                   |
-| 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う | [`architecture.md`](./architecture.md)                                           |
-| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する               | [`architecture.md`](./architecture.md)                                           |
-| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                           | [`protocol.md`](./protocol.md)                                                   |
-| Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                        | [`roadmap.md`](./roadmap.md)                                                     |
-| アンドゥの結果         | 履歴をバッチで保持し、undo は LIFO、redo は FIFO。`edits` はバッチの配列           | [`protocol.md`](./protocol.md)                                                   |
-| クライアントの RPC     | 書き込みは専用スレッド、受信はイベント駆動（16ms ポーリングをやめる）              | [`architecture.md`](./architecture.md)                                           |
-| キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す               | [`keymap.md`](./keymap.md)                                                       |
-| レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                           | [`keymap.md`](./keymap.md)                                                       |
-| 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                    | [`keymap.md`](./keymap.md)                                                       |
+| 決定                   | 内容                                                                                | 記録                                                                               |
+| :--------------------- | :---------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                                 | [ADR 0001](./adr/0001-ui-framework.md)                                             |
+| プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ    | [ADR 0002](./adr/0002-process-model.md)                                            |
+| 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                                  | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md)   |
+| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                          | [`panes.md`](./panes.md)                                                           |
+| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                                | [`plugin-system.md`](./plugin-system.md)                                           |
+| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                    | [`plugin-system.md`](./plugin-system.md)                                           |
+| API の形               | 名前空間の import と async ファースト                                               | [`api.md`](./api.md)                                                               |
+| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                              | [`layout.md`](./layout.md)                                                         |
+| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                          | [`protocol.md`](./protocol.md)                                                     |
+| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る               | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                   |
+| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す      | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)           |
+| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                  | [`architecture.md`](./architecture.md)                                             |
+| フレームの形式         | 長さはリトルエンディアンの u32。上限 64 MiB。読み書きは各1本のスレッドに固定        | [`protocol.md`](./protocol.md)                                                     |
+| 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う  | [`architecture.md`](./architecture.md)                                             |
+| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する                | [`architecture.md`](./architecture.md)                                             |
+| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                            | [`protocol.md`](./protocol.md)                                                     |
+| Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                         | [`roadmap.md`](./roadmap.md)                                                       |
+| アンドゥの結果         | 履歴をバッチで保持し、undo は LIFO、redo は FIFO。`edits` はバッチの配列            | [`protocol.md`](./protocol.md)                                                     |
+| クライアントの RPC     | 書き込みは専用スレッド、受信はイベント駆動（16ms ポーリングをやめる）               | [`architecture.md`](./architecture.md)                                             |
+| キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す                | [`keymap.md`](./keymap.md)                                                         |
+| レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                            | [`keymap.md`](./keymap.md)                                                         |
+| 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                     | [`keymap.md`](./keymap.md)                                                         |
+| JS の実行              | クライアントの専用スレッド 1 本。`vy-api` は仮想モジュール。UI とは要求と応答で通信 | [`architecture.md`](./architecture.md) と [`plugin-system.md`](./plugin-system.md) |
+| TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
+| `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 3                            | [`plugin-system.md`](./plugin-system.md)                                           |
+| 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
 
 ## 残っている論点
 
@@ -149,3 +160,6 @@ flowchart TD
 5. **`vy-server` の多重化と配備**
    - 1プロセスで複数のワークスペースを持つか。SSH
      接続でバイナリをどう用意するか。
+6. **CRLF と EOL**
+   - `document.eol` と改行コードの保持をどこで行うか。Phase 2
+     では扱わず、Windows 対応と合わせて決めます。

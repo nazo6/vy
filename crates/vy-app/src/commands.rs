@@ -123,6 +123,14 @@ impl BuiltinCommand {
     }
 
     pub fn parse(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|command| command.id() == id)
+    }
+
+    /// Every built-in command. Used by `commands.getCommands`.
+    pub fn all() -> &'static [BuiltinCommand] {
         const COMMANDS: [BuiltinCommand; 44] = [
             BuiltinCommand::MoveLeft,
             BuiltinCommand::MoveRight,
@@ -170,7 +178,7 @@ impl BuiltinCommand {
             BuiltinCommand::TextObjectBacktick,
         ];
 
-        COMMANDS.into_iter().find(|command| command.id() == id)
+        &COMMANDS
     }
 }
 

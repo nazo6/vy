@@ -8,5 +8,6 @@ pub mod config;
 pub mod editor;
 pub mod keymap;
 pub mod paths;
+pub mod plugin_host;
 pub mod rpc;
 pub mod when;

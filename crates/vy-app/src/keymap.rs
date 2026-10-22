@@ -38,6 +38,16 @@ impl Mode {
             Self::Select => "SELECT",
         }
     }
+
+    /// Parses the lowercase name used by `when` and by `editor.setMode`.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "normal" => Some(Self::Normal),
+            "insert" => Some(Self::Insert),
+            "select" => Some(Self::Select),
+            _ => None,
+        }
+    }
 }
 
 /// One key press.
@@ -243,6 +253,13 @@ impl Keymap {
         let before = self.bindings.len();
         self.bindings.retain(|binding| binding.keys != keys);
         Ok(before - self.bindings.len())
+    }
+
+    /// Drops every binding added by an owner. Used when `init.ts` reloads.
+    pub fn unbind_owner(&mut self, owner: &Owner) -> usize {
+        let before = self.bindings.len();
+        self.bindings.retain(|binding| &binding.owner != owner);
+        before - self.bindings.len()
     }
 
     /// Adds a context value for `when` expressions from scripts.

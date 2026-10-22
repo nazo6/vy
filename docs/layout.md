@@ -65,6 +65,7 @@ OS ごとの既定の場所は次のとおりです。
     <languageId>/<ハッシュ>.bin
   logs/
     vy.log
+    init.log
     plugins/<pluginId>.log
 
 <データ>/
@@ -109,11 +110,12 @@ crates/
   vy-server/         ヘッドレスのバイナリ。RPC の受け口とセッション管理
   vy-proto/          RPC の型とバージョン
   vy-js/             QuickJS のホスト。モジュール解決、API の束縛、イベントループ
+                     lib.rs / vm.rs / transpile.rs / api.rs / shim.js
   vy-capabilities/   ケイパビリティの定義、承認の記録、検査
 
 packages/
-  vy-api/            TS のランタイムシムと型定義。RPC の薄いラッパ
-  vy-api-types/      Rust の型から生成した型定義
+  vy-api/            手書きの型定義（index.d.ts）。ランタイムのシムは vy-js が持つ
+  vy-api-types/      ts-rs が生成した型定義（手で編集しない）
   vy-cli/            プラグインのビルド、インストール、doctor
   create-vy-plugin/  雛形の生成
 
@@ -125,9 +127,10 @@ assets/
 
 builtin/
   plugins/           ビルトインの TS プラグイン
-  keymaps/           既定のキーバインド
+  keymaps/           既定のキーバインド（default.json）
 
 examples/
+  init.ts            設定スクリプトの例
   plugins/
   workspaces/
 

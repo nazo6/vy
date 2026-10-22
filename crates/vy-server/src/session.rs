@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use rmpv::Value;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use vy_core::{Applied, Buffer, TextEdit, Uri};
 use vy_proto::value::{get, object};
-use vy_proto::{ErrorCode, RpcMessage, PROTOCOL_VERSION};
+use vy_proto::{ErrorCode, PROTOCOL_VERSION, RpcMessage};
 
 /// State owned by one connection.
 ///

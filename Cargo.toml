@@ -2,7 +2,9 @@
 resolver = "3"
 members = [
   "crates/vy-app",
+  "crates/vy-capabilities",
   "crates/vy-core",
+  "crates/vy-js",
   "crates/vy-proto",
   "crates/vy-server",
 ]
@@ -24,8 +26,11 @@ thiserror = "2"
 ropey = "1"
 
 # Client
+async-channel = "2"
 dirs = "5"
 serde_json = "1"
+# TypeScript types for the plugin API
+ts-rs = "12"
 
 # Server
 tokio = {
@@ -46,7 +51,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Pin the version exactly, per ADR 0001.
 gpui = "=0.2.2"
 
+vy-capabilities = { path = "crates/vy-capabilities" }
 vy-core = { path = "crates/vy-core" }
+vy-js = { path = "crates/vy-js" }
 vy-proto = { path = "crates/vy-proto" }
 
 # xattr 0.2.3, pulled in by gpui 0.2.2, references libc::ENOATTR, which does not exist

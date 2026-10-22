@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use ts_rs::TS;
 
 /// Protocol error codes. Values and meanings are in "Errors" in `docs/protocol.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ErrorCode {
     InvalidRequest,
     CapabilityDenied,
