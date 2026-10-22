@@ -51,6 +51,7 @@ flowchart TD
 - [x] ヘッドレスの `cargo test`:
   - `vy-core` のバッファとアンドゥ
   - `vy-server` の RPC の往復と、プロトコルの版が合わないときに接続を閉じること
+- [x] キーの一覧と実装状況を [`keymap.md`](./keymap.md) にまとめる
 
 ### Phase 2: TypeScript設定 & プラグイン実行基盤
 

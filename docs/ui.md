@@ -42,6 +42,9 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 `buffer/did_change`
 で送ります。挿入モードの文字入力も同じ経路（`replace_text_in_range`）を通るため、キー入力の処理と文字の挿入が二重になりません。
 
+いま実装しているキーと、これから入れるキーの一覧は [`keymap.md`](./keymap.md)
+にあります。
+
 ### 2.1 コンテキスト
 
 キーマップの `when` から参照できる値を増やします。`mode` と `paneId`

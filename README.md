@@ -44,6 +44,8 @@
 - [**プラグイン UI (`docs/ui.md`)**](./docs/ui.md)
   - ネイティブのウィジェット木、キー入力とフォーカス、アクション、Webview
     の位置づけ
+- [**キーマップ一覧と実装状況 (`docs/keymap.md`)**](./docs/keymap.md)
+  - モードごとのキー、実装済みの範囲、これから入れるキー、キーマップ API の予定
 - [**ファイルとフォルダの構成 (`docs/layout.md`)**](./docs/layout.md)
   - ユーザー設定、プロジェクト、プラグインのパッケージ、リポジトリの構成
 - [**通信プロトコル仕様 (`docs/protocol.md`)**](./docs/protocol.md)
@@ -90,3 +92,5 @@ cargo run -p vy-app -- README.md
 | Normal | `.` 直前の変更の繰り返し                                                       |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                   |
 | Select | 移動で選択を伸ばす。`d` で削除して Normal へ                                   |
+
+キーの全一覧と実装状況は [`docs/keymap.md`](./docs/keymap.md) にあります。

@@ -273,7 +273,11 @@ impl Editor {
                 Action::None
             }
             Key::End => {
-                self.move_to(self.line_end(self.head.line));
+                let length = self
+                    .text
+                    .line_len_utf16(self.head.line as usize)
+                    .unwrap_or(0);
+                self.move_to(Position::new(self.head.line, length));
                 Action::None
             }
             Key::Ctrl(_) => Action::None,
@@ -1200,5 +1204,17 @@ mod tests {
         editor.handle_key(Key::Esc);
         last_edit(&mut editor, Key::Char('.'));
         assert_eq!(editor.text(), "c");
+    }
+
+    #[test]
+    fn insert_mode_end_moves_past_the_last_character() {
+        let mut editor = Editor::with_text("abc\nde", 0);
+
+        press(&mut editor, "i");
+        editor.handle_key(Key::End);
+        assert_eq!(editor.cursor(), at(0, 3));
+
+        typed(&mut editor, "X");
+        assert_eq!(editor.text(), "abcX\nde");
     }
 }
