@@ -1,7 +1,10 @@
 use crate::error::ProtoError;
 
 /// Upper bound for a single frame. See "Streams and large data" in `docs/protocol.md`.
-pub const MAX_FRAME_LEN: usize = 4 * 1024 * 1024;
+///
+/// A `buffer/snapshot` of a large file arrives in one frame, so the limit has to leave
+/// room for the whole text. Chunked snapshots would let it shrink again.
+pub const MAX_FRAME_LEN: usize = 64 * 1024 * 1024;
 
 /// Size of the length header: a little-endian u32.
 pub const LENGTH_HEADER_LEN: usize = 4;

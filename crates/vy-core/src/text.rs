@@ -139,6 +139,32 @@ impl Text {
         Ok(self.rope.slice(start..end).to_string())
     }
 
+    /// Total length in UTF-16 code units, counting every line break as one unit.
+    pub fn len_utf16(&self) -> usize {
+        self.rope.len_utf16_cu()
+    }
+
+    /// Converts a position to a flat UTF-16 offset from the start of the document.
+    pub fn utf16_offset(&self, position: Position) -> Result<usize, EditError> {
+        let index = self.position_to_char(position)?;
+        Ok(self.rope.char_to_utf16_cu(index))
+    }
+
+    /// Converts a flat UTF-16 offset to a position. The offset is clamped to the document.
+    pub fn position_at_utf16(&self, offset: usize) -> Position {
+        let index = self.rope.utf16_cu_to_char(offset.min(self.len_utf16()));
+        self.char_to_position(index).unwrap_or(Position::new(0, 0))
+    }
+
+    /// Returns the text in a flat UTF-16 offset range. The range is clamped to the document.
+    pub fn slice_utf16(&self, range: std::ops::Range<usize>) -> String {
+        let end = range.end.min(self.len_utf16());
+        let start = range.start.min(end);
+        let start = self.rope.utf16_cu_to_char(start);
+        let end = self.rope.utf16_cu_to_char(end);
+        self.rope.slice(start..end).to_string()
+    }
+
     /// Applies one batch of edits and returns the edits that undo them.
     ///
     /// The edits must use the same coordinate space (the text before applying them). They
@@ -263,5 +289,23 @@ mod tests {
             Err(EditError::OverlappingEdits)
         );
         assert_eq!(text.as_string(), "abcd");
+    }
+
+    #[test]
+    fn converts_between_positions_and_flat_utf16_offsets() {
+        let text = Text::new("a😀b\n日本");
+
+        assert_eq!(text.len_utf16(), 7);
+        assert_eq!(text.utf16_offset(at(0, 0)).expect("offset"), 0);
+        assert_eq!(text.utf16_offset(at(0, 3)).expect("offset"), 3);
+        assert_eq!(text.position_at_utf16(5), at(1, 0));
+        assert_eq!(text.position_at_utf16(6), at(1, 1));
+        // An offset inside a surrogate pair rounds to the character start.
+        assert_eq!(text.position_at_utf16(2), at(0, 1));
+        assert_eq!(text.position_at_utf16(99), at(1, 2));
+
+        assert_eq!(text.slice_utf16(0..4), "a😀b");
+        assert_eq!(text.slice_utf16(4..7), "\n日本");
+        assert_eq!(text.slice_utf16(6..99), "本");
     }
 }

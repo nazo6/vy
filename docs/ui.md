@@ -37,6 +37,11 @@ flowchart LR
     W -->|"持たない"| G
 ```
 
+Phase 1 のエディタでは、クライアントが `EntityInputHandler`
+を実装します。前編集の文字列はクライアントが持ち、コアには送りません。確定した文字列だけを
+`buffer/did_change`
+で送ります。挿入モードの文字入力も同じ経路（`replace_text_in_range`）を通るため、キー入力の処理と文字の挿入が二重になりません。
+
 ### 2.1 コンテキスト
 
 キーマップの `when` から参照できる値を増やします。`mode` と `paneId`
@@ -54,7 +59,7 @@ flowchart LR
 ```typescript
 keymap.bind("normal", "j", "vy.ui.next", { when: "uiRole == 'list'" });
 keymap.bind("normal", "r", "example.chat.retry", {
-    when: "uiFocus == 'messages'",
+  when: "uiFocus == 'messages'",
 });
 ```
 
@@ -113,17 +118,17 @@ normal モードで `Esc`
 
 ```typescript
 views.register("example.greeting.view", {
-    kind: "ui",
-    title: "Greeting",
-    render: () =>
-        ui.column({ gap: "sm" }, [
-            ui.text({ id: "message", text: "こんにちは" }),
-            ui.button({
-                id: "close",
-                label: "閉じる",
-                command: "example.greeting.close",
-            }),
-        ]),
+  kind: "ui",
+  title: "Greeting",
+  render: () =>
+    ui.column({ gap: "sm" }, [
+      ui.text({ id: "message", text: "こんにちは" }),
+      ui.button({
+        id: "close",
+        label: "閉じる",
+        command: "example.greeting.close",
+      }),
+    ]),
 });
 ```
 
@@ -171,10 +176,10 @@ views.register("example.greeting.view", {
 
 ```typescript
 ui.text({
-    id: "error",
-    text: "接続に失敗しました",
-    color: "danger",
-    font: "mono",
+  id: "error",
+  text: "接続に失敗しました",
+  color: "danger",
+  font: "mono",
 });
 ```
 
@@ -233,51 +238,51 @@ Webview を使う場合の規則は次のとおりです。
 let messages: Message[] = [];
 
 views.register("example.chat.view", {
-    kind: "ui",
-    title: "Chat",
-    singleton: true,
-    restore: (_params, state) => {
-        messages = state?.messages ?? [];
-    },
-    render: () =>
-        ui.column({ gap: "sm" }, [
-            ui.scroll(
-                { id: "messages", grow: 1 },
-                messages.map((m) => ui.markdown({ id: m.id, text: m.text })),
-            ),
-            ui.row({ gap: "sm" }, [
-                ui.textInput({
-                    id: "prompt",
-                    grow: 1,
-                    multiline: true,
-                    mode: "insertOnFocus",
-                    placeholder: "質問を入力",
-                }),
-                ui.button({
-                    id: "send",
-                    label: "送信",
-                    command: "example.chat.send",
-                }),
-            ]),
-        ]),
-    actions: {
-        next: "example.chat.nextMessage",
-        prev: "example.chat.prevMessage",
-        yank: "example.chat.copy",
-    },
+  kind: "ui",
+  title: "Chat",
+  singleton: true,
+  restore: (_params, state) => {
+    messages = state?.messages ?? [];
+  },
+  render: () =>
+    ui.column({ gap: "sm" }, [
+      ui.scroll(
+        { id: "messages", grow: 1 },
+        messages.map((m) => ui.markdown({ id: m.id, text: m.text })),
+      ),
+      ui.row({ gap: "sm" }, [
+        ui.textInput({
+          id: "prompt",
+          grow: 1,
+          multiline: true,
+          mode: "insertOnFocus",
+          placeholder: "質問を入力",
+        }),
+        ui.button({
+          id: "send",
+          label: "送信",
+          command: "example.chat.send",
+        }),
+      ]),
+    ]),
+  actions: {
+    next: "example.chat.nextMessage",
+    prev: "example.chat.prevMessage",
+    yank: "example.chat.copy",
+  },
 });
 
 commands.registerCommand("example.chat.send", async () => {
-    // 送信し、応答のチャンクごとに ui.update を呼ぶ
+  // 送信し、応答のチャンクごとに ui.update を呼ぶ
 });
 
 await panes.open({
-    view: "example.chat.view",
-    placement: {
-        target: await panes.activePane(),
-        direction: "right",
-        ratio: 0.35,
-    },
+  view: "example.chat.view",
+  placement: {
+    target: await panes.activePane(),
+    direction: "right",
+    ratio: 0.35,
+  },
 });
 ```
 

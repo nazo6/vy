@@ -33,16 +33,21 @@ flowchart TD
 - [x] Helix方式のモーダル入力エンジン:
   - `Selection -> Action`（文字・単語選択後に削除・変更）
   - Normal, Insert, Select モードの基本実装
-- [ ] モーダル入力の残り:
-  - カウント（`5j`）、レジスタ、`.` の繰り返し
-  - 日本語 IME の前編集（`EntityInputHandler`）
+- [x] カウント（`5j` `5x`）と、`"a`–`"z` のレジスタ、`p` / `P`、`.` の繰り返し
+  - `y`（ヤンク）とテキストオブジェクトは、Phase 2 のキーマップで扱う
+- [x] 日本語 IME の前編集（`EntityInputHandler`）
+  - 前編集の文字列はコアに送らず、クライアントがカーソル位置に描く
 - [ ] Phase 1 の検証項目:
-  - Linux (Wayland) と macOS で起動する。Windows は Phase 1 の対象外とする
-  - 日本語 IME の前編集が、カーソル位置に正しく出る
-  - 20万行のファイルを開き、スクロールと入力が引っかからない
-  - `vy-server`
-    を終了したとき、クライアントが落ちずに通知を出す。再起動は手動で行う
-  - ローカル接続の往復が、入力の遅延として感じられない
+  - [x] Linux (Wayland) で起動する。Windows は Phase 1 の対象外とする
+  - [ ] macOS で起動する（手元に環境がないため未確認）
+  - [ ] 日本語 IME の前編集が、カーソル位置に正しく出る
+  - [x] 20万行のファイルを開き、スクロールと入力が引っかからない
+    - 実測: 20万行のスナップショットを 7.2 ms で読み込み、1フレームの組み立ては
+      0.1–0.4 ms。ホイールで移動できる行は、ファイルの大きさに依存しない
+  - [x] `vy-server`
+        を終了したとき、クライアントが落ちずに通知を出す。再起動は手動で行う
+  - [x] ローカル接続の往復が、入力の遅延として感じられない
+    - 入力はクライアントの写しにすぐ反映し、コアの応答を待たない
 - [x] ヘッドレスの `cargo test`:
   - `vy-core` のバッファとアンドゥ
   - `vy-server` の RPC の往復と、プロトコルの版が合わないときに接続を閉じること
@@ -99,7 +104,7 @@ flowchart TD
 | プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る              | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
 | プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す     | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)         |
 | 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                 | [`architecture.md`](./architecture.md)                                           |
-| フレームの形式         | 長さはリトルエンディアンの u32。上限 4 MiB。読み書きは各1本のスレッドに固定        | [`protocol.md`](./protocol.md)                                                   |
+| フレームの形式         | 長さはリトルエンディアンの u32。上限 64 MiB。読み書きは各1本のスレッドに固定       | [`protocol.md`](./protocol.md)                                                   |
 | 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う | [`architecture.md`](./architecture.md)                                           |
 | 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する               | [`architecture.md`](./architecture.md)                                           |
 | アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                           | [`protocol.md`](./protocol.md)                                                   |
