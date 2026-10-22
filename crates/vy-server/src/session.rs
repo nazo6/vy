@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use rmpv::Value;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use vy_core::{Applied, Buffer, TextEdit, Uri};
 use vy_proto::value::{get, object};
-use vy_proto::{ErrorCode, PROTOCOL_VERSION, RpcMessage};
+use vy_proto::{ErrorCode, RpcMessage, PROTOCOL_VERSION};
 
 /// State owned by one connection.
 ///
@@ -701,7 +701,13 @@ mod tests {
         let value = ok_value(&outcome.messages[0]);
         assert_eq!(get(value, "version").and_then(Value::as_u64), Some(2));
         match get(value, "edits") {
-            Some(Value::Array(edits)) => assert_eq!(edits.len(), 1),
+            Some(Value::Array(batches)) => {
+                assert_eq!(batches.len(), 1);
+                match &batches[0] {
+                    Value::Array(edits) => assert_eq!(edits.len(), 1),
+                    other => panic!("a batch is not an array: {other:?}"),
+                }
+            }
             other => panic!("edits is not an array: {other:?}"),
         }
 

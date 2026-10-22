@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::ErrorCode;
 
 /// Protocol version. Matched during `initialize`.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// Version 2 returns undo and redo results as ordered batches of edits.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Payload of every RPC frame.
 ///

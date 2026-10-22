@@ -1,0 +1,276 @@
+[
+    {
+        "keys": "h",
+        "command": "vy.motion.left",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "left",
+        "command": "vy.motion.left",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "l",
+        "command": "vy.motion.right",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "right",
+        "command": "vy.motion.right",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "j",
+        "command": "vy.motion.down",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "down",
+        "command": "vy.motion.down",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "k",
+        "command": "vy.motion.up",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "up",
+        "command": "vy.motion.up",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "w",
+        "command": "vy.motion.word_forward",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "b",
+        "command": "vy.motion.word_backward",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "e",
+        "command": "vy.motion.word_end",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "0",
+        "command": "vy.motion.line_start",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "home",
+        "command": "vy.motion.line_start",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "$",
+        "command": "vy.motion.line_end",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "end",
+        "command": "vy.motion.line_end",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "g g",
+        "command": "vy.motion.document_start",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "G",
+        "command": "vy.motion.document_end",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "x",
+        "command": "vy.edit.delete",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "d",
+        "command": "vy.operator.delete",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "y",
+        "command": "vy.operator.yank",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "Y",
+        "command": "vy.edit.yank_line",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "p",
+        "command": "vy.edit.paste_after",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "P",
+        "command": "vy.edit.paste_before",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": ".",
+        "command": "vy.edit.repeat",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "i",
+        "command": "vy.mode.insert",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "a",
+        "command": "vy.mode.insert_after",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "v",
+        "command": "vy.mode.select",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "esc",
+        "command": "vy.mode.normal"
+    },
+    {
+        "keys": "u",
+        "command": "vy.history.undo",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "ctrl-r",
+        "command": "vy.history.redo",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "ctrl-u",
+        "command": "vy.history.undo",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "enter",
+        "command": "vy.insert.newline",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "tab",
+        "command": "vy.insert.tab",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "backspace",
+        "command": "vy.insert.backspace",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "left",
+        "command": "vy.insert.left",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "right",
+        "command": "vy.insert.right",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "up",
+        "command": "vy.insert.up",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "down",
+        "command": "vy.insert.down",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "home",
+        "command": "vy.insert.home",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "end",
+        "command": "vy.insert.end",
+        "when": "mode == 'insert'"
+    },
+    {
+        "keys": "i",
+        "command": "vy.operator.inner",
+        "when": "operatorPending"
+    },
+    {
+        "keys": "a",
+        "command": "vy.operator.around",
+        "when": "operatorPending"
+    },
+    {
+        "keys": "w",
+        "command": "vy.text_object.word",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "p",
+        "command": "vy.text_object.paragraph",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "(",
+        "command": "vy.text_object.paren",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": ")",
+        "command": "vy.text_object.paren",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "[",
+        "command": "vy.text_object.bracket",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "]",
+        "command": "vy.text_object.bracket",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "{",
+        "command": "vy.text_object.brace",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "}",
+        "command": "vy.text_object.brace",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "<",
+        "command": "vy.text_object.angle",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": ">",
+        "command": "vy.text_object.angle",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "\"",
+        "command": "vy.text_object.double_quote",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "'",
+        "command": "vy.text_object.single_quote",
+        "when": "textObjectPending"
+    },
+    {
+        "keys": "`",
+        "command": "vy.text_object.backtick",
+        "when": "textObjectPending"
+    }
+]

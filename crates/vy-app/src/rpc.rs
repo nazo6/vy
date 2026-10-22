@@ -1,26 +1,19 @@
 //! Starts `vy-server` as a child process and exchanges RPC over stdio.
 //!
-//! Per ADR 0002, the core is a separate process even for local connections. Reads
-//! happen on a dedicated thread so the UI thread never blocks.
+//! Per ADR 0002, the core is a separate process even for local connections. Both
+//! reads and writes happen on dedicated threads so the UI thread never blocks.
 
 use std::io::{BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use rmpv::Value;
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
 
-/// Whether a message has arrived, none has arrived yet, or the connection closed.
-pub enum Poll {
-    Message(RpcMessage),
-    Empty,
-    Closed,
-}
-
 pub struct Client {
     child: Child,
-    stdin: ChildStdin,
-    receiver: Receiver<RpcMessage>,
+    writer: Option<Sender<RpcMessage>>,
+    receiver: async_channel::Receiver<RpcMessage>,
     next_id: u64,
     session_id: u64,
 }
@@ -38,14 +31,21 @@ impl Client {
         let stdin = child.stdin.take().expect("could not take stdin");
         let stdout = child.stdout.take().expect("could not take stdout");
 
-        let (sender, receiver) = std::sync::mpsc::channel();
+        // Writes go through a queue so a full pipe never blocks the UI thread. The
+        // queue is unbounded: dropping messages would desynchronize the document.
+        let (writer, queue) = channel();
+        std::thread::Builder::new()
+            .name("vy-rpc-writer".into())
+            .spawn(move || write_loop(stdin, queue))?;
+
+        let (sender, receiver) = async_channel::unbounded();
         std::thread::Builder::new()
             .name("vy-rpc-reader".into())
             .spawn(move || read_loop(stdout, sender))?;
 
         Ok(Self {
             child,
-            stdin,
+            writer: Some(writer),
             receiver,
             next_id: 1,
             session_id: 0,
@@ -58,7 +58,7 @@ impl Client {
         self.next_id += 1;
 
         let message = RpcMessage::request(id, self.session_id, method, params);
-        if let Err(error) = self.write(&message) {
+        if let Err(error) = self.write(message) {
             eprintln!("vy: could not send the request: {error}");
         }
         id
@@ -67,7 +67,7 @@ impl Client {
     /// Sends a notification that expects no response.
     pub fn notify(&mut self, method: &str, params: Value) {
         let message = RpcMessage::notification(method, params);
-        if let Err(error) = self.write(&message) {
+        if let Err(error) = self.write(message) {
             eprintln!("vy: could not send the notification: {error}");
         }
     }
@@ -76,31 +76,62 @@ impl Client {
         self.session_id = session_id;
     }
 
-    pub fn poll(&self) -> Poll {
-        match self.receiver.try_recv() {
-            Ok(message) => Poll::Message(message),
-            Err(TryRecvError::Empty) => Poll::Empty,
-            Err(TryRecvError::Disconnected) => Poll::Closed,
-        }
+    /// Returns a handle for receiving messages without blocking the UI thread.
+    ///
+    /// The channel closes when the reader thread stops, which is how the client
+    /// detects that the server closed the connection.
+    pub fn receiver(&self) -> async_channel::Receiver<RpcMessage> {
+        self.receiver.clone()
     }
 
-    fn write(&mut self, message: &RpcMessage) -> std::io::Result<()> {
-        let payload = encode_message(message).map_err(invalid_data)?;
-        let frame = encode_frame(&payload).map_err(invalid_data)?;
-        self.stdin.write_all(&frame)?;
-        self.stdin.flush()
+    fn write(&mut self, message: RpcMessage) -> std::io::Result<()> {
+        let Some(writer) = self.writer.as_ref() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "the writer thread stopped",
+            ));
+        };
+        writer.send(message).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the writer thread stopped")
+        })
     }
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        // Kill the server when the client closes so no orphan is left behind.
+        // Closing the queue lets the writer flush what is left. The kill stops a
+        // server that did not exit on its own.
+        self.writer.take();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-fn read_loop(stdout: std::process::ChildStdout, sender: Sender<RpcMessage>) {
+/// Encodes and writes messages in order. Dropping `stdin` closes the server's input.
+fn write_loop(mut stdin: ChildStdin, queue: Receiver<RpcMessage>) {
+    for message in queue {
+        let payload = match encode_message(&message) {
+            Ok(payload) => payload,
+            Err(error) => {
+                eprintln!("vy: could not encode a message: {error}");
+                continue;
+            }
+        };
+        let frame = match encode_frame(&payload) {
+            Ok(frame) => frame,
+            Err(error) => {
+                eprintln!("vy: could not frame a message: {error}");
+                continue;
+            }
+        };
+        if let Err(error) = stdin.write_all(&frame).and_then(|()| stdin.flush()) {
+            eprintln!("vy: could not write to vy-server: {error}");
+            return;
+        }
+    }
+}
+
+fn read_loop(stdout: std::process::ChildStdout, sender: async_channel::Sender<RpcMessage>) {
     let mut reader = BufReader::new(stdout);
     let mut decoder = FrameDecoder::new();
     let mut chunk = [0u8; 8 * 1024];
@@ -121,7 +152,7 @@ fn read_loop(stdout: std::process::ChildStdout, sender: Sender<RpcMessage>) {
             match decoder.next_frame() {
                 Ok(Some(payload)) => match decode_message(&payload) {
                     Ok(message) => {
-                        if sender.send(message).is_err() {
+                        if sender.send_blocking(message).is_err() {
                             return;
                         }
                     }
@@ -159,8 +190,4 @@ fn server_command() -> Command {
     }
 
     Command::new("vy-server")
-}
-
-fn invalid_data(error: vy_proto::ProtoError) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
 }

@@ -2,14 +2,12 @@
 //!
 //! On startup it launches `vy-server` as a child process, sends `initialize`,
 //! `pane/open`, and `buffer/snapshot` in that order, and draws the returned text in
-//! one pane. The modal input in `editor` handles keys and sends `buffer/did_change`
-//! to the core. The layout tree lands in Phase 3.
-
-mod editor;
-mod rpc;
+//! one pane. The modal input in `vy_app::editor` handles keys and sends
+//! `buffer/did_change` to the core. The layout tree lands in Phase 3.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui::{
     App, Application, Bounds, Context, Div, ElementInputHandler, EntityInputHandler, FocusHandle,
@@ -20,19 +18,20 @@ use gpui::{
 use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use vy_app::commands::{BuiltinCommand, CommandRegistry};
+use vy_app::config::{Config, LineNumbers};
+use vy_app::editor::{Action, Editor, Key, Mode, Transaction};
+use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
+use vy_app::paths::Paths;
+use vy_app::rpc::Client;
 use vy_core::{Range, Selection, TextEdit};
 use vy_proto::{PROTOCOL_VERSION, RpcMessage, RpcResult, get, object};
 
-use crate::editor::{Action, Editor, Key, Mode, Transaction};
-use crate::rpc::{Client, Poll};
-
-/// Height of one text row.
-const LINE_HEIGHT: f32 = 20.0;
 /// Lines drawn before the window has been measured.
 const VISIBLE_LINES: usize = 30;
 /// Space taken by the header, the footer, and the padding around them.
 const CHROME_HEIGHT: f32 = 100.0;
-/// Width of one character, used to size the line number gutter.
+/// Width of one character at the default font size. Used to size the gutter.
 const CHARACTER_WIDTH: f32 = 10.0;
 
 /// The kind of request we are waiting for a response to.
@@ -48,6 +47,12 @@ enum Pending {
 struct EditorView {
     client: Option<Client>,
     pending: HashMap<u64, Pending>,
+    config: Config,
+    paths: Paths,
+    workspace: Option<PathBuf>,
+    settings_stamp: Option<SystemTime>,
+    keymap: Keymap,
+    commands: CommandRegistry,
     document_id: Option<u64>,
     pane_id: Option<u64>,
     editor: Editor,
@@ -69,12 +74,38 @@ struct EditorView {
 
 impl EditorView {
     fn new(cx: &mut Context<Self>) -> Self {
+        let paths = Paths::from_env();
+        let workspace = std::env::current_dir().ok();
+        let (config, warnings) = Config::load(&paths, workspace.as_deref());
+        let settings_stamp = settings_stamp(&paths, workspace.as_deref());
+        for warning in &warnings {
+            eprintln!("vy: settings: {warning}");
+        }
+
+        let mut editor = Editor::new();
+        editor.set_transaction_idle(Duration::from_millis(config.transaction_idle_ms()));
+
+        let keymap = match Keymap::load_default(Duration::from_millis(config.sequence_timeout_ms()))
+        {
+            Ok(keymap) => keymap,
+            Err(error) => {
+                eprintln!("vy: {error}");
+                Keymap::new(Duration::from_millis(config.sequence_timeout_ms()))
+            }
+        };
+
         let mut view = Self {
             client: None,
             pending: HashMap::new(),
+            config,
+            paths,
+            workspace,
+            settings_stamp,
+            keymap,
+            commands: CommandRegistry::new(),
             document_id: None,
             pane_id: None,
-            editor: Editor::new(),
+            editor,
             preedit: String::new(),
             preedit_selection: None,
             scroll_top: 0,
@@ -100,36 +131,65 @@ impl EditorView {
                 );
                 view.pending.insert(id, Pending::Initialize);
                 view.client = Some(client);
-                view.status = "waiting for the initialize response".into();
+                view.status = match warnings.last() {
+                    Some(warning) => format!("settings: {warning}").into(),
+                    None => "waiting for the initialize response".into(),
+                };
             }
             Err(error) => {
                 view.status = format!("could not start vy-server: {error}").into();
             }
         }
 
-        view.start_polling(cx);
+        view.start_receiving(cx);
+        view.start_config_watch(cx);
         view
     }
 
-    /// Polls the receive queue every 16ms. Reads happen on another thread, so the UI
-    /// thread stays free; this only drains what has arrived.
-    fn start_polling(&self, cx: &mut Context<Self>) {
+    /// Receives messages as they arrive. The reader thread pushes into an async
+    /// channel, so the UI only wakes when there is something to handle.
+    fn start_receiving(&self, cx: &mut Context<Self>) {
+        let Some(receiver) = self.client.as_ref().map(Client::receiver) else {
+            return;
+        };
+
+        cx.spawn(async move |this, cx| {
+            while let Ok(message) = receiver.recv().await {
+                let updated = this.update(cx, |this, cx| {
+                    this.handle(message);
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+
+            // The reader stopped: the server closed the connection.
+            let _ = this.update(cx, |this, cx| {
+                if this.client.is_some() {
+                    this.status = "lost the connection to vy-server; restart it manually".into();
+                    this.client = None;
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Re-reads settings when a file changes. `init.ts` reloads with the script host.
+    fn start_config_watch(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
-                    .timer(Duration::from_millis(16))
+                    .timer(Duration::from_millis(500))
                     .await;
 
-                let keep_polling = this.update(cx, |this, cx| {
-                    let (keep_polling, changed) = this.drain();
-                    // Do not repaint when nothing arrived in this frame.
-                    if changed {
+                let updated = this.update(cx, |this, cx| {
+                    if this.reload_config_if_changed() {
                         cx.notify();
                     }
-                    keep_polling
                 });
-
-                if !keep_polling.unwrap_or(false) {
+                if updated.is_err() {
                     break;
                 }
             }
@@ -137,39 +197,29 @@ impl EditorView {
         .detach();
     }
 
-    /// Handles arrived messages. Returns (keep polling, repaint).
-    fn drain(&mut self) -> (bool, bool) {
-        let mut received = Vec::new();
-
-        let closed = {
-            let Some(client) = self.client.as_ref() else {
-                return (false, false);
-            };
-
-            loop {
-                match client.poll() {
-                    Poll::Message(message) => received.push(message),
-                    Poll::Empty => break false,
-                    Poll::Closed => break true,
-                }
-            }
-        };
-
-        let changed = !received.is_empty();
-        if changed && self.frame_log {
-            eprintln!("vy: {} message(s)", received.len());
+    /// Reloads the settings layers when the file timestamps changed.
+    fn reload_config_if_changed(&mut self) -> bool {
+        let stamp = settings_stamp(&self.paths, self.workspace.as_deref());
+        if stamp == self.settings_stamp {
+            return false;
         }
-        for message in received {
-            self.handle(message);
+        self.settings_stamp = stamp;
+
+        let previous = self.config.clone();
+        let warnings = self.config.reload(&self.paths, self.workspace.as_deref());
+        for warning in &warnings {
+            eprintln!("vy: settings: {warning}");
         }
 
-        if closed {
-            self.status = "lost the connection to vy-server; restart it manually".into();
-            self.client = None;
-            return (false, true);
-        }
+        self.editor
+            .set_transaction_idle(Duration::from_millis(self.config.transaction_idle_ms()));
+        self.keymap
+            .set_sequence_timeout(Duration::from_millis(self.config.sequence_timeout_ms()));
 
-        (true, changed)
+        if let Some(key) = self.config.changed_keys(&previous).last() {
+            self.status = format!("settings: {key} changed").into();
+        }
+        true
     }
 
     fn handle(&mut self, message: RpcMessage) {
@@ -281,14 +331,16 @@ impl EditorView {
         let version = get(value, "version")
             .and_then(Value::as_u64)
             .unwrap_or(self.editor.version());
-        let edits = get(value, "edits")
-            .and_then(decode_value::<Vec<TextEdit>>)
+        let batches = get(value, "edits")
+            .and_then(decode_value::<Vec<Vec<TextEdit>>>)
             .unwrap_or_default();
         let selection = get(value, "selection")
             .and_then(decode_value::<Vec<Selection>>)
             .unwrap_or_default();
 
-        self.editor.apply_history(&edits, version, &selection);
+        if let Err(error) = self.editor.apply_history(&batches, version, &selection) {
+            self.status = format!("could not apply the history: {error}").into();
+        }
     }
 
     fn request(&mut self, method: &str, params: Value, pending: Pending) {
@@ -323,7 +375,7 @@ impl EditorView {
         }
     }
 
-    /// Passes the key to the editor and reports whether the display changed.
+    /// Passes the key to the keymap and runs the command it resolves to.
     fn apply_key(&mut self, key: Key) -> bool {
         let before = (
             self.editor.mode(),
@@ -331,11 +383,31 @@ impl EditorView {
             self.editor.version(),
         );
 
-        match self.editor.handle_key(key) {
-            Action::None => {}
-            Action::Edit(transaction) => self.send_transaction(transaction),
-            Action::Undo => self.send_history("buffer/undo", Pending::Undo),
-            Action::Redo => self.send_history("buffer/redo", Pending::Redo),
+        let selection = self.editor.selection();
+        let context = KeyContext {
+            mode: self.editor.mode(),
+            has_selection: selection.start != selection.end,
+            operator_pending: self.editor.operator_pending(),
+            text_object_pending: self.editor.text_object_pending(),
+            ..KeyContext::default()
+        };
+
+        match self.keymap.feed(key, &context) {
+            KeymapOutcome::Command { id, args } => {
+                if let Some(command) = BuiltinCommand::parse(&id) {
+                    match self.editor.execute(command, args) {
+                        Action::None => {}
+                        Action::Edit(transaction) => self.send_transaction(transaction),
+                        Action::Undo => self.send_history("buffer/undo", Pending::Undo),
+                        Action::Redo => self.send_history("buffer/redo", Pending::Redo),
+                    }
+                } else if self.commands.is_registered(&id) {
+                    self.status = format!("{id} needs the script host").into();
+                } else {
+                    self.status = format!("unknown command: {id}").into();
+                }
+            }
+            KeymapOutcome::Pending | KeymapOutcome::Ignored => {}
         }
 
         // A preedit only makes sense while Insert mode keeps the caret.
@@ -362,13 +434,14 @@ impl EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let delta = f32::from(event.delta.pixel_delta(px(LINE_HEIGHT)).y);
+        let line_height = self.line_height();
+        let delta = f32::from(event.delta.pixel_delta(px(line_height)).y);
         if delta == 0.0 {
             return;
         }
 
         // Positive deltas scroll up, so they move towards earlier lines.
-        let mut lines = (delta / LINE_HEIGHT).round() as isize;
+        let mut lines = (delta / line_height).round() as isize;
         if lines == 0 {
             lines = delta.signum() as isize;
         }
@@ -429,17 +502,21 @@ impl EditorView {
     }
 
     fn render_line(&self, line_number: usize) -> Div {
-        let row = div().flex().h(px(LINE_HEIGHT)).items_center().child(
-            div()
-                .w(px(self.gutter_width()))
-                .flex_shrink_0()
-                .text_color(rgb(0x5a5a5a))
-                .child(format!(
-                    "{:>width$} ",
-                    line_number + 1,
-                    width = self.line_number_width()
-                )),
-        );
+        let cursor_line = self.editor.cursor().line as usize;
+        let mut row = div().flex().h(px(self.line_height())).items_center();
+
+        if let Some(label) = self.config.line_numbers().label(line_number, cursor_line) {
+            row = row.child(
+                div()
+                    .w(px(self.gutter_width()))
+                    .flex_shrink_0()
+                    .text_color(rgb(0x5a5a5a))
+                    .child(format!(
+                        "{label:>width$} ",
+                        width = self.line_number_width()
+                    )),
+            );
+        }
 
         let text = self.editor.line(line_number).unwrap_or_default();
         let cursor = self.editor.cursor();
@@ -575,10 +652,25 @@ impl EditorView {
         self.editor.line_count().max(1).to_string().len().max(4)
     }
 
-    /// Width of the line number gutter. It grows with the number of lines.
+    /// Height of one text row from the settings.
+    fn line_height(&self) -> f32 {
+        self.config.line_height()
+    }
+
+    /// Width of one character at the current font size.
+    fn character_width(&self) -> f32 {
+        CHARACTER_WIDTH * self.config.font_size() / 14.0
+    }
+
+    /// Width of the line number gutter. It grows with the number of lines and is
+    /// zero when line numbers are turned off.
     fn gutter_width(&self) -> f32 {
+        if self.config.line_numbers() == LineNumbers::Off {
+            return 0.0;
+        }
+        let width = self.character_width();
         let digits = self.line_number_width();
-        digits as f32 * CHARACTER_WIDTH + CHARACTER_WIDTH * 1.2
+        digits as f32 * width + width * 1.2
     }
 
     /// First line drawn in the text area.
@@ -743,7 +835,7 @@ impl EntityInputHandler for EditorView {
         if !prefix.is_empty() {
             let run = TextRun {
                 len: prefix.len(),
-                font: gpui::font("monospace"),
+                font: gpui::font(self.config.font_family()),
                 color: rgb(0xd4d4d4).into(),
                 background_color: None,
                 underline: None,
@@ -762,9 +854,9 @@ impl EntityInputHandler for EditorView {
         let origin = element_bounds.origin
             + point(
                 px(self.gutter_width()) + width,
-                px(row as f32 * LINE_HEIGHT),
+                px(row as f32 * self.line_height()),
             );
-        Some(Bounds::new(origin, size(px(2.), px(LINE_HEIGHT))))
+        Some(Bounds::new(origin, size(px(2.), px(self.line_height()))))
     }
 
     fn character_index_for_point(
@@ -783,7 +875,7 @@ impl Render for EditorView {
 
         // Fit the viewport to the window before choosing which lines to draw.
         let height = f32::from(window.viewport_size().height) - CHROME_HEIGHT;
-        self.viewport_rows = ((height / LINE_HEIGHT).floor().max(1.0)) as usize;
+        self.viewport_rows = ((height / self.line_height()).floor().max(1.0)) as usize;
         self.clamp_scroll();
 
         let header = div()
@@ -802,7 +894,7 @@ impl Render for EditorView {
             .text_color(rgb(0x9a9a9a))
             .child(format!(
                 "{}  {}:{}",
-                self.editor.mode().name(),
+                self.editor.mode().label(),
                 cursor.line + 1,
                 cursor.character + 1
             ))
@@ -818,7 +910,8 @@ impl Render for EditorView {
             .size_full()
             .bg(rgb(0x1e1e1e))
             .text_color(rgb(0xd4d4d4))
-            .font_family("monospace")
+            .font_family(self.config.font_family())
+            .text_size(px(self.config.font_size()))
             .p_4()
             .gap_2()
             .child(header)
@@ -885,6 +978,20 @@ impl EditorView {
     }
 }
 
+/// Modification time of the newest settings file, if any exists.
+fn settings_stamp(paths: &Paths, workspace: Option<&Path>) -> Option<SystemTime> {
+    let project = workspace.map(|workspace| paths.workspace_settings(workspace));
+    let mut newest: Option<SystemTime> = None;
+
+    for path in std::iter::once(paths.settings_json()).chain(project) {
+        if let Ok(modified) = std::fs::metadata(&path).and_then(|metadata| metadata.modified()) {
+            newest = Some(newest.map_or(modified, |current| current.max(modified)));
+        }
+    }
+
+    newest
+}
+
 fn main() {
     Application::new().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
@@ -912,9 +1019,11 @@ fn main() {
 /// Converts a GPUI keystroke into an editor key.
 fn convert_key(keystroke: &Keystroke) -> Option<Key> {
     if keystroke.modifiers.control {
-        return match keystroke.key.as_str() {
-            "r" => Some(Key::Ctrl('r')),
-            "u" => Some(Key::Ctrl('u')),
+        let mut characters = keystroke.key.chars();
+        return match (characters.next(), characters.next()) {
+            (Some(character), None) if character.is_ascii_alphabetic() => {
+                Some(Key::Ctrl(character.to_ascii_lowercase()))
+            }
             _ => None,
         };
     }
@@ -927,6 +1036,7 @@ fn convert_key(keystroke: &Keystroke) -> Option<Key> {
         "escape" => return Some(Key::Esc),
         "enter" => return Some(Key::Enter),
         "backspace" => return Some(Key::Backspace),
+        "delete" => return Some(Key::Delete),
         "tab" => return Some(Key::Tab),
         "left" => return Some(Key::Left),
         "right" => return Some(Key::Right),

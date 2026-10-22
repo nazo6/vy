@@ -106,7 +106,7 @@ Request {
     session_id: 0,
     method: "initialize",
     params: {
-        "protocol_version": 1,
+        "protocol_version": 2,
         "client_version": "0.1.0",
         "client_capabilities": ["stream", "blob", "multiplex"],
         "workspace": "file:///home/user/project",
@@ -119,7 +119,7 @@ Request {
 Notification {
     method: "initialized",
     params: {
-        "protocol_version": 1,
+        "protocol_version": 2,
         "session_id": 7,
         "server_version": "0.1.0",
         "server_capabilities": ["stream", "blob", "multiplex"],
@@ -304,3 +304,8 @@ Request {
 
 応答には、適用した逆編集と、戻したあとの選択が入ります。クライアントは本文と選択を同時に適用します。`buffer/redo`
 も同じ形です。`pane_id` は、戻したあとにフォーカスを移す先です。
+
+プロトコル版 2 では、`edits` は編集バッチの配列です。同じ `transaction_id`
+をまとめたアンドゥでは複数のバッチが返り、各バッチは直前のバッチを適用したあとの座標を使います。クライアントは配列の順に適用し、version
+は最後に 1 回だけ進めます。バッチを 1
+つに連結すると座標系が混ざり、重複や範囲外の位置になるためです。

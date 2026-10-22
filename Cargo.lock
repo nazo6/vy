@@ -6055,10 +6055,13 @@ dependencies = [
 name = "vy-app"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
+ "dirs 5.0.1",
  "gpui",
  "rmp-serde",
  "rmpv",
  "serde",
+ "serde_json",
  "vy-core",
  "vy-proto",
 ]

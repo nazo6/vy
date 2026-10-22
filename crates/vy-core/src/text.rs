@@ -8,6 +8,7 @@ use crate::position::{Position, Range};
 /// It centralizes position conversion (UTF-16 and char indices) and edit application.
 /// `Buffer` adds a version and undo history to it; the client uses it as its copy of
 /// the document.
+#[derive(Clone)]
 pub struct Text {
     rope: Rope,
 }

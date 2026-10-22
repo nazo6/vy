@@ -18,8 +18,9 @@ pub const DEFAULT_UNDO_LIMIT: usize = 1000;
 pub struct Applied {
     /// Version after the edit.
     pub version: Version,
-    /// Edits the client must apply. Empty for edit requests.
-    pub edits: Vec<TextEdit>,
+    /// Edits the client must apply, in order. Each batch uses the coordinate space
+    /// that results from applying the previous batches. Empty for edit requests.
+    pub edits: Vec<Vec<TextEdit>>,
     /// Selection to place after the edit.
     pub selection: Vec<Selection>,
 }
@@ -28,10 +29,12 @@ pub struct Applied {
 struct UndoEntry {
     /// Grouping key. Consecutive edits with the same ID become one entry.
     transaction_id: u64,
-    /// Edits that undo the entry, in the order they were applied.
-    inverse: Vec<TextEdit>,
-    /// Edits that redo the entry, in their original coordinates.
-    forward: Vec<TextEdit>,
+    /// Inverse edits per applied batch, in application order. Undo applies them in
+    /// reverse order, one batch at a time.
+    inverse_batches: Vec<Vec<TextEdit>>,
+    /// Forward edits per applied batch, in application order. Redo applies them in
+    /// order, one batch at a time.
+    forward_batches: Vec<Vec<TextEdit>>,
     selection_before: Vec<Selection>,
     selection_after: Vec<Selection>,
 }
@@ -165,14 +168,14 @@ impl Buffer {
 
         if grouped {
             let entry = self.undo.last_mut().expect("checked just above");
-            entry.inverse.extend(inverse);
-            entry.forward.extend(edits.iter().cloned());
+            entry.inverse_batches.push(inverse);
+            entry.forward_batches.push(edits);
             entry.selection_after = selection_after.clone();
         } else {
             self.undo.push(UndoEntry {
                 transaction_id,
-                inverse,
-                forward: edits,
+                inverse_batches: vec![inverse],
+                forward_batches: vec![edits],
                 selection_before,
                 selection_after: selection_after.clone(),
             });
@@ -189,13 +192,23 @@ impl Buffer {
     }
 
     /// Undoes the previous entry. [`None`] if there is nothing to undo.
+    ///
+    /// The inverted batches are applied to a copy first, so a failure leaves the text
+    /// and the history unchanged.
     pub fn undo(&mut self) -> Result<Option<Applied>, EditError> {
-        let Some(entry) = self.undo.pop() else {
+        let Some(entry) = self.undo.last() else {
             return Ok(None);
         };
 
-        let inverse = entry.inverse.clone();
-        self.text.apply(&inverse)?;
+        let mut text = self.text.clone();
+        let mut batches = Vec::with_capacity(entry.inverse_batches.len());
+        for batch in entry.inverse_batches.iter().rev() {
+            text.apply(batch)?;
+            batches.push(batch.clone());
+        }
+
+        let entry = self.undo.pop().expect("checked just above");
+        self.text = text;
         self.version += 1;
 
         let selection = entry.selection_before.clone();
@@ -203,19 +216,29 @@ impl Buffer {
 
         Ok(Some(Applied {
             version: self.version,
-            edits: inverse,
+            edits: batches,
             selection,
         }))
     }
 
     /// Redoes the entry that was undone. [`None`] if there is nothing to redo.
+    ///
+    /// The forward batches are applied to a copy first, so a failure leaves the text
+    /// and the history unchanged.
     pub fn redo(&mut self) -> Result<Option<Applied>, EditError> {
-        let Some(entry) = self.redo.pop() else {
+        let Some(entry) = self.redo.last() else {
             return Ok(None);
         };
 
-        let forward = entry.forward.clone();
-        self.text.apply(&forward)?;
+        let mut text = self.text.clone();
+        let mut batches = Vec::with_capacity(entry.forward_batches.len());
+        for batch in &entry.forward_batches {
+            text.apply(batch)?;
+            batches.push(batch.clone());
+        }
+
+        let entry = self.redo.pop().expect("checked just above");
+        self.text = text;
         self.version += 1;
 
         let selection = entry.selection_after.clone();
@@ -223,7 +246,7 @@ impl Buffer {
 
         Ok(Some(Applied {
             version: self.version,
-            edits: forward,
+            edits: batches,
             selection,
         }))
     }
@@ -334,13 +357,13 @@ mod tests {
 
         let undone = buffer.undo().expect("undo").expect("entry");
         assert_eq!(undone.version, 2);
-        assert_eq!(undone.edits, vec![edit(at(0, 1), at(0, 3), "b")]);
+        assert_eq!(undone.edits, vec![vec![edit(at(0, 1), at(0, 3), "b")]]);
         assert_eq!(undone.selection, before);
         assert_eq!(buffer.text(), "abc");
 
         let redone = buffer.redo().expect("redo").expect("entry");
         assert_eq!(redone.version, 3);
-        assert_eq!(redone.edits, vec![edit(at(0, 1), at(0, 2), "XY")]);
+        assert_eq!(redone.edits, vec![vec![edit(at(0, 1), at(0, 2), "XY")]]);
         assert_eq!(redone.selection, after);
         assert_eq!(buffer.text(), "aXYc");
     }
@@ -360,6 +383,85 @@ mod tests {
         assert_eq!(buffer.text(), "");
         assert_eq!(undone.edits.len(), 2);
         assert_eq!(buffer.undo().expect("undo"), None);
+    }
+
+    #[test]
+    fn undoes_an_insert_followed_by_a_backspace() {
+        let mut buffer = buffer("");
+        buffer
+            .apply_edits(0, 7, vec![TextEdit::insert(at(0, 0), "a")], vec![], vec![])
+            .expect("insert");
+        buffer
+            .apply_edits(1, 7, vec![edit(at(0, 0), at(0, 1), "")], vec![], vec![])
+            .expect("delete");
+        assert_eq!(buffer.text(), "");
+
+        let undone = buffer.undo().expect("undo").expect("entry");
+        assert_eq!(buffer.text(), "");
+        assert_eq!(undone.edits.len(), 2);
+
+        let redone = buffer.redo().expect("redo").expect("entry");
+        assert_eq!(buffer.text(), "");
+        assert_eq!(redone.edits.len(), 2);
+    }
+
+    #[test]
+    fn undoes_repeated_deletions_in_one_transaction() {
+        let mut buffer = buffer("abcd");
+        for version in 0..2 {
+            buffer
+                .apply_edits(
+                    version,
+                    3,
+                    vec![edit(at(0, 0), at(0, 1), "")],
+                    vec![],
+                    vec![],
+                )
+                .expect("delete");
+        }
+        assert_eq!(buffer.text(), "cd");
+
+        buffer.undo().expect("undo").expect("entry");
+        assert_eq!(buffer.text(), "abcd");
+        buffer.redo().expect("redo").expect("entry");
+        assert_eq!(buffer.text(), "cd");
+    }
+
+    #[test]
+    fn restores_the_text_across_random_edits_in_one_transaction() {
+        let original = "a😀b\n日本\nx";
+        let mut buffer = buffer(original);
+        let mut state = 0x1234_5678_u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as usize
+        };
+
+        for version in 0..40 {
+            let len = buffer.len_chars();
+            let index = next() % (len + 1);
+            let start = buffer.char_to_position(index).expect("position");
+            let edits = if len > 0 && next() % 2 == 0 {
+                let end = buffer
+                    .char_to_position((index + 1).min(len))
+                    .expect("end position");
+                vec![edit(start, end, "")]
+            } else {
+                let text = if next() % 3 == 0 { "\n" } else { "日" };
+                vec![TextEdit::insert(start, text)]
+            };
+            buffer
+                .apply_edits(version, 42, edits, vec![], vec![])
+                .expect("apply");
+        }
+
+        let expected = buffer.text();
+        buffer.undo().expect("undo").expect("entry");
+        assert_eq!(buffer.text(), original);
+        buffer.redo().expect("redo").expect("entry");
+        assert_eq!(buffer.text(), expected);
     }
 
     #[test]

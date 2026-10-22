@@ -82,15 +82,39 @@ cargo run -p vy-app -- README.md
   `[profile.dev.package."*"]` で依存だけ最適化しています。依存を変えた直後は
   ビルドが長くなります。
 
-### 操作（Phase 1）
+### 操作（Phase 1–2）
 
 | モード | キー                                                                           |
 | :----- | :----------------------------------------------------------------------------- |
 | Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾         |
-| Normal | `x` `d` 選択の削除、`v` 選択モード、`i` `a` 挿入、`u` / `Ctrl-r` 履歴          |
+| Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク         |
+| Normal | `v` 選択モード、`i` `a` 挿入、`u` / `Ctrl-r` 履歴                              |
 | Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置 |
 | Normal | `.` 直前の変更の繰り返し                                                       |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                   |
-| Select | 移動で選択を伸ばす。`d` で削除して Normal へ                                   |
+| Select | 移動で選択を伸ばす。`d` で削除、`y` でコピーして Normal へ                     |
+
+テキストオブジェクトは `iw` / `aw` / `ip` / `ap`、`i"` / `a"`、`i(` / `a(`
+などに対応しています。
 
 キーの全一覧と実装状況は [`docs/keymap.md`](./docs/keymap.md) にあります。
+
+### 設定
+
+`~/.config/vy/settings.json` と `<workspace>/.vy/settings.json`
+を読みます。値だけの設定で、プロジェクト側にコードは置きません。
+
+```json
+{
+  "ui.fontFamily": "monospace",
+  "ui.fontSize": 14,
+  "ui.lineHeight": 20,
+  "ui.lineNumbers": "absolute",
+  "editor.transactionIdleMs": 500,
+  "editor.sequenceTimeoutMs": 1000
+}
+```
+
+`ui.lineNumbers` は `absolute`、`relative`、`off`
+のいずれかです。ファイルを保存すると再読み込みします。`~/.config/vy` の場所は
+`VY_CONFIG_HOME` で変更できます。

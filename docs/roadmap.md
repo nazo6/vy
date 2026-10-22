@@ -57,10 +57,29 @@ flowchart TD
 
 - [ ] `rquickjs` をクライアントに統合し、Promise を進めるジョブキューを回す
 - [ ] `~/.config/vy/init.ts` と `settings.json` の読み込みと反映
+  - `settings.json` の 4
+    層（既定値、ユーザー、プロジェクト、メモリ）は実装済み。`init.ts` は未実装
 - [ ] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
-- [ ] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
+- [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
+  - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`
+    とテキストオブジェクトは実装済み
+  - `init.ts` からの登録はスクリプトホスト待ち
 - [ ] ケイパビリティの宣言と承認の記録（`trusted.json`）
-- [ ] 設定の4層の解決（既定値、ユーザー、プロジェクト、`init.ts`）
+- [x] 設定の4層の解決（既定値、ユーザー、プロジェクト、`init.ts`）
+  - `init.ts` 層はメモリ上に用意し、スクリプトホストから書く経路を残している
+
+#### Phase 2 の進捗
+
+- 2-0: undo/redo のバッチ化（`PROTOCOL_VERSION` 2）、RPC
+  の書き込みスレッド、受信のイベント駆動化
+- 2A: `vy-app` を lib と bin に分割し、設定・キーマップ・コマンドを GPUI
+  非依存にした
+- 2B: `paths` と `config`（4 層、`ui.*` の反映、mtime 監視）
+- 2C: `keymap`（キー列、`when`、カウント、レジスタ、タイムアウト）と `commands`
+- 2E: `y` / `Y`、演算子 `d` /
+  `y`、テキストオブジェクト、行単位レジスタ、単語クラス
+- 残り: 2D（QuickJS、Oxc、`vy-api`、`init.ts`、ケイパビリティ）と
+  2F（型生成、ドキュメント）
 
 ### Phase 3: ペイン・ビュー・Webview
 
@@ -110,6 +129,11 @@ flowchart TD
 | 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する               | [`architecture.md`](./architecture.md)                                           |
 | アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                           | [`protocol.md`](./protocol.md)                                                   |
 | Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                        | [`roadmap.md`](./roadmap.md)                                                     |
+| アンドゥの結果         | 履歴をバッチで保持し、undo は LIFO、redo は FIFO。`edits` はバッチの配列           | [`protocol.md`](./protocol.md)                                                   |
+| クライアントの RPC     | 書き込みは専用スレッド、受信はイベント駆動（16ms ポーリングをやめる）              | [`architecture.md`](./architecture.md)                                           |
+| キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す               | [`keymap.md`](./keymap.md)                                                       |
+| レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                           | [`keymap.md`](./keymap.md)                                                       |
+| 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                    | [`keymap.md`](./keymap.md)                                                       |
 
 ## 残っている論点
 
