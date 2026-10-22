@@ -1,84 +1,81 @@
-# 通信プロトコル仕様 (Client-Server RPC)
+# 通信プロトコル仕様 (MessagePack RPC)
 
-Vy のローカルクライアント（TUI/GUI）とエディタサーバー（ヘッドレスコア）の間は、双方向RPCプロトコルで通信を行います。
-
----
-
-## 1. 接続トランスポート
-
-1. **ローカル単体起動時**:
-   - プロセス内チャネル（Tokio MPSC channel）または Unix Domain Socket。
-2. **リモート開発接続時**:
-   - **SSH stdio**: SSHコマンド経由でリモートの `vy server --stdio` を起動し、標準入出力でバイナリストリーム通信。
-   - **WebSocket / TLS**: 常駐デーモンとして稼働しているリモートVyサーバーへのTCP接続。
+Vy のローカルクライアント（GPUIフロントエンド）とエディタサーバー（ヘッドレスコア）の間は、**Pure RustのMessagePack (`rmp-serde`)** を用いた高速バイナリRPCで通信を行います。
 
 ---
 
-## 2. メッセージ種別
+## 1. シリアライズ方式: Pure Rust MessagePack
 
-プロトコルは基本的に **JSON-RPC 2.0 互換**（またはバイナリシリアライズ）の形式をとります。
+- **採用クレート**: [`rmp-serde`](https://github.com/3Hren/msgpack-rust)
+- **選定理由**:
+  - **C言語依存ゼロ (Pure Rust)**: クロスコンパイルやセキュリティ監査が容易。
+  - **コンパクト & 高速**: JSONと比較してパケットサイズを30〜60%削減し、シリアライズ/デシリアライズCPU時間を大幅短縮。
+  - **動的型との親和性**: TypeScriptプラグイン層（QuickJS）とも型安全かつ自然にマッピング可能。
 
-### (A) Request / Response (同期的・非同期的な要求)
-```json
-// Client -> Server: ファイルオープン要求
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "buffer/open",
-  "params": {
-    "path": "/home/user/project/src/main.rs"
-  }
-}
+---
 
-// Server -> Client: バッファ内容の初期同期
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "buffer_id": 42,
-    "version": 1,
-    "lines": ["fn main() {", "    println!(\"Hello, Vy!\");", "}"]
-  }
-}
+## 2. メッセージエンベロープ仕様
+
+すべてのRPCフレームは、以下のバイナリヘッダーとMessagePackペイロードで構成されます。
+
+```text
++-----------------------+-------------------------+
+| Length (4 bytes, u32) | MessagePack Payload ... |
++-----------------------+-------------------------+
 ```
 
-### (B) Notification (一方向の通知・イベント)
-```json
-// Client -> Server: キー入力による確定差分（ローカル予測適用後）
-{
-  "jsonrpc": "2.0",
-  "method": "buffer/didChange",
-  "params": {
-    "buffer_id": 42,
-    "version": 2,
-    "changes": [
-      { "range": { "start": [1, 27], "end": [1, 27] }, "text": "\n" }
-    ]
-  }
-}
-
-// Server -> Client: LSP診断エラーのプッシュ通知
-{
-  "jsonrpc": "2.0",
-  "method": "diagnostics/publish",
-  "params": {
-    "buffer_id": 42,
-    "diagnostics": [
-      { "line": 1, "severity": "error", "message": "cannot find function" }
-    ]
-  }
+### ペイロードの基本構造 (Rust Enum)
+```rust
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum RpcMessage {
+    /// クライアント -> サーバーへのリクエスト
+    Request {
+        id: u64,
+        method: String,
+        params: rmpv::Value,
+    },
+    /// サーバー -> クライアントへの応答
+    Response {
+        id: u64,
+        result: Result<rmpv::Value, RpcError>,
+    },
+    /// 双方向の一方向通知（イベント / 差分更新）
+    Notification {
+        method: String,
+        params: rmpv::Value,
+    },
 }
 ```
 
 ---
 
-## 3. これから決めること (TODO / 未決定事項)
+## 3. 主要なRPCメソッド例
 
-- [ ] **シリアライゼーション形式の確定**
-  - デバッグやWeb親和性に優れた **JSON-RPC** をベースにするか、
-  - リモートでの転送量削減・シリアライズ高速化のために **MessagePack** や **FlatBuffers / Cap'n Proto** などのゼロコピーバイナリ形式を採用するか。
-- [ ] **差分同期アルゴリズムの選定**
-  - 単純なバージョン番号管理 + テキスト範囲差分（LSP準拠）か、
-  - 一時的なオフラインや回線断からの復帰に強いCRDT / Operational Transformationベースの差分プロトコルにするか。
-- [ ] **認証と暗号化 (Daemon起動時)**
-  - SSHトンネルを前提とすればSSH層に認証・暗号化を委任可能だが、スタンドアローンデーモン時のトークン認証やTLS証明書仕様の策定。
+### (A) バッファ差分通知 (`buffer/did_change`)
+キー入力による変更差分を送信（ローカル側で即時反映された後の確定イベント）。
+```rust
+Notification {
+    method: "buffer/did_change",
+    params: {
+        "buffer_id": 1,
+        "version": 42,
+        "range": { "start": [10, 5], "end": [10, 5] },
+        "text": "let x = 1;",
+    }
+}
+```
+
+### (B) リモートプロセス実行 (`process/spawn`)
+フロントエンドJSから要求されたコマンドをリモートサーバー上で起動。
+```rust
+Request {
+    id: 101,
+    method: "process/spawn",
+    params: {
+        "command": "rg",
+        "args": ["--line-number", "main"],
+        "cwd": "/home/user/project",
+    }
+}
+```

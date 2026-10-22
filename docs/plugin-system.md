@@ -1,120 +1,79 @@
-# プラグインシステム仕様
+# プラグインシステム & 設定仕様 (`init.ts`)
 
-Vy は、Vimのような柔軟な拡張性を維持しながら、Luaのような型の緩さやWASMのコンパイル負担を排除した、**「TypeScript直接実行による型安全なプラグイン基盤」** を提供します。
-
----
-
-## 1. ランタイム構成: `rquickjs` + `oxc_transform`
-
-- **実行エンジン**: Fabrice Bellard氏作の超軽量JSエンジン QuickJS をRustに統合（[`rquickjs`](https://github.com/DelSkayn/rquickjs)）。
-- **TypeScript即時コンパイル**: プラグイン読込時に、Rust製超高速コンパイラ [`oxc_transform`](https://github.com/oxc-project/oxc) を挟み、**0.1ms未満で型注釈を除去して即座に実行**。
-- **スペック**:
-  - バイナリサイズ増加: **約 +3 MB**
-  - メモリ消費: **約 2 MB / インスタンス**
-  - 起動時間: **1 ms 未満**
-
-ユーザーはビルドステップ（npm buildやtsc）を挟むことなく、**`.ts` ファイルを保存するだけで即座にリロード** できます。
+Vy は、**「フロントエンド主導のTypeScript実行環境」** を基本とし、APIを通じて透過的にローカルとリモートを切り替える設計を採用しています。
 
 ---
 
-## 2. アーキテクチャとAPIパターン
+## 1. 設定ファイル: `init.ts` (Neovimの `init.lua` モデル)
 
-### (A) プロバイダーパターン (Provider Pattern)
-単なるコマンド実行だけでなく、LSPやコード補完などの常駐型言語機能を型安全に提供します。
+設定はすべてTypeScriptで記述します。エディタが `vy-api.d.ts` を提供するため、VS CodeやVy自身で完全な型補完・静的型チェックが効きます。
 
 ```typescript
-import { editor, CompletionItem, CompletionContext, Position } from "vy-api";
+// ~/.config/vy/init.ts
+import { editor, keymap } from "vy-api";
 
-// 補完プロバイダーの登録例
-editor.languages.registerCompletionProvider({
-  language: "rust",
-  triggerCharacters: [".", "::"],
-  async provideCompletions(document, position, context) {
-    return [
-      { label: "clone()", insertText: "clone()", kind: "method" },
-      { label: "to_string()", insertText: "to_string()", kind: "method" }
-    ];
+// 1. エディタ外観・基本設定 (フロントエンドで即時反映)
+editor.config.set({
+  theme: "one-dark",
+  fontFamily: "JetBrains Mono",
+  fontSize: 14,
+  lineNumbers: "relative",
+});
+
+// 2. Helix風キーバインドのカスタマイズ (Selection -> Action)
+keymap.bind("normal", "space f f", async () => {
+  await editor.commands.execute("find_files");
+});
+
+// 3. LSP設定
+editor.lsp.setup("rust-analyzer", {
+  serverPath: "rust-analyzer",
+  settings: {
+    checkOnSave: { command: "clippy" }
   }
 });
 ```
 
-### (B) 宣言的ステートフルウィジェット (UI抽象化)
-プラグインがUI描画ループを直接抱えるのではなく、**「構造」** と **「データ」** のみを宣言します。
-- 検索バーのタイピングや、リストの上下移動（`<C-n>`, `<C-p>`）は手元のローカルクライアントがネイティブに0msで即時描画します。
-- これにより、プラグインがリモートサーバー側で動作していても、操作のカクつきやネットワーク遅延が一切発生しません。
-
 ---
 
-## 3. 実装例: Telescope風ファジーファインダー
+## 2. 実行場所のアーキテクチャ: 「フロント主導 + 透過的リモートプロキシ」
 
-```typescript
-import { editor, FloatingWindow, Process } from "vy-api";
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant FrontendJS as Frontend QuickJS (init.ts / UI Plugin)
+    participant CoreProxy as Frontend Core Bridge
+    participant RemoteServer as Remote Core / Server
+    participant OS as Remote OS / Process
 
-editor.registerCommand("find_files", async () => {
-  let activeProcess: Process | null = null;
-
-  // 1. フローティングウィンドウを開く (TUI/GUI共通の宣言的レイアウト)
-  const modal = await editor.ui.openFloatingWindow({
-    title: "Find Files (ripgrep)",
-    width: "80%",
-    height: "60%",
-    layout: {
-      type: "split",
-      direction: "horizontal",
-      left: { type: "list", id: "result_list" },
-      right: { type: "preview", id: "preview_pane" }
-    }
-  });
-
-  // 2. 検索バーの入力イベント (50msデバウンス)
-  modal.onInput(async (query: string) => {
-    if (activeProcess) activeProcess.kill();
-    modal.clearList("result_list");
-    if (!query) return;
-
-    // リモートサーバー側で ripgrep を非同期ストリーミング実行
-    activeProcess = editor.process.spawn("rg", [
-      "--line-number",
-      "--column",
-      "--smart-case",
-      query
-    ]);
-
-    activeProcess.onLine((line: string) => {
-      const parsed = parseRipgrepOutput(line);
-      modal.appendListItem("result_list", {
-        label: `${parsed.file}:${parsed.line}  ${parsed.text}`,
-        data: parsed
-      });
-    });
-  });
-
-  // 3. 選択項目のフォーカス移動時にプレビュー更新
-  modal.onFocusItem("result_list", (item) => {
-    modal.updatePreview("preview_pane", {
-      filePath: item.data.file,
-      highlightLine: item.data.line
-    });
-  });
-
-  // 4. 決定キー (<CR>) でファイルを開く
-  modal.onSelect("result_list", (item) => {
-    editor.workspace.openFile(item.data.file, {
-      line: item.data.line,
-      column: item.data.col
-    });
-    modal.close();
-  });
-});
+    Note over FrontendJS: 常に手元のローカルPCで実行 (0ms)
+    User->>FrontendJS: コマンド実行 / UIイベント
+    FrontendJS->>CoreProxy: editor.remote.spawn("cargo", ["check"])
+    
+    Note over CoreProxy,RemoteServer: 【透過的リモートプロキシ】<br>APIが内部でMessagePack RPCを発行
+    CoreProxy->>RemoteServer: RPC: process/spawn
+    RemoteServer->>OS: リモートでプロセス実行
+    OS-->>RemoteServer: stdout ストリーム
+    RemoteServer-->>CoreProxy: RPC: stream_chunk
+    CoreProxy-->>FrontendJS: onData(chunk)
 ```
 
+### なぜこの設計が最高なのか？
+1. **設定のポータビリティ**:
+   - `init.ts` は常に手元のローカルPCで評価されます。SSH接続先のサーバーに設定ファイルを配布・同期する必要はありません。
+2. **UI操作のゼロ遅延**:
+   - ウィンドウの分割、Webviewの作成、テーマ変更などのUI操作はネットワークを経由せず、フロントエンドで即座に実行されます。
+3. **リモート操作の透過性**:
+   - `editor.fs` や `editor.remote` などのAPIを呼ぶと、コア層が自動的に「現在接続中のリモートサーバー」に対するMessagePack RPCへルーティングします。
+
 ---
 
-## 4. これから決めること (TODO / 未決定事項)
+## 3. 大量データ処理のための「バックエンドプラグイン」オプション
 
-- [ ] **プラグインの権限管理モデル (Permissions)**
-  - ファイルシステムアクセス、ネットワーク通信、外部プロセス実行をDenoのようにサンドボックス許可制にするか。
-- [ ] **パッケージ管理と配布形式**
-  - Gitリポジトリ直のクローン（Neovim風）か、npmレジストリのような中央インフラを用意するか、GitHub Releases/OCIレジストリを利用するか。
-- [ ] **WASMプラグインの併用サポート**
-  - TypeScriptだけでなく、RustやZig、C++等で書かれた高負荷計算プラグイン向けにWASM (Wasmtime) もサポートするか。
+フロントエンドでJSを動かす場合、ripgrepなどの検索結果が数十万行に及ぶと、生テキストをすべて手元に転送するのは帯域とメモリを浪費します。
+
+そのため、プラグインは必要に応じて **`backend.ts`（リモートサーバー側QuickJSで動作）** を併設できるハイブリッド構成をサポートします：
+- **`frontend.ts`**: UIウィジェットの定義、Webview表示、キー受付
+- **`backend.ts`**: リモートサーバー側での重いデータパース、ローカルファイル監視、外部プロセスとのパイプ結合
+- **通信**: `postMessage` による型安全なチャネル通信
