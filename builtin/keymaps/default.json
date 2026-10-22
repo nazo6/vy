@@ -80,6 +80,11 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "g v",
+        "command": "vy.edit.last_visual",
+        "when": "normalMode"
+    },
+    {
         "keys": "G",
         "command": "vy.motion.document_end",
         "when": "mode != 'insert'"

@@ -76,6 +76,71 @@ enum TextObject {
     Quote(char),
 }
 
+/// The part of the editor that belongs to one pane.
+///
+/// The text and the change history stay with the document. Cursor, selection, mode,
+/// and pending operators are independent for each pane that shows the document
+/// (`docs/panes.md` and ADR 0003).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewState {
+    mode: Mode,
+    anchor: Position,
+    head: Position,
+    operator: Option<Operator>,
+    operator_count: Option<u32>,
+    text_object: Option<TextObjectKind>,
+    preferred_character: Option<u32>,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Normal,
+            anchor: Position::new(0, 0),
+            head: Position::new(0, 0),
+            operator: None,
+            operator_count: None,
+            text_object: None,
+            preferred_character: None,
+        }
+    }
+}
+
+impl ViewState {
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Cursor used for drawing. The selection start in Normal, otherwise the end.
+    pub fn cursor(&self) -> Position {
+        match self.mode {
+            Mode::Normal => self.ordered().0,
+            _ => self.head,
+        }
+    }
+
+    pub fn selection(&self) -> Range {
+        let (start, end) = self.ordered();
+        Range::new(start, end)
+    }
+
+    pub fn operator_pending(&self) -> bool {
+        self.operator.is_some()
+    }
+
+    pub fn text_object_pending(&self) -> bool {
+        self.text_object.is_some()
+    }
+
+    fn ordered(&self) -> (Position, Position) {
+        if self.anchor <= self.head {
+            (self.anchor, self.head)
+        } else {
+            (self.head, self.anchor)
+        }
+    }
+}
+
 /// Motions shared by normal movement and operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Motion {
@@ -201,6 +266,8 @@ pub struct Editor {
     text_object: Option<TextObjectKind>,
     /// Last change, replayed by `.`.
     last_change: Option<Repeat>,
+    /// Last Visual range. `gv` restores it.
+    last_visual: Option<Range>,
     /// Text inserted in the current Insert session, replayed by `.`.
     insert_buffer: String,
     /// Column kept across vertical moves. Updated by horizontal moves and dropped by others.
@@ -229,6 +296,7 @@ impl Editor {
             operator_count: None,
             text_object: None,
             last_change: None,
+            last_visual: None,
             insert_buffer: String::new(),
             preferred_character: None,
         };
@@ -242,6 +310,7 @@ impl Editor {
         self.version = version;
         self.mode = Mode::Normal;
         self.last_edit = None;
+        self.last_visual = None;
         self.insert_buffer.clear();
         self.preferred_character = None;
         self.select_one_char(Position::new(0, 0));
@@ -331,6 +400,63 @@ impl Editor {
     pub fn selection(&self) -> Range {
         let (start, end) = self.ordered();
         Range::new(start, end)
+    }
+
+    /// Copies the pane-local state out of the editor.
+    pub fn view_state(&self) -> ViewState {
+        ViewState {
+            mode: self.mode,
+            anchor: self.anchor,
+            head: self.head,
+            operator: self.operator,
+            operator_count: self.operator_count,
+            text_object: self.text_object,
+            preferred_character: self.preferred_character,
+        }
+    }
+
+    /// Replaces the pane-local state, clamping positions to the current text.
+    pub fn set_view_state(&mut self, state: ViewState) {
+        self.mode = state.mode;
+        self.anchor = self.clamp(state.anchor);
+        self.head = self.clamp(state.head);
+        self.operator = state.operator;
+        self.operator_count = state.operator_count;
+        self.text_object = state.text_object;
+        self.preferred_character = state.preferred_character;
+
+        // Normal mode always keeps one character selected, even for a fresh pane.
+        if self.mode == Mode::Normal && self.anchor == self.head {
+            self.select_one_char(self.head);
+        }
+    }
+
+    /// Clamps a stored pane state to the current text after another pane edited it.
+    pub fn clamp_view_state(&self, mut state: ViewState) -> ViewState {
+        state.anchor = self.clamp(state.anchor);
+        state.head = self.clamp(state.head);
+        state
+    }
+
+    /// Remembers a Visual range so `gv` can restore it from any pane.
+    pub fn set_last_visual(&mut self, range: Range) {
+        let start = self.clamp(range.start);
+        let end = self.clamp(range.end);
+        self.last_visual = Some(Range::new(start, end));
+    }
+
+    /// Restores the last Visual range. Does nothing when none was recorded.
+    pub fn select_last_visual(&mut self) -> Action {
+        let Some(range) = self.last_visual else {
+            return Action::None;
+        };
+
+        self.mode = Mode::Select;
+        self.anchor = self.clamp(range.start);
+        self.head = self.clamp(range.end);
+        self.last_edit = None;
+        self.preferred_character = None;
+        Action::None
     }
 
     /// Whether `d` or `y` is waiting for a motion or text object.
@@ -427,6 +553,7 @@ impl Editor {
             BuiltinCommand::PasteAfter => self.paste(count, false),
             BuiltinCommand::PasteBefore => self.paste(count, true),
             BuiltinCommand::Repeat => self.repeat_last(count),
+            BuiltinCommand::LastVisual => self.select_last_visual(),
             BuiltinCommand::InsertHere => {
                 let start = self.ordered().0;
                 self.begin_insert(start, start);
@@ -2048,5 +2175,59 @@ mod tests {
 
         typed(&mut editor, "X");
         assert_eq!(editor.text(), "abcX\nde");
+    }
+
+    #[test]
+    fn view_state_can_be_swapped_between_panes() {
+        let mut editor = Editor::with_text("one\ntwo\nthree", 0);
+        let first = editor.view_state();
+
+        editor.set_selections(&[Selection::caret(at(2, 1))]);
+        let second = editor.view_state();
+        assert_eq!(second.cursor(), at(2, 1));
+
+        editor.set_view_state(first);
+        assert_eq!(editor.cursor(), at(0, 0));
+
+        editor.set_view_state(second);
+        assert_eq!(editor.cursor(), at(2, 1));
+    }
+
+    #[test]
+    fn a_fresh_pane_still_selects_one_character_in_normal_mode() {
+        let mut editor = Editor::with_text("abc", 0);
+        let mut state = editor.view_state();
+        state.anchor = at(0, 0);
+        state.head = at(0, 0);
+
+        editor.set_view_state(state);
+        assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 1)));
+    }
+
+    #[test]
+    fn clamps_a_stored_view_state_to_a_shorter_document() {
+        let mut editor = Editor::with_text("one\ntwo\nthree", 0);
+        editor.set_selections(&[Selection::caret(at(2, 4))]);
+        let stored = editor.view_state();
+
+        editor.reset("a", 1);
+        let clamped = editor.clamp_view_state(stored);
+        assert_eq!(clamped.cursor(), at(0, 1));
+    }
+
+    #[test]
+    fn gv_restores_the_last_visual_range() {
+        let mut editor = Editor::with_text("one two", 0);
+
+        press(&mut editor, "v");
+        press(&mut editor, "e");
+        let range = editor.selection();
+        editor.set_last_visual(range);
+        press(&mut editor, "Esc");
+
+        press(&mut editor, "g");
+        press(&mut editor, "v");
+        assert_eq!(editor.mode(), Mode::Select);
+        assert_eq!(editor.selection(), range);
     }
 }

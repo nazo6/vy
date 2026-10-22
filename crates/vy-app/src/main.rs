@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use vy_app::commands::{BuiltinCommand, CommandRegistry, PaneCommand};
 use vy_app::config::{Config, LineNumbers};
-use vy_app::editor::{Action, Editor, Key, Mode, Transaction};
+use vy_app::editor::{Action, Editor, Key, Mode, Transaction, ViewState};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
 use vy_app::paths::Paths;
 use vy_app::plugin_host::{
@@ -57,12 +57,6 @@ struct DocumentState {
     editor: Editor,
     /// Whether a snapshot has filled this document.
     loaded: bool,
-    /// Text the input method is still converting. It never reaches the core.
-    preedit: String,
-    /// Range the input method selected inside the preedit, in UTF-16 code units.
-    preedit_selection: Option<std::ops::Range<usize>>,
-    /// First line drawn in this view.
-    scroll_top: usize,
 }
 
 impl DocumentState {
@@ -74,9 +68,6 @@ impl DocumentState {
             uri,
             editor,
             loaded: false,
-            preedit: String::new(),
-            preedit_selection: None,
-            scroll_top: 0,
         }
     }
 }
@@ -85,8 +76,30 @@ impl DocumentState {
 struct PaneState {
     id: PaneId,
     document_id: Option<u64>,
+    /// Cursor, selection, and mode of this pane.
+    view: ViewState,
+    /// Text the input method is still converting. It never reaches the core.
+    preedit: String,
+    /// Range the input method selected inside the preedit, in UTF-16 code units.
+    preedit_selection: Option<std::ops::Range<usize>>,
+    /// First line drawn in this pane.
+    scroll_top: usize,
     /// Rows that fit in this pane. Updated on every render.
     viewport_rows: usize,
+}
+
+impl PaneState {
+    fn new(id: PaneId, document_id: Option<u64>) -> Self {
+        Self {
+            id,
+            document_id,
+            view: ViewState::default(),
+            preedit: String::new(),
+            preedit_selection: None,
+            scroll_top: 0,
+            viewport_rows: VISIBLE_LINES,
+        }
+    }
 }
 
 struct EditorView {
@@ -257,6 +270,108 @@ impl EditorView {
         self.fallback.editor.set_transaction_idle(idle);
     }
 
+    fn active_view(&self) -> Option<ViewState> {
+        self.active_pane_state().map(|pane| pane.view)
+    }
+
+    /// Copies the active pane's cursor and mode into the document editor.
+    ///
+    /// The editor is the implementation used by commands, so only the active pane
+    /// needs to be synchronized. Other panes keep drawing their stored state.
+    fn activate_active_view(&mut self) {
+        let Some(pane_id) = self.active_pane else {
+            return;
+        };
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return;
+        };
+        let view = pane.view;
+        let Some(document_id) = pane.document_id else {
+            return;
+        };
+        let last_visual = (view.mode() == Mode::Select).then(|| view.selection());
+
+        let Some(document) = self.documents.get_mut(&document_id) else {
+            return;
+        };
+        if let Some(range) = last_visual {
+            document.editor.set_last_visual(range);
+        }
+        document.editor.set_view_state(view);
+    }
+
+    /// Copies the document editor's cursor and mode back into the active pane.
+    fn store_active_view(&mut self) {
+        let Some(pane_id) = self.active_pane else {
+            return;
+        };
+        let Some(document_id) = self.panes.get(&pane_id).and_then(|pane| pane.document_id) else {
+            return;
+        };
+        let Some(document) = self.documents.get(&document_id) else {
+            return;
+        };
+        let view = document.editor.view_state();
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.view = view;
+        }
+    }
+
+    fn switch_active_pane(&mut self, pane: Option<PaneId>) {
+        if self.active_pane == pane {
+            return;
+        }
+        self.store_active_view();
+        self.active_pane = pane;
+        self.activate_active_view();
+    }
+
+    fn clamp_views_for_document(&mut self, document_id: u64) {
+        let Some(editor) = self
+            .documents
+            .get(&document_id)
+            .map(|document| &document.editor)
+        else {
+            return;
+        };
+        let clamped: Vec<(PaneId, ViewState)> = self
+            .panes
+            .iter()
+            .filter(|(_, pane)| pane.document_id == Some(document_id))
+            .map(|(pane_id, pane)| (*pane_id, editor.clamp_view_state(pane.view)))
+            .collect();
+
+        for (pane_id, view) in clamped {
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                pane.view = view;
+            }
+        }
+    }
+
+    /// Keeps other panes of the active document inside the text after a local edit.
+    fn clamp_active_views(&mut self) {
+        if let Some(document_id) = self.active_document_id() {
+            self.clamp_views_for_document(document_id);
+            self.activate_active_view();
+        }
+    }
+
+    fn reset_views_for_document(&mut self, document_id: u64) {
+        let view = self
+            .documents
+            .get(&document_id)
+            .map(|document| document.editor.view_state())
+            .unwrap_or_default();
+        for pane in self.panes.values_mut() {
+            if pane.document_id == Some(document_id) {
+                pane.view = view;
+                pane.preedit.clear();
+                pane.preedit_selection = None;
+                pane.scroll_top = 0;
+            }
+        }
+    }
+
     /// Starts listeners for the script thread. Events and host requests arrive on
     /// separate channels; neither blocks the UI.
     fn start_script(&mut self, cx: &mut Context<Self>) {
@@ -359,6 +474,7 @@ impl EditorView {
 
     /// Answers a call from the shim with the current client state.
     fn handle_host_request(&mut self, request: HostRequest) {
+        self.activate_active_view();
         let document = self.document_info();
         let workspace = workspace_info();
         let Some(plugin) = self.plugin.as_ref() else {
@@ -397,9 +513,14 @@ impl EditorView {
             self.keymap.set_sequence_timeout(timeout);
         }
 
+        self.store_active_view();
+
         match outcome.action {
             HostAction::None => {}
-            HostAction::Edit(transaction) => self.send_transaction(transaction),
+            HostAction::Edit(transaction) => {
+                self.send_transaction(transaction);
+                self.clamp_active_views();
+            }
             HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
             HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
             HostAction::Pane(command) => self.run_pane_command(command),
@@ -571,18 +692,17 @@ impl EditorView {
             .and_then(Value::as_u64)
             .unwrap_or(self.window_id);
         self.layout = get(params, "layout").and_then(decode_value::<LayoutNode>);
-        self.active_pane = get(params, "active_pane").and_then(Value::as_u64);
+        let next_active = get(params, "active_pane").and_then(Value::as_u64);
+        self.switch_active_pane(next_active);
 
         let mut pane_ids = Vec::new();
         if let Some(layout) = &self.layout {
             collect_pane_ids(layout, &mut pane_ids);
         }
         for pane_id in &pane_ids {
-            self.panes.entry(*pane_id).or_insert_with(|| PaneState {
-                id: *pane_id,
-                document_id: None,
-                viewport_rows: VISIBLE_LINES,
-            });
+            self.panes
+                .entry(*pane_id)
+                .or_insert_with(|| PaneState::new(*pane_id, None));
         }
         self.panes.retain(|pane_id, _| pane_ids.contains(pane_id));
 
@@ -592,6 +712,7 @@ impl EditorView {
             .filter_map(|pane| pane.document_id)
             .collect();
         self.documents.retain(|id, _| used.contains(id));
+        self.activate_active_view();
     }
 
     fn open_document(&mut self) {
@@ -612,16 +733,32 @@ impl EditorView {
             return;
         };
 
-        self.panes
-            .entry(pane_id)
-            .or_insert_with(|| PaneState {
-                id: pane_id,
-                document_id: None,
-                viewport_rows: VISIBLE_LINES,
-            })
-            .document_id = Some(document_id);
+        let inherited = if self.documents.contains_key(&document_id) {
+            self.active_view().unwrap_or_default()
+        } else {
+            ViewState::default()
+        };
+        let inherited_scroll = if self.documents.contains_key(&document_id) {
+            self.active_pane_state()
+                .map(|pane| pane.scroll_top)
+                .unwrap_or_default()
+        } else {
+            0
+        };
+        match self.panes.entry(pane_id) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().document_id = Some(document_id);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let mut pane = PaneState::new(pane_id, Some(document_id));
+                pane.view = inherited;
+                pane.scroll_top = inherited_scroll;
+                entry.insert(pane);
+            }
+        }
         if self.active_pane.is_none() {
             self.active_pane = Some(pane_id);
+            self.activate_active_view();
         }
 
         if !self.documents.contains_key(&document_id) {
@@ -655,14 +792,13 @@ impl EditorView {
             .and_then(Value::as_u64)
             .unwrap_or_default();
 
+        let mut reset = false;
         if let Some(document) = self.documents.get_mut(&document_id) {
             // A second pane on the same buffer asks for a snapshot too. Keep the
-            // cursor when the copy is already at that version.
+            // per-pane cursor when the copy is already at that version.
             if !document.loaded || document.editor.version() != version {
                 document.editor.reset(text, version);
-                document.preedit.clear();
-                document.preedit_selection = None;
-                document.scroll_top = 0;
+                reset = true;
             }
             document.loaded = true;
             if self.frame_log {
@@ -672,6 +808,10 @@ impl EditorView {
                     started.elapsed().as_secs_f64() * 1000.0
                 );
             }
+        }
+        if reset {
+            self.reset_views_for_document(document_id);
+            self.activate_active_view();
         }
 
         let (line_count, version) = self
@@ -698,6 +838,7 @@ impl EditorView {
     }
 
     fn received_history(&mut self, value: &Value) {
+        self.activate_active_view();
         let version = get(value, "version")
             .and_then(Value::as_u64)
             .unwrap_or_else(|| self.editor().version());
@@ -708,11 +849,20 @@ impl EditorView {
             .and_then(decode_value::<Vec<Selection>>)
             .unwrap_or_default();
 
-        let Some(document) = self.active_document_mut() else {
-            return;
+        let result = {
+            let Some(document) = self.active_document_mut() else {
+                return;
+            };
+            document.editor.apply_history(&batches, version, &selection)
         };
-        if let Err(error) = document.editor.apply_history(&batches, version, &selection) {
+        if let Err(error) = result {
             self.status = format!("could not apply the history: {error}").into();
+        }
+
+        self.store_active_view();
+        if let Some(document_id) = self.active_document_id() {
+            self.clamp_views_for_document(document_id);
+            self.activate_active_view();
         }
     }
 
@@ -731,6 +881,7 @@ impl EditorView {
 
         // Printable text reaches Insert mode through `replace_text_in_range`, which every
         // platform calls for the same key press. Inserting here would duplicate it.
+        self.activate_active_view();
         if self.editor().mode() == Mode::Insert && matches!(key, Key::Char(_)) {
             return;
         }
@@ -750,11 +901,9 @@ impl EditorView {
 
     /// Passes the key to the keymap and runs the command it resolves to.
     fn apply_key(&mut self, key: Key) -> bool {
-        let before = (
-            self.editor().mode(),
-            self.editor().selection(),
-            self.editor().version(),
-        );
+        self.activate_active_view();
+        let before = self.active_view();
+        let before_version = self.editor().version();
 
         let selection = self.editor().selection();
         let context = KeyContext {
@@ -803,14 +952,11 @@ impl EditorView {
         if self.editor().mode() != Mode::Insert {
             self.clear_preedit();
         }
+        self.store_active_view();
+        self.clamp_active_views();
 
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
-        let changed = before
-            != (
-                self.editor().mode(),
-                self.editor().selection(),
-                self.editor().version(),
-            );
+        let changed = before != self.active_view() || before_version != self.editor().version();
 
         self.ensure_cursor_visible();
         changed
@@ -837,7 +983,7 @@ impl EditorView {
         };
         let (viewport_rows, scroll_top, line_count) = (
             pane.viewport_rows,
-            document.scroll_top,
+            pane.scroll_top,
             document.editor.line_count(),
         );
 
@@ -850,8 +996,8 @@ impl EditorView {
         let next = scroll_lines(scroll_top, -lines, viewport_rows, line_count);
 
         if next != scroll_top {
-            if let Some(document) = self.active_document_mut() {
-                document.scroll_top = next;
+            if let Some(pane) = self.active_pane_state_mut() {
+                pane.scroll_top = next;
             }
             cx.notify();
         }
@@ -975,16 +1121,16 @@ impl EditorView {
 
     /// Collects the lines visible in one pane.
     fn visible_lines(&self, pane: &PaneState, document: &DocumentState) -> Vec<Div> {
-        let start = document.scroll_top;
+        let start = pane.scroll_top;
         let end = (start + pane.viewport_rows.max(1)).min(document.editor.line_count());
 
         (start..end)
-            .map(|line| self.render_line(document, line))
+            .map(|line| self.render_line(pane, document, line))
             .collect()
     }
 
-    fn render_line(&self, document: &DocumentState, line_number: usize) -> Div {
-        let cursor_line = document.editor.cursor().line as usize;
+    fn render_line(&self, pane: &PaneState, document: &DocumentState, line_number: usize) -> Div {
+        let cursor_line = pane.view.cursor().line as usize;
         let mut row = div().flex().h(px(self.line_height())).items_center();
 
         if let Some(label) = self.config.line_numbers().label(line_number, cursor_line) {
@@ -1001,13 +1147,13 @@ impl EditorView {
         }
 
         let text = document.editor.line(line_number).unwrap_or_default();
-        let cursor = document.editor.cursor();
+        let cursor = pane.view.cursor();
 
         if line_number as u32 != cursor.line {
             return row.child(text);
         }
 
-        let (display, highlight) = self.cursor_marker(document, &text);
+        let (display, highlight) = self.cursor_marker(pane, &text);
 
         row.child(StyledText::new(display).with_highlights(vec![(
             highlight,
@@ -1022,20 +1168,16 @@ impl EditorView {
     ///
     /// The line is shaped once as a whole. Splitting it into several elements would
     /// change the glyphs and widths under the cursor.
-    fn cursor_marker(
-        &self,
-        document: &DocumentState,
-        text: &str,
-    ) -> (String, std::ops::Range<usize>) {
+    fn cursor_marker(&self, pane: &PaneState, text: &str) -> (String, std::ops::Range<usize>) {
         let mut display = text.to_string();
 
-        if document.editor.mode() == Mode::Insert {
-            let caret = utf16_to_byte(&display, document.editor.cursor().character);
+        if pane.view.mode() == Mode::Insert {
+            let caret = utf16_to_byte(&display, pane.view.cursor().character);
 
-            if !document.preedit.is_empty() {
+            if !pane.preedit.is_empty() {
                 // The preedit is drawn on the cursor line without entering the buffer.
-                display.insert_str(caret, &document.preedit);
-                let end = caret + document.preedit.len();
+                display.insert_str(caret, &pane.preedit);
+                let end = caret + pane.preedit.len();
                 return (display, caret..end);
             }
 
@@ -1054,11 +1196,9 @@ impl EditorView {
             .chars()
             .map(|character| character.len_utf16() as u32)
             .sum();
-        let Some((from, to)) = selection_on_line(
-            document.editor.selection(),
-            document.editor.cursor().line,
-            length,
-        ) else {
+        let Some((from, to)) =
+            selection_on_line(pane.view.selection(), pane.view.cursor().line, length)
+        else {
             // An empty selection at the end of the document still needs a marker.
             display.push(' ');
             let start = display.len() - 1;
@@ -1082,8 +1222,8 @@ impl EditorView {
 impl EditorView {
     /// Length of the preedit text in UTF-16 code units.
     fn preedit_len_utf16(&self) -> usize {
-        self.active_document()
-            .map(|document| document.preedit.encode_utf16().count())
+        self.active_pane_state()
+            .map(|pane| pane.preedit.encode_utf16().count())
             .unwrap_or_default()
     }
 
@@ -1093,9 +1233,9 @@ impl EditorView {
     }
 
     fn clear_preedit(&mut self) {
-        if let Some(document) = self.active_document_mut() {
-            document.preedit.clear();
-            document.preedit_selection = None;
+        if let Some(pane) = self.active_pane_state_mut() {
+            pane.preedit.clear();
+            pane.preedit_selection = None;
         }
     }
 
@@ -1107,11 +1247,14 @@ impl EditorView {
         let Some(document) = self.active_document() else {
             return String::new();
         };
-        if document.preedit.is_empty() {
+        let Some(pane) = self.active_pane_state() else {
+            return String::new();
+        };
+        if pane.preedit.is_empty() {
             return document.editor.text_utf16(range);
         }
 
-        let preedit = &document.preedit;
+        let preedit = &pane.preedit;
         let caret = self.caret_utf16();
         let preedit_end = caret + preedit.encode_utf16().count();
         let mut text = String::new();
@@ -1141,7 +1284,10 @@ impl EditorView {
     }
 
     fn commit_text(&mut self, text: &str) {
+        self.activate_active_view();
         let action = self.editor_mut().insert_commit(text);
+        self.store_active_view();
+        self.clamp_active_views();
         if let Action::Edit(transaction) = action {
             self.send_transaction(transaction);
             self.ensure_cursor_visible();
@@ -1176,34 +1322,46 @@ impl EditorView {
 
     /// Moves the active viewport just enough to show the cursor.
     fn ensure_cursor_visible(&mut self) {
-        let Some(pane) = self.active_pane_state() else {
-            return;
+        let (line, rows, scroll_top, total) = {
+            let Some(pane) = self.active_pane_state() else {
+                return;
+            };
+            let Some(document) = self.active_document() else {
+                return;
+            };
+            (
+                pane.view.cursor().line as usize,
+                pane.viewport_rows,
+                pane.scroll_top,
+                document.editor.line_count(),
+            )
         };
-        let viewport_rows = pane.viewport_rows;
-        let Some(document) = self.active_document_mut() else {
-            return;
-        };
-        document.scroll_top = scroll_to_show(
-            document.editor.cursor().line as usize,
-            document.scroll_top,
-            viewport_rows,
-            document.editor.line_count(),
-        );
+
+        let next = scroll_to_show(line, scroll_top, rows, total);
+        if let Some(pane) = self.active_pane_state_mut() {
+            pane.scroll_top = next;
+        }
     }
 
     fn clamp_scroll(&mut self) {
-        let Some(pane) = self.active_pane_state() else {
-            return;
+        let (rows, scroll_top, total) = {
+            let Some(pane) = self.active_pane_state() else {
+                return;
+            };
+            let Some(document) = self.active_document() else {
+                return;
+            };
+            (
+                pane.viewport_rows,
+                pane.scroll_top,
+                document.editor.line_count(),
+            )
         };
-        let viewport_rows = pane.viewport_rows;
-        let Some(document) = self.active_document_mut() else {
-            return;
-        };
-        document.scroll_top = clamp_scroll_top(
-            document.scroll_top,
-            viewport_rows,
-            document.editor.line_count(),
-        );
+
+        let next = clamp_scroll_top(scroll_top, rows, total);
+        if let Some(pane) = self.active_pane_state_mut() {
+            pane.scroll_top = next;
+        }
     }
 }
 
@@ -1221,6 +1379,7 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
+        self.activate_active_view();
         let length = self.editor().len_utf16() + self.preedit_len_utf16();
         let end = range_utf16.end.min(length);
         let start = range_utf16.start.min(end);
@@ -1234,8 +1393,10 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        self.activate_active_view();
         let document = self.active_document()?;
-        if document.preedit.is_empty() {
+        let pane = self.active_pane_state()?;
+        if pane.preedit.is_empty() {
             let selection = document.editor.selection();
             let start = document.editor.utf16_offset(selection.start);
             let end = document.editor.utf16_offset(selection.end);
@@ -1246,7 +1407,7 @@ impl EntityInputHandler for EditorView {
         }
 
         let caret = self.caret_utf16();
-        let range = document
+        let range = pane
             .preedit_selection
             .clone()
             .unwrap_or_else(|| 0..self.preedit_len_utf16());
@@ -1314,6 +1475,7 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.activate_active_view();
         if self.editor().mode() != Mode::Insert {
             // Typing in Normal or Select is a command, not text. Drop any preedit left
             // over from a mode change during composition.
@@ -1325,10 +1487,10 @@ impl EntityInputHandler for EditorView {
             return;
         }
 
-        if let Some(document) = self.active_document_mut() {
-            document.preedit.clear();
-            document.preedit.push_str(new_text);
-            document.preedit_selection = new_selected_range_utf16;
+        if let Some(pane) = self.active_pane_state_mut() {
+            pane.preedit.clear();
+            pane.preedit.push_str(new_text);
+            pane.preedit_selection = new_selected_range_utf16;
         }
         cx.notify();
     }
@@ -1340,7 +1502,9 @@ impl EntityInputHandler for EditorView {
         window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        self.activate_active_view();
         let document = self.active_document()?;
+        let scroll_top = self.active_pane_state().map(|pane| pane.scroll_top)?;
         let position = document.editor.position_at_utf16(range_utf16.start);
         let line = document.editor.line(position.line as usize)?;
         let prefix = line.get(..utf16_to_byte(&line, position.character))?;
@@ -1364,7 +1528,7 @@ impl EntityInputHandler for EditorView {
             width = shaped.x_for_index(prefix.len());
         }
 
-        let row = (position.line as usize).saturating_sub(document.scroll_top);
+        let row = (position.line as usize).saturating_sub(scroll_top);
         let origin = element_bounds.origin
             + point(
                 px(self.gutter_width(document.editor.line_count())) + width,
@@ -1408,7 +1572,8 @@ impl Render for EditorView {
             ))
             .child(self.status.clone());
 
-        let cursor = self.editor().cursor();
+        let active_view = self.active_view().unwrap_or_default();
+        let cursor = active_view.cursor();
         let footer = div()
             .flex()
             .justify_between()
@@ -1416,7 +1581,7 @@ impl Render for EditorView {
             .text_color(rgb(0x9a9a9a))
             .child(format!(
                 "{}  {}:{}",
-                self.editor().mode().label(),
+                active_view.mode().label(),
                 cursor.line + 1,
                 cursor.character + 1
             ))

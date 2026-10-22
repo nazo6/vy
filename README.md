@@ -90,7 +90,7 @@ cargo run -p vy-app -- README.md
 | Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク         |
 | Normal | `v` 選択モード、`i` `a` 挿入、`u` / `Ctrl-r` 履歴                              |
 | Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置 |
-| Normal | `.` 直前の変更の繰り返し                                                       |
+| Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                         |
 | Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる   |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                   |
 | Select | 移動で選択を伸ばす。`d` で削除、`y` でコピーして Normal へ                     |

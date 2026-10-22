@@ -89,6 +89,7 @@ pub enum BuiltinCommand {
     PasteAfter,
     PasteBefore,
     Repeat,
+    LastVisual,
     InsertHere,
     InsertAfter,
     SelectMode,
@@ -139,6 +140,7 @@ impl BuiltinCommand {
             Self::PasteAfter => "vy.edit.paste_after",
             Self::PasteBefore => "vy.edit.paste_before",
             Self::Repeat => "vy.edit.repeat",
+            Self::LastVisual => "vy.edit.last_visual",
             Self::InsertHere => "vy.mode.insert",
             Self::InsertAfter => "vy.mode.insert_after",
             Self::SelectMode => "vy.mode.select",
@@ -180,7 +182,7 @@ impl BuiltinCommand {
 
     /// Every built-in command. Used by `commands.getCommands`.
     pub fn all() -> &'static [BuiltinCommand] {
-        const COMMANDS: [BuiltinCommand; 44] = [
+        const COMMANDS: [BuiltinCommand; 45] = [
             BuiltinCommand::MoveLeft,
             BuiltinCommand::MoveRight,
             BuiltinCommand::MoveUp,
@@ -196,6 +198,7 @@ impl BuiltinCommand {
             BuiltinCommand::PasteAfter,
             BuiltinCommand::PasteBefore,
             BuiltinCommand::Repeat,
+            BuiltinCommand::LastVisual,
             BuiltinCommand::InsertHere,
             BuiltinCommand::InsertAfter,
             BuiltinCommand::SelectMode,

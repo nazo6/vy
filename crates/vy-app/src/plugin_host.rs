@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use vy_capabilities::TrustedStore;
 use vy_core::{Position, Range, Selection, TextEdit};
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
