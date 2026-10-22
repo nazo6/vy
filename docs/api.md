@@ -244,6 +244,11 @@ Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_lef
 `commands.execute` からも実行できます。戻り値はまだ `null` です。
 `vy.ui.command_palette` はクライアントのコマンドパレットを開きます。
 
+`:` の Ex コマンドはクライアントが別名からコマンド ID に解決し、パレットと同じ
+実行層へ渡します。`commands.execute` はコマンド ID だけを受け付け、Ex 名は解決
+しません。文法、範囲、`!`、補完は [`ex-commands.md`](./ex-commands.md)
+にあります。
+
 ```typescript
 keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });
 ```

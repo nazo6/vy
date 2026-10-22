@@ -46,6 +46,8 @@
     の位置づけ
 - [**キーマップ一覧と実装状況 (`docs/keymap.md`)**](./docs/keymap.md)
   - モードごとのキー、実装済みの範囲、これから入れるキー、キーマップ API の予定
+- [**Ex コマンド (`docs/ex-commands.md`)**](./docs/ex-commands.md)
+  - `:` のコマンドライン、パレットとの共通実行層、範囲・別名・補完の設計
 - [**ファイルとフォルダの構成 (`docs/layout.md`)**](./docs/layout.md)
   - ユーザー設定、プロジェクト、プラグインのパッケージ、リポジトリの構成
 - [**通信プロトコル仕様 (`docs/protocol.md`)**](./docs/protocol.md)

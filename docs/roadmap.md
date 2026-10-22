@@ -115,6 +115,9 @@ Phase 3 で仕上げます。
   - [ ] `commands.execute` の戻り値を JS へ返す
   - [ ] 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
   - [x] コマンドパレット（`space` リーダー、単語検索、選択、実行）
+  - [ ] コマンド記述子と `Invocation`
+        の共通化（キーマップ、パレット、Ex、スクリプト）
+  - [ ] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
   - [ ] ピッカー API（`ui.picker.registerSource`）と、パレットからの引数入力
   - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
         など）
@@ -176,6 +179,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
 | `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 3                            | [`plugin-system.md`](./plugin-system.md)                                           |
 | 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
+| Ex コマンド            | パレットと同じ実行層を使い、`:` はオーバーレイ。Ex 名は明示的な別名で解決する       | [`ex-commands.md`](./ex-commands.md)                                               |
 
 ## 残っている論点
 
@@ -194,3 +198,6 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 6. **CRLF と EOL**
    - `document.eol` と改行コードの保持をどこで行うか。Phase 2
      では扱わず、Windows 対応と合わせて決めます。
+7. **Ex コマンドの細部**
+   - 最後のペインでの `:q`、プラグインの別名、履歴の永続化などは
+     [`ex-commands.md`](./ex-commands.md) の「未決定事項」にまとめました。
