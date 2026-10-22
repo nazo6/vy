@@ -17,9 +17,9 @@ impl Paths {
     /// Reads the roots from the environment, with the platform defaults as fallback.
     pub fn from_env() -> Self {
         Self {
-            config: env_path("VY_CONFIG_HOME", dirs::config_dir),
-            data: env_path("VY_DATA_HOME", dirs::data_dir),
-            cache: env_path("VY_CACHE_HOME", dirs::cache_dir),
+            config: env_path("VY_CONFIG_HOME", || dirs::config_dir().map(app_dir)),
+            data: env_path("VY_DATA_HOME", || dirs::data_dir().map(app_dir)),
+            cache: env_path("VY_CACHE_HOME", || dirs::cache_dir().map(app_cache_dir)),
         }
     }
 
@@ -66,6 +66,26 @@ fn env_path(variable: &str, fallback: impl FnOnce() -> Option<PathBuf>) -> PathB
     fallback().unwrap_or_else(|| PathBuf::from(".vy"))
 }
 
+/// Name of the directory included in the platform roots.
+const APP_DIR: &str = "vy";
+
+/// Appends [`APP_DIR`] to a platform base directory such as `~/.config`.
+fn app_dir(base: PathBuf) -> PathBuf {
+    base.join(APP_DIR)
+}
+
+/// Appends [`APP_DIR`] to a platform cache directory.
+///
+/// `docs/layout.md` puts the Windows cache one level deeper (`%LOCALAPPDATA%\vy\cache`).
+fn app_cache_dir(base: PathBuf) -> PathBuf {
+    let dir = app_dir(base);
+    if cfg!(windows) {
+        dir.join("cache")
+    } else {
+        dir
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +106,17 @@ mod tests {
             paths.workspace_settings("/project"),
             PathBuf::from("/project/.vy/settings.json")
         );
+    }
+
+    #[test]
+    fn platform_roots_include_the_app_directory() {
+        assert_eq!(app_dir(PathBuf::from("/base")), PathBuf::from("/base/vy"));
+
+        let cache = app_cache_dir(PathBuf::from("/base"));
+        if cfg!(windows) {
+            assert_eq!(cache, PathBuf::from("/base/vy/cache"));
+        } else {
+            assert_eq!(cache, PathBuf::from("/base/vy"));
+        }
     }
 }
