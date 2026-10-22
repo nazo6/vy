@@ -1,5 +1,6 @@
 //! Command execution and palette/ex handling for `EditorView`.
 
+use gpui::ScrollStrategy;
 use vy_app::commands::{
     BuiltinCommand, CommandDescriptor, DocumentCommand, Invocation, InvocationArgs, PaneCommand,
     UiCommand, parse_ex_line, resolve_ex_name,
@@ -169,6 +170,8 @@ impl EditorView {
         self.clear_preedit();
         self.ex = None;
         self.palette = Some(PaletteState::default());
+        self.palette_scroll_handle
+            .scroll_to_item(0, ScrollStrategy::Top);
         self.status = "command palette".into();
     }
 
@@ -272,17 +275,25 @@ impl EditorView {
         match key {
             Key::Up | Key::Ctrl('p') => {
                 palette.selected = move_palette_selection(palette.selected, -1, len);
+                self.palette_scroll_handle
+                    .scroll_to_item(palette.selected, ScrollStrategy::Nearest);
             }
             Key::Down | Key::Ctrl('n') => {
                 palette.selected = move_palette_selection(palette.selected, 1, len);
+                self.palette_scroll_handle
+                    .scroll_to_item(palette.selected, ScrollStrategy::Nearest);
             }
             Key::Backspace => {
                 palette.query.pop();
                 palette.selected = 0;
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
             }
             Key::Char(character) => {
                 palette.query.push(character);
                 palette.selected = 0;
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
             }
             _ => {}
         }

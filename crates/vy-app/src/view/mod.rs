@@ -14,6 +14,7 @@ mod render;
 mod rpc;
 
 use gpui::{Context, FocusHandle, KeyDownEvent, ScrollWheelEvent, SharedString, Window, px};
+use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
 use vy_app::editor::{Editor, Key, Mode, ViewState};
@@ -70,7 +71,7 @@ pub struct EditorView {
     /// Used when no pane has a document yet, so drawing has a valid editor.
     fallback: DocumentState,
     /// Open command palette, if any.
-    palette: Option<PaletteState>,
+    pub(crate) palette: Option<PaletteState>,
     /// Open Ex command line, if any.
     ex: Option<ExState>,
     ex_history: ExHistory,
@@ -80,6 +81,7 @@ pub struct EditorView {
     running_command: Option<String>,
     pub focus_handle: FocusHandle,
     pub palette_focus_handle: FocusHandle,
+    pub palette_scroll_handle: VirtualListScrollHandle,
     pub ex_focus_handle: FocusHandle,
     pub focus_stack: FocusStack,
     status: SharedString,
@@ -149,6 +151,7 @@ impl EditorView {
             running_command: None,
             focus_handle: cx.focus_handle(),
             palette_focus_handle: cx.focus_handle(),
+            palette_scroll_handle: VirtualListScrollHandle::new(),
             ex_focus_handle: cx.focus_handle(),
             focus_stack: FocusStack::new(),
             status: "starting vy-server".into(),

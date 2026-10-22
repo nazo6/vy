@@ -137,7 +137,11 @@ impl Render for EditorView {
                     .flex_1()
                     .overflow_hidden()
                     .child(content)
-                    .children(self.palette.as_ref().map(|_| self.render_palette(&theme))),
+                    .children(
+                        self.palette
+                            .as_ref()
+                            .map(|_| self.render_palette(&theme, cx)),
+                    ),
             )
             .child(self.render_statusline(&theme))
             .children(self.ex.as_ref().map(|_| self.render_ex(&theme)));
@@ -212,11 +216,11 @@ impl EditorView {
         )
     }
 
-    fn render_palette(&self, theme: &Theme) -> Div {
+    fn render_palette(&self, theme: &Theme, cx: &Context<Self>) -> Div {
         ui::palette::render_palette(
             theme,
-            &self.palette_focus_handle,
-            self.palette.as_ref(),
+            self,
+            cx.entity(),
             &self.palette_items(),
             self.config.font_size(),
             CARET_WIDTH,
