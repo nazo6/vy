@@ -241,7 +241,7 @@ impl Editor {
         self.move_to_inner(position);
     }
 
-    pub(super) fn move_vertical(&mut self, delta: i64) {
+    pub fn move_vertical(&mut self, delta: i64) {
         let current = self.current();
         let desired = self.preferred_character.unwrap_or(current.character);
         let line = (current.line as i64 + delta).clamp(0, self.last_line() as i64) as u32;

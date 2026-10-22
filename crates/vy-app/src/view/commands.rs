@@ -3,12 +3,15 @@
 use gpui::ScrollStrategy;
 use vy_app::commands::{
     BuiltinCommand, CommandDescriptor, DocumentCommand, Invocation, InvocationArgs, PaneCommand,
-    UiCommand, parse_ex_line, resolve_ex_name,
+    UiCommand, ViewCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::palette::{PaletteState, filtered_palette_indices, move_palette_selection};
+use vy_app::text_layout::{
+    half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
+};
 use vy_app::workspace::uri_from_argument;
 use vy_proto::{
     DocumentIdParams, EditorOpenParams, PaneCloseParams, PaneFocusParams, PaneOpenParams,
@@ -71,6 +74,62 @@ impl EditorView {
                     to_value(&DocumentIdParams { document_id }),
                     Pending::Save,
                 );
+            }
+        }
+    }
+
+    pub(super) fn run_view_command(&mut self, command: ViewCommand, invocation: &Invocation) {
+        let count = invocation.keymap_args().count;
+        self.activate_active_view();
+
+        let Some(pane) = self.active_pane_state() else {
+            return;
+        };
+        let viewport_rows = pane.viewport_rows;
+        let scroll_top = pane.scroll_top;
+        let Some(document) = self.active_document() else {
+            return;
+        };
+        let line_count = document.editor.line_count();
+        let cursor_line = document.editor.cursor().line as usize;
+
+        match command {
+            ViewCommand::ScrollHalfPageDown => {
+                let delta = half_page_lines(viewport_rows, count.unwrap_or(1));
+                self.editor_mut().move_vertical(delta as i64);
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top =
+                        scroll_lines(scroll_top, delta as isize, viewport_rows, line_count);
+                }
+                self.store_active_view();
+                self.clamp_active_views();
+                self.ensure_cursor_visible();
+            }
+            ViewCommand::ScrollHalfPageUp => {
+                let delta = half_page_lines(viewport_rows, count.unwrap_or(1));
+                self.editor_mut().move_vertical(-(delta as i64));
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top =
+                        scroll_lines(scroll_top, -(delta as isize), viewport_rows, line_count);
+                }
+                self.store_active_view();
+                self.clamp_active_views();
+                self.ensure_cursor_visible();
+            }
+            ViewCommand::CenterCursor => {
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top = scroll_cursor_center(cursor_line, viewport_rows, line_count);
+                }
+            }
+            ViewCommand::ScrollCursorTop => {
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top = scroll_cursor_top(cursor_line, viewport_rows, line_count);
+                }
+            }
+            ViewCommand::ScrollCursorBottom => {
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top = scroll_cursor_bottom(cursor_line, viewport_rows, line_count);
+                }
             }
         }
     }
@@ -331,6 +390,10 @@ impl EditorView {
         }
         if let Some(command) = DocumentCommand::parse(&id) {
             self.run_document_command(command, &invocation);
+            return false;
+        }
+        if let Some(command) = ViewCommand::parse(&id) {
+            self.run_view_command(command, &invocation);
             return false;
         }
         if let Some(command) = BuiltinCommand::parse(&id) {

@@ -88,7 +88,8 @@ cargo run -p vy-app -- README.md
 | :----- | :----------------------------------------------------------------------------- |
 | Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾         |
 | Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク         |
-| Normal | `v` 選択モード、`i` `a` 挿入、`u` / `Ctrl-r` 履歴                              |
+| Normal | `v` 選択モード、`i` `a` `I` `A` `o` `O` 挿入、`u` / `Ctrl-r` 履歴               |
+| Normal | `Ctrl-d` / `Ctrl-u` 半ページ送り、`zz` / `zt` / `zb` カーソル行位置合わせ       |
 | Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置 |
 | Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                         |
 | Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる   |

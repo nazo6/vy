@@ -241,6 +241,55 @@ impl UiCommand {
     }
 }
 
+/// A command that scrolls or positions the view within an editor pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewCommand {
+    ScrollHalfPageDown,
+    ScrollHalfPageUp,
+    CenterCursor,
+    ScrollCursorTop,
+    ScrollCursorBottom,
+}
+
+impl ViewCommand {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::ScrollHalfPageDown => "vy.view.scroll_half_page_down",
+            Self::ScrollHalfPageUp => "vy.view.scroll_half_page_up",
+            Self::CenterCursor => "vy.view.center_cursor",
+            Self::ScrollCursorTop => "vy.view.scroll_cursor_top",
+            Self::ScrollCursorBottom => "vy.view.scroll_cursor_bottom",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::ScrollHalfPageDown => "Scroll Half Page Down",
+            Self::ScrollHalfPageUp => "Scroll Half Page Up",
+            Self::CenterCursor => "Center Cursor",
+            Self::ScrollCursorTop => "Scroll Cursor Top",
+            Self::ScrollCursorBottom => "Scroll Cursor Bottom",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|command| command.id() == id)
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::ScrollHalfPageDown,
+            Self::ScrollHalfPageUp,
+            Self::CenterCursor,
+            Self::ScrollCursorTop,
+            Self::ScrollCursorBottom,
+        ]
+    }
+}
+
 /// One parsed Ex command line, without the leading `:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExCommandLine {
@@ -749,6 +798,13 @@ impl CommandRegistry {
             );
             descriptors.push(descriptor);
         }
+        for command in ViewCommand::all() {
+            descriptors.push(CommandDescriptor::new(
+                command.id(),
+                display_title(command.id()),
+                CommandSource::Builtin,
+            ));
+        }
         for id in self.script_commands() {
             let source = self
                 .owner_of(&id)
@@ -850,6 +906,14 @@ mod tests {
         assert_eq!(UiCommand::parse("vy.ui.unknown"), None);
         assert_eq!(UiCommand::CommandPalette.title(), "Command Palette");
         assert_eq!(UiCommand::ExCommandLine.title(), "Ex Command Line");
+    }
+
+    #[test]
+    fn parses_view_commands() {
+        for command in ViewCommand::all() {
+            assert_eq!(ViewCommand::parse(command.id()), Some(*command));
+        }
+        assert_eq!(ViewCommand::parse("vy.view.unknown"), None);
     }
 
     #[test]

@@ -27,6 +27,31 @@ pub fn scroll_lines(top: usize, lines: isize, rows: usize, total: usize) -> usiz
     (top as isize + lines).clamp(0, max_top) as usize
 }
 
+/// Returns the number of lines in a half-page scroll.
+pub fn half_page_lines(rows: usize, count: u32) -> usize {
+    let half = (rows.max(1) / 2).max(1);
+    half.saturating_mul(count.max(1) as usize)
+}
+
+/// Returns the viewport top that centers `line` in the window.
+pub fn scroll_cursor_center(line: usize, rows: usize, total: usize) -> usize {
+    let rows = rows.max(1);
+    let top = line.saturating_sub(rows / 2);
+    clamp_scroll_top(top, rows, total)
+}
+
+/// Returns the viewport top that places `line` at the top of the window.
+pub fn scroll_cursor_top(line: usize, rows: usize, total: usize) -> usize {
+    clamp_scroll_top(line, rows, total)
+}
+
+/// Returns the viewport top that places `line` at the bottom of the window.
+pub fn scroll_cursor_bottom(line: usize, rows: usize, total: usize) -> usize {
+    let rows = rows.max(1);
+    let top = (line + 1).saturating_sub(rows);
+    clamp_scroll_top(top, rows, total)
+}
+
 pub use vy_core::{byte_to_utf16, utf16_to_byte};
 
 /// The part of one line covered by the selection. [`None`] if the line is outside it.
@@ -108,5 +133,30 @@ mod tests {
         assert_eq!(scroll_lines(20, -5, 10, 100), 15);
         assert_eq!(scroll_lines(2, -5, 10, 100), 0);
         assert_eq!(scroll_lines(88, 5, 10, 100), 90);
+    }
+
+    #[test]
+    fn calculates_half_page_scroll_lines() {
+        assert_eq!(half_page_lines(20, 1), 10);
+        assert_eq!(half_page_lines(20, 2), 20);
+        assert_eq!(half_page_lines(1, 1), 1);
+        assert_eq!(half_page_lines(0, 1), 1);
+    }
+
+    #[test]
+    fn scrolls_cursor_relative_to_viewport() {
+        // Center: 100 lines, 20 rows.
+        assert_eq!(scroll_cursor_center(50, 20, 100), 40);
+        assert_eq!(scroll_cursor_center(5, 20, 100), 0);
+        assert_eq!(scroll_cursor_center(95, 20, 100), 80);
+
+        // Top:
+        assert_eq!(scroll_cursor_top(50, 20, 100), 50);
+        assert_eq!(scroll_cursor_top(95, 20, 100), 80);
+
+        // Bottom:
+        assert_eq!(scroll_cursor_bottom(50, 20, 100), 31);
+        assert_eq!(scroll_cursor_bottom(5, 20, 100), 0);
+        assert_eq!(scroll_cursor_bottom(95, 20, 100), 76);
     }
 }

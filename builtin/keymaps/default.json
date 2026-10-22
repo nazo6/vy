@@ -184,8 +184,28 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "ctrl-d",
+        "command": "vy.view.scroll_half_page_down",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "ctrl-u",
-        "command": "vy.history.undo",
+        "command": "vy.view.scroll_half_page_up",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "z z",
+        "command": "vy.view.center_cursor",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "z t",
+        "command": "vy.view.scroll_cursor_top",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "z b",
+        "command": "vy.view.scroll_cursor_bottom",
         "when": "mode != 'insert'"
     },
     {
