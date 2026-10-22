@@ -13,12 +13,18 @@ Vy
 flowchart TD
     P1["Phase 1: 2プロセスの骨格と編集の最小経路\n(vy-app / vy-server / vy-proto, stdio RPC, rope, モーダル入力)"]
     P2["Phase 2: TypeScript設定 & プラグイン実行基盤\n(QuickJS + Oxc, init.ts, keymap, capabilities)"]
-    P3["Phase 3: ペイン・ビュー・Webview\n(レイアウト木, panes/views API, gpui-kit/webview)"]
+    P3["Phase 3: ペイン・ビュー・コマンド実行\n(レイアウト木, panes/views API, コマンドパレット)"]
     P4["Phase 4: リモート接続\n(SSH起動, 再接続と再同期, 配備)"]
     P5["Phase 5: 言語機能 (LSP & Tree-sitter)\n(ハイライト, 非同期LSP, 補完)"]
+    P6["Phase 6: Webview・Notebook (最終段階)\n(Markdownプレビュー, セル描画, gpui-kit/webview)"]
 
-    P1 --> P2 --> P3 --> P4 --> P5
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
 ```
+
+画面の骨格を早く固めるため、ペインとビューを Phase 3 で先に実装します。 Webview
+と Notebook は、Web の文書を表示する最後の手段なので Phase 6 に回します。
+コマンドの実行（一覧、戻り値、コマンドパレット）も、ペインとビューを操作するために
+Phase 3 で仕上げます。
 
 ### Phase 1: 2プロセスの骨格と編集の最小経路
 
@@ -88,15 +94,23 @@ flowchart TD
 - 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents` （Phase
   3）。`editor.onDidChangeSelection` などのイベント API も Phase 3
 
-### Phase 3: ペイン・ビュー・Webview
+### Phase 3: ペイン・ビュー・コマンド実行
 
 - [ ] レイアウト木（分割、比率、フォーカス、フローティング）と `panes.*` の API
-- [ ] `views.register` と7種類のビュー（`ui` を含む）
+- [ ] 同じバッファを複数のペインで開く（マルチバッファ）と、ペインごとのカーソル・選択・スクロール
+- [ ] `editor.open` と、開いている文書の一覧・切り替え
+- [ ] `views.register`
+      と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
+  - `webview` は Phase 6
 - [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
-- [ ] `gpui-kit/crates/webview` の組み込み
-- [ ] Webview を Web 文書の表示に限って開く（Markdown プレビュー等）
-- [ ] Jupyter Notebook形式のセル描画・Webview出力
 - [ ] スロット（ステータスライン、ピッカー、ホバー、ガター）
+- [ ] コマンド実行の仕上げ
+  - `commands.getCommands` と、`commands.execute` の戻り値を JS へ返す
+  - 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
+  - コマンドパレット（`space`
+    リーダー、検索付きピッカー、`ui.picker.registerSource`）
+  - ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
+    など）
 
 ### Phase 4: リモート接続
 
@@ -110,6 +124,16 @@ flowchart TD
 - [ ] `tree-sitter` によるシンタックスハイライト
 - [ ] エディタ本体での非同期LSPクライアント基盤（プロセス管理・ドキュメント同期）
 - [ ] 補完プロバイダー（`registerCompletionProvider`）とローカルファジー絞り込み
+
+### Phase 6: Webview・Notebook (最終段階)
+
+Webview は Web の文書そのものを表示するときだけ使います。操作を伴う UI は Phase
+3 の `ui` ビューで作ります（[`ui.md`](./ui.md)）。
+
+- [ ] `gpui-kit/crates/webview` の組み込み
+- [ ] Webview のフォーカス、キー入力、テーマの受け渡し
+- [ ] Webview を Web 文書の表示に限って開く（Markdown プレビュー等）
+- [ ] Jupyter Notebook 形式のセル描画と Webview 出力
 
 ---
 

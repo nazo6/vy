@@ -48,11 +48,12 @@ API と、コアが状態の正を持つ API です。
 
 優先度は Phase に対応します。
 
-| 優先度 | 対応する Phase | 範囲                                                                             |
-| :----- | :------------- | :------------------------------------------------------------------------------- |
-| P0     | Phase 1 から 2 | 文書の読み取り、ペインの骨格、キーバインド、コマンド、設定、ログ、通知、保存領域 |
-| P1     | Phase 3        | UI スロット、Webview、検索、ファイル、プロセス、診断、装飾                       |
-| P2     | Phase 4 以降   | LSP、補完、スニペット、整形、Git                                                 |
+| 優先度 | 対応する Phase  | 範囲                                                                                                       |
+| :----- | :-------------- | :--------------------------------------------------------------------------------------------------------- |
+| P0     | Phase 1 から 3  | 文書の読み取り、ペインとビューの骨格、キーバインド、コマンド（実行とパレット）、設定、ログ、通知、保存領域 |
+| P1     | Phase 3         | UI スロット、検索、ファイル、プロセス、診断、装飾                                                          |
+| P2     | Phase 4 から 5  | LSP、補完、スニペット、整形、Git                                                                           |
+| P3     | Phase 6（最終） | Webview、Notebook、Markdown プレビュー                                                                     |
 
 ## 3. ライフサイクル
 
@@ -341,13 +342,13 @@ ID、進捗の値です。任意のレイアウトは渡せません。自由な
 
 | API                                  | 実行場所 | ケイパビリティ | 優先度 |
 | :----------------------------------- | :------- | :------------- | :----- |
-| `webview.createView(options)`        | local    | なし           | P1     |
-| `view.postMessage(message)`          | local    | なし           | P1     |
-| `view.onDidReceiveMessage(listener)` | local    | なし           | P1     |
-| `view.asWebviewUri(uri)`             | local    | なし           | P1     |
-| `view.state`                         | local    | なし           | P2     |
-| `view.reload()`                      | local    | なし           | P1     |
-| `view.dispose()`                     | local    | なし           | P1     |
+| `webview.createView(options)`        | local    | なし           | P3     |
+| `view.postMessage(message)`          | local    | なし           | P3     |
+| `view.onDidReceiveMessage(listener)` | local    | なし           | P3     |
+| `view.asWebviewUri(uri)`             | local    | なし           | P3     |
+| `view.state`                         | local    | なし           | P3     |
+| `view.reload()`                      | local    | なし           | P3     |
+| `view.dispose()`                     | local    | なし           | P3     |
 
 `webview.createView` はビューのハンドルを返します。ペインに載せるときは
 `panes.open({ view: handle })` を使います。Webview と QuickJS の間は JSON
@@ -474,9 +475,12 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 先送りしたもの:
 
 - `document.save`、`editor.open`、`workspace.state`、`fs`、`process`、`net`。
+  `document.save` と `editor.open` は Phase 3、`fs` / `process` / `net` は Phase
+  3 以降です。
 - `document.onDidChangeContent`、`editor.onDidChangeSelection` などのイベント。
-  発火するには UI から JS へのイベント経路がもう1本必要です。
-- `config.define`、`ui` ビュー、スロット、テーマ、Webview。
+  発火するには UI から JS へのイベント経路がもう1本必要です（Phase 3）。
+- `config.define`、`ui` ビュー、スロット、テーマは Phase 3。Webview は Phase 6
+  です。
 - `editor.undo()` と `editor.redo()` は要求を送るところまでです。結果の適用は
   コアの応答で行うため、返り値は `void` です。
 - `commands.execute` の返り値は `null` です。JS 側の戻り値を返すのは Phase 3
