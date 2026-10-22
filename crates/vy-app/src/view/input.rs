@@ -254,7 +254,7 @@ impl EntityInputHandler for EditorView {
             };
             let shaped = window.text_system().shape_line(
                 SharedString::from(prefix.to_string()),
-                window.rem_size(),
+                px(self.config.font_size()),
                 &[run],
                 None,
             );

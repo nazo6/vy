@@ -131,6 +131,7 @@ impl Render for EditorView {
             .text_color(theme.editor.text)
             .font_family(self.config.font_family())
             .text_size(px(self.config.font_size()))
+            .line_height(px(self.line_height()))
             .child(
                 div()
                     .relative()
@@ -246,6 +247,7 @@ impl EditorView {
             .overflow_hidden()
             .flex()
             .flex_col()
+            .line_height(px(self.line_height()))
             .children(lines);
 
         if active {

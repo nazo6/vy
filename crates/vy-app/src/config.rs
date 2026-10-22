@@ -184,7 +184,28 @@ impl Config {
     }
 
     pub fn line_height(&self) -> f32 {
-        self.number("ui.lineHeight", 20.0).max(8.0) as f32
+        let font_size = self.font_size();
+        let min_line_height = (font_size * 1.15).round().max(font_size);
+        let default_line_height = (font_size * (20.0 / 14.0)).round().max(min_line_height);
+
+        let explicit = self.layers[Layer::User.index()..]
+            .iter()
+            .rev()
+            .find_map(|layer| layer.get("ui.lineHeight"))
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value > 0.0);
+
+        match explicit {
+            Some(value) => {
+                let height = if value <= 4.0 {
+                    (value as f32 * font_size).round()
+                } else {
+                    value as f32
+                };
+                height.max(min_line_height)
+            }
+            None => default_line_height,
+        }
     }
 
     pub fn line_numbers(&self) -> LineNumbers {
@@ -288,7 +309,34 @@ mod tests {
 
         assert!(config.clear_memory());
         assert_eq!(config.font_size(), 22.0);
+        // Default line height scales proportionally with font size (~1.43x).
+        assert_eq!(config.line_height(), 31.0);
+
+        // Explicit line height in user layer overrides default scaling.
+        let mut user = Map::new();
+        user.insert("ui.lineHeight".into(), Value::from(36.0));
+        config.replace_layer(Layer::User, user);
+        assert_eq!(config.line_height(), 36.0);
+
+        // Memory layer takes precedence over user layer.
+        config.set("ui.lineHeight", Value::from(40.0));
+        assert_eq!(config.line_height(), 40.0);
+    }
+
+    #[test]
+    fn calculates_line_height_with_multipliers_and_clamps() {
+        let mut config = Config::with_defaults();
+        assert_eq!(config.font_size(), 14.0);
         assert_eq!(config.line_height(), 20.0);
+
+        // Relative multiplier <= 4.0
+        config.set("ui.lineHeight", Value::from(1.5));
+        assert_eq!(config.line_height(), 21.0);
+
+        // Clamp prevents lines from overlapping when explicit line height is too small
+        config.set("ui.fontSize", Value::from(24.0));
+        config.set("ui.lineHeight", Value::from(10.0));
+        assert_eq!(config.line_height(), 28.0);
     }
 
     #[test]

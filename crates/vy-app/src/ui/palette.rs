@@ -21,6 +21,7 @@ pub fn render_palette_row(theme: &Theme, item: &CommandDescriptor, is_selected: 
         .justify_between()
         .items_center()
         .h(px(PALETTE_ROW_HEIGHT))
+        .line_height(px(PALETTE_ROW_HEIGHT))
         .px_2()
         .w_full()
         .overflow_hidden();

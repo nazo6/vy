@@ -133,15 +133,20 @@ pub fn render_line(
     window: &mut Window,
 ) -> Div {
     let cursor_line = pane.view.cursor().line as usize;
+    let lh = line_height(config);
     let mut row = div()
         .relative()
         .flex()
-        .h(px(line_height(config)))
+        .flex_shrink_0()
+        .h(px(lh))
+        .line_height(px(lh))
         .items_center();
 
     if let Some(label) = config.line_numbers().label(line_number, cursor_line) {
         row = row.child(
             div()
+                .h(px(lh))
+                .line_height(px(lh))
                 .w(px(gutter_width(config, document.editor.line_count())))
                 .flex_shrink_0()
                 .text_color(theme.editor.gutter)
@@ -175,7 +180,7 @@ pub fn render_line(
                 .top_0()
                 .left(px(gutter + f32::from(width)))
                 .w(px(CARET_WIDTH))
-                .h(px(line_height(config)))
+                .h(px(lh))
                 .bg(theme.editor.caret),
         );
     }
