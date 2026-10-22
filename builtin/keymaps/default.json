@@ -1,5 +1,10 @@
 [
     {
+        "keys": "space",
+        "command": "vy.ui.command_palette",
+        "when": "normalMode"
+    },
+    {
         "keys": "h",
         "command": "vy.motion.left",
         "when": "mode != 'insert'"

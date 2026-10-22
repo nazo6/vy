@@ -114,8 +114,8 @@ Phase 3 で仕上げます。
   - [x] `commands.execute` からペインコマンドを実行する
   - [ ] `commands.execute` の戻り値を JS へ返す
   - [ ] 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
-  - [ ] コマンドパレット（`space`
-        リーダー、検索付きピッカー、`ui.picker.registerSource`）
+  - [x] コマンドパレット（`space` リーダー、単語検索、選択、実行）
+  - [ ] ピッカー API（`ui.picker.registerSource`）と、パレットからの引数入力
   - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
         など）
 

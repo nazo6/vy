@@ -242,6 +242,7 @@ version と一致したときだけ確定します。
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
 `vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、
 `commands.execute` からも実行できます。戻り値はまだ `null` です。
+`vy.ui.command_palette` はクライアントのコマンドパレットを開きます。
 
 ```typescript
 keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });

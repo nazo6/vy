@@ -18,7 +18,9 @@ use gpui::{
 use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use vy_app::commands::{BuiltinCommand, CommandRegistry, PaneCommand};
+use vy_app::commands::{
+    BuiltinCommand, CommandArgs, CommandRegistry, PaneCommand, UiCommand, display_title,
+};
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction, ViewState};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
@@ -102,6 +104,19 @@ impl PaneState {
     }
 }
 
+/// One row of the command palette.
+struct PaletteItem {
+    id: String,
+    title: String,
+    source: &'static str,
+}
+
+#[derive(Debug, Default)]
+struct PaletteState {
+    query: String,
+    selected: usize,
+}
+
 struct EditorView {
     client: Option<Client>,
     pending: HashMap<u64, Pending>,
@@ -127,6 +142,8 @@ struct EditorView {
     documents: HashMap<u64, DocumentState>,
     /// Used when no pane has a document yet, so drawing has a valid editor.
     fallback: DocumentState,
+    /// Open command palette, if any.
+    palette: Option<PaletteState>,
     focus_handle: FocusHandle,
     status: SharedString,
     frame_log: bool,
@@ -186,6 +203,7 @@ impl EditorView {
             panes: HashMap::new(),
             documents: HashMap::new(),
             fallback,
+            palette: None,
             focus_handle: cx.focus_handle(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -524,6 +542,7 @@ impl EditorView {
             HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
             HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
             HostAction::Pane(command) => self.run_pane_command(command),
+            HostAction::Ui(command) => self.run_ui_command(command),
         }
 
         self.ensure_cursor_visible();
@@ -875,7 +894,18 @@ impl EditorView {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = convert_key(&event.keystroke) else {
+        let key = convert_key(&event.keystroke);
+
+        if self.palette.is_some() {
+            if let Some(key) = key {
+                self.handle_palette_key(key);
+            }
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+
+        let Some(key) = key else {
             return;
         };
 
@@ -904,6 +934,7 @@ impl EditorView {
         self.activate_active_view();
         let before = self.active_view();
         let before_version = self.editor().version();
+        let before_palette = self.palette.is_some();
 
         let selection = self.editor().selection();
         let context = KeyContext {
@@ -915,36 +946,7 @@ impl EditorView {
         };
 
         match self.keymap.feed(key, &context) {
-            KeymapOutcome::Command { id, args } => {
-                if let Some(command) = PaneCommand::parse(&id) {
-                    self.run_pane_command(command);
-                } else if let Some(command) = BuiltinCommand::parse(&id) {
-                    let action = self.editor_mut().execute(command, args);
-                    match action {
-                        Action::None => {}
-                        Action::Edit(transaction) => self.send_transaction(transaction),
-                        Action::Undo => self.send_history("buffer/undo", Pending::Undo),
-                        Action::Redo => self.send_history("buffer/redo", Pending::Redo),
-                    }
-                } else if self.commands.is_registered(&id) {
-                    // Script commands run on the script thread. Any edits they
-                    // make come back as host requests.
-                    if let Some(plugin) = self.plugin.as_ref() {
-                        plugin.execute(
-                            id.clone(),
-                            serde_json::json!({
-                                "count": args.count,
-                                "register": args.register.map(|register| register.to_string()),
-                            }),
-                        );
-                        self.status = format!("running {id}").into();
-                    } else {
-                        self.status = format!("{id}: the script host is not running").into();
-                    }
-                } else {
-                    self.status = format!("unknown command: {id}").into();
-                }
-            }
+            KeymapOutcome::Command { id, args } => self.execute_command(&id, args),
             KeymapOutcome::Pending | KeymapOutcome::Ignored => {}
         }
 
@@ -956,7 +958,9 @@ impl EditorView {
         self.clamp_active_views();
 
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
-        let changed = before != self.active_view() || before_version != self.editor().version();
+        let changed = before != self.active_view()
+            || before_version != self.editor().version()
+            || before_palette != self.palette.is_some();
 
         self.ensure_cursor_visible();
         changed
@@ -1117,6 +1121,160 @@ impl EditorView {
             object([("pane_id", Value::from(next))]),
             Pending::Focus,
         );
+    }
+
+    fn palette_items(&self) -> Vec<PaletteItem> {
+        let mut items = Vec::new();
+
+        for command in BuiltinCommand::all() {
+            items.push(PaletteItem {
+                id: command.id().to_string(),
+                title: display_title(command.id()),
+                source: "built-in",
+            });
+        }
+        for command in PaneCommand::all() {
+            items.push(PaletteItem {
+                id: command.id().to_string(),
+                title: display_title(command.id()),
+                source: "pane",
+            });
+        }
+        for command in UiCommand::all() {
+            if *command == UiCommand::CommandPalette {
+                // The palette is already open; listing it again is noise.
+                continue;
+            }
+            items.push(PaletteItem {
+                id: command.id().to_string(),
+                title: command.title().to_string(),
+                source: "ui",
+            });
+        }
+        for id in self.commands.script_commands() {
+            items.push(PaletteItem {
+                title: display_title(&id),
+                id,
+                source: "script",
+            });
+        }
+
+        items
+    }
+
+    fn palette_filtered_len(&self) -> usize {
+        let Some(palette) = self.palette.as_ref() else {
+            return 0;
+        };
+        filtered_palette_indices(&self.palette_items(), &palette.query).len()
+    }
+
+    fn palette_selected_id(&self) -> Option<String> {
+        let palette = self.palette.as_ref()?;
+        let items = self.palette_items();
+        let filtered = filtered_palette_indices(&items, &palette.query);
+        let index = palette.selected.min(filtered.len().saturating_sub(1));
+        filtered.get(index).map(|index| items[*index].id.clone())
+    }
+
+    fn open_palette(&mut self) {
+        self.clear_preedit();
+        self.palette = Some(PaletteState::default());
+        self.status = "command palette".into();
+    }
+
+    fn handle_palette_key(&mut self, key: Key) -> bool {
+        match key {
+            Key::Esc => {
+                self.palette = None;
+                return true;
+            }
+            Key::Enter => {
+                let Some(id) = self.palette_selected_id() else {
+                    return true;
+                };
+                self.palette = None;
+                self.execute_command(&id, CommandArgs::default());
+                return true;
+            }
+            _ => {}
+        }
+
+        let len = self.palette_filtered_len();
+        let Some(palette) = self.palette.as_mut() else {
+            return false;
+        };
+
+        match key {
+            Key::Up | Key::Ctrl('p') => {
+                palette.selected = move_palette_selection(palette.selected, -1, len);
+            }
+            Key::Down | Key::Ctrl('n') => {
+                palette.selected = move_palette_selection(palette.selected, 1, len);
+            }
+            Key::Backspace => {
+                palette.query.pop();
+                palette.selected = 0;
+            }
+            Key::Char(character) => {
+                palette.query.push(character);
+                palette.selected = 0;
+            }
+            _ => {}
+        }
+        true
+    }
+
+    /// Executes any command, regardless of whether the keymap, the palette, or a
+    /// script asked for it.
+    fn execute_command(&mut self, id: &str, args: CommandArgs) {
+        if let Some(command) = UiCommand::parse(id) {
+            self.run_ui_command(command);
+            return;
+        }
+        if let Some(command) = PaneCommand::parse(id) {
+            self.run_pane_command(command);
+            return;
+        }
+        if let Some(command) = BuiltinCommand::parse(id) {
+            self.activate_active_view();
+            let action = self.editor_mut().execute(command, args);
+            self.store_active_view();
+            self.clamp_active_views();
+            match action {
+                Action::None => {}
+                Action::Edit(transaction) => self.send_transaction(transaction),
+                Action::Undo => self.send_history("buffer/undo", Pending::Undo),
+                Action::Redo => self.send_history("buffer/redo", Pending::Redo),
+            }
+            self.ensure_cursor_visible();
+            return;
+        }
+        if self.commands.is_registered(id) {
+            // Script commands run on the script thread. Any edits they make come
+            // back as host requests.
+            if let Some(plugin) = self.plugin.as_ref() {
+                plugin.execute(
+                    id.to_string(),
+                    serde_json::json!({
+                        "count": args.count,
+                        "register": args.register.map(|register| register.to_string()),
+                    }),
+                );
+                self.status = format!("running {id}").into();
+            } else {
+                self.status = format!("{id}: the script host is not running").into();
+            }
+            return;
+        }
+
+        self.status = format!("unknown command: {id}").into();
+    }
+
+    fn run_ui_command(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::CommandPalette => self.open_palette(),
+        }
     }
 
     /// Collects the lines visible in one pane.
@@ -1379,6 +1537,9 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
+        if self.palette.is_some() {
+            return None;
+        }
         self.activate_active_view();
         let length = self.editor().len_utf16() + self.preedit_len_utf16();
         let end = range_utf16.end.min(length);
@@ -1393,6 +1554,9 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        if self.palette.is_some() {
+            return None;
+        }
         self.activate_active_view();
         let document = self.active_document()?;
         let pane = self.active_pane_state()?;
@@ -1423,7 +1587,7 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<std::ops::Range<usize>> {
-        if self.preedit_len_utf16() == 0 {
+        if self.palette.is_some() || self.preedit_len_utf16() == 0 {
             return None;
         }
 
@@ -1432,7 +1596,7 @@ impl EntityInputHandler for EditorView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.preedit_len_utf16() == 0 {
+        if self.palette.is_some() || self.preedit_len_utf16() == 0 {
             return;
         }
 
@@ -1447,6 +1611,9 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.palette.is_some() {
+            return;
+        }
         if self.frame_log {
             eprintln!("vy: commit {text:?}");
         }
@@ -1475,6 +1642,9 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.palette.is_some() {
+            return;
+        }
         self.activate_active_view();
         if self.editor().mode() != Mode::Insert {
             // Typing in Normal or Select is a command, not text. Drop any preedit left
@@ -1502,6 +1672,9 @@ impl EntityInputHandler for EditorView {
         window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        if self.palette.is_some() {
+            return None;
+        }
         self.activate_active_view();
         let document = self.active_document()?;
         let scroll_top = self.active_pane_state().map(|pane| pane.scroll_top)?;
@@ -1619,7 +1792,14 @@ impl Render for EditorView {
             .p_4()
             .gap_2()
             .child(header)
-            .child(div().flex_1().overflow_hidden().child(content))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(content)
+                    .children(self.palette.as_ref().map(|_| self.render_palette())),
+            )
             .child(footer);
 
         self.log_frame(started);
@@ -1642,19 +1822,124 @@ impl EditorView {
                     SplitDirection::Vertical => div().flex().flex_col(),
                 };
 
-                row.size_full()
-                    .child(
-                        self.render_node(first, cx)
-                            .flex_basis(DefiniteLength::Fraction(*ratio))
-                            .flex_shrink_0(),
-                    )
-                    .child(
-                        self.render_node(second, cx)
-                            .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
-                            .flex_shrink_0(),
-                    )
+                // The wrappers own the ratio. The pane itself uses size_full, so
+                // letting it size the flex item would force 100% width (or height)
+                // and push its sibling out of view.
+                let first_wrapper = match direction {
+                    SplitDirection::Horizontal => div().h_full(),
+                    SplitDirection::Vertical => div().w_full(),
+                }
+                .flex_basis(DefiniteLength::Fraction(*ratio))
+                .flex_shrink_0()
+                .overflow_hidden()
+                .child(self.render_node(first, cx));
+
+                let second_wrapper = match direction {
+                    SplitDirection::Horizontal => div().h_full(),
+                    SplitDirection::Vertical => div().w_full(),
+                }
+                .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
+                .flex_shrink_0()
+                .overflow_hidden()
+                .child(self.render_node(second, cx));
+
+                row.size_full().child(first_wrapper).child(second_wrapper)
             }
         }
+    }
+
+    fn render_palette(&self) -> Div {
+        let Some(palette) = self.palette.as_ref() else {
+            return div();
+        };
+
+        let items = self.palette_items();
+        let filtered = filtered_palette_indices(&items, &palette.query);
+        let selected = palette.selected.min(filtered.len().saturating_sub(1));
+
+        let window = 12usize;
+        let start = if filtered.len() <= window {
+            0
+        } else {
+            selected
+                .saturating_sub(window / 2)
+                .min(filtered.len() - window)
+        };
+        let end = (start + window).min(filtered.len());
+
+        let query = div()
+            .flex()
+            .justify_between()
+            .items_center()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(rgb(0x3c3c3c))
+            .child(format!("> {}", palette.query))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(0x8a8a8a))
+                    .child(format!("{} commands", filtered.len())),
+            );
+
+        let mut rows = Vec::new();
+        for index in start..end {
+            let item = &items[filtered[index]];
+            let row = div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .px_2()
+                .py_1()
+                .w_full();
+            let row = if index == selected {
+                row.bg(rgb(0x094771))
+            } else {
+                row
+            };
+            rows.push(
+                row.child(
+                    div().flex().gap_2().child(item.title.clone()).child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(0x8a8a8a))
+                            .child(item.id.clone()),
+                    ),
+                )
+                .child(div().text_xs().text_color(rgb(0x8a8a8a)).child(item.source)),
+            );
+        }
+
+        if rows.is_empty() {
+            rows.push(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_color(rgb(0x8a8a8a))
+                    .child("no matching commands"),
+            );
+        }
+
+        let hint = div()
+            .px_2()
+            .pt_1()
+            .text_xs()
+            .text_color(rgb(0x8a8a8a))
+            .child("Enter run  ·  Esc close  ·  Up/Down move");
+
+        div().absolute().top_0().left_0().w_full().p_4().child(
+            div()
+                .w_full()
+                .bg(rgb(0x252526))
+                .border_1()
+                .border_color(rgb(0x3c3c3c))
+                .flex()
+                .flex_col()
+                .child(query)
+                .children(rows)
+                .child(hint),
+        )
     }
 
     fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>) -> Div {
@@ -1861,6 +2146,35 @@ fn clamp_scroll_top(top: usize, rows: usize, total: usize) -> usize {
 fn scroll_lines(top: usize, lines: isize, rows: usize, total: usize) -> usize {
     let max_top = total.saturating_sub(rows.max(1)) as isize;
     (top as isize + lines).clamp(0, max_top) as usize
+}
+
+/// Indices of palette rows matching every whitespace-separated word.
+fn filtered_palette_indices(items: &[PaletteItem], query: &str) -> Vec<usize> {
+    let tokens: Vec<String> = query
+        .split_whitespace()
+        .map(|token| token.to_lowercase())
+        .collect();
+    if tokens.is_empty() {
+        return (0..items.len()).collect();
+    }
+
+    items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            let haystack = format!("{} {}", item.title, item.id).to_lowercase();
+            tokens.iter().all(|token| haystack.contains(token))
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// Moves around the palette list, wrapping at both ends.
+fn move_palette_selection(index: usize, delta: isize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    (index as isize + delta).rem_euclid(len as isize) as usize
 }
 
 /// Collects pane ids from the layout tree in tree order.
@@ -2204,5 +2518,39 @@ mod tests {
             Some("vertical")
         );
         assert_eq!(decode_value::<LayoutNode>(&value).expect("decode"), layout);
+    }
+
+    fn palette_item(id: &str, title: &str) -> PaletteItem {
+        PaletteItem {
+            id: id.to_string(),
+            title: title.to_string(),
+            source: "test",
+        }
+    }
+
+    #[test]
+    fn filters_the_palette_by_every_word() {
+        let items = vec![
+            palette_item("vy.pane.split_right", "Pane Split Right"),
+            palette_item("vy.pane.split_down", "Pane Split Down"),
+            palette_item("vy.edit.delete", "Edit Delete"),
+        ];
+
+        assert_eq!(filtered_palette_indices(&items, ""), vec![0, 1, 2]);
+        assert_eq!(filtered_palette_indices(&items, "split"), vec![0, 1]);
+        assert_eq!(filtered_palette_indices(&items, "pane down"), vec![1]);
+        assert_eq!(filtered_palette_indices(&items, "edit"), vec![2]);
+        assert_eq!(
+            filtered_palette_indices(&items, "missing"),
+            Vec::<usize>::new()
+        );
+    }
+
+    #[test]
+    fn wraps_the_palette_selection() {
+        assert_eq!(move_palette_selection(0, -1, 3), 2);
+        assert_eq!(move_palette_selection(2, 1, 3), 0);
+        assert_eq!(move_palette_selection(1, 1, 3), 2);
+        assert_eq!(move_palette_selection(0, 1, 0), 0);
     }
 }

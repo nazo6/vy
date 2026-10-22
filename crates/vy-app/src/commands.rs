@@ -22,6 +22,56 @@ pub struct CommandArgs {
     pub register: Option<char>,
 }
 
+/// A command handled by the client UI instead of the editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiCommand {
+    CommandPalette,
+}
+
+impl UiCommand {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::CommandPalette => "vy.ui.command_palette",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::CommandPalette => "Command Palette",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|command| command.id() == id)
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::CommandPalette]
+    }
+}
+
+/// Turns a command id into a short label for the command palette.
+pub fn display_title(id: &str) -> String {
+    let tail = id.strip_prefix("vy.").unwrap_or(id);
+    let mut title = String::new();
+
+    for word in tail.split(['.', '_']).filter(|word| !word.is_empty()) {
+        if !title.is_empty() {
+            title.push(' ');
+        }
+        let mut characters = word.chars();
+        if let Some(first) = characters.next() {
+            title.extend(first.to_uppercase());
+            title.push_str(characters.as_str());
+        }
+    }
+
+    title
+}
+
 /// A command that changes the window layout instead of the buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneCommand {
@@ -351,6 +401,26 @@ mod tests {
             assert_eq!(BuiltinCommand::parse(command.id()), Some(command));
         }
         assert_eq!(BuiltinCommand::parse("vy.motion.unknown"), None);
+    }
+
+    #[test]
+    fn builds_palette_titles_from_ids() {
+        assert_eq!(display_title("vy.pane.split_right"), "Pane Split Right");
+        assert_eq!(display_title("vy.motion.left"), "Motion Left");
+        assert_eq!(
+            display_title("user.uppercase-document"),
+            "User Uppercase-document"
+        );
+    }
+
+    #[test]
+    fn parses_ui_commands() {
+        assert_eq!(
+            UiCommand::parse("vy.ui.command_palette"),
+            Some(UiCommand::CommandPalette)
+        );
+        assert_eq!(UiCommand::parse("vy.ui.unknown"), None);
+        assert_eq!(UiCommand::CommandPalette.title(), "Command Palette");
     }
 
     #[test]

@@ -16,7 +16,9 @@ use vy_capabilities::TrustedStore;
 use vy_core::{Position, Range, Selection, TextEdit};
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 
-use crate::commands::{BuiltinCommand, CommandArgs, CommandRegistry, Owner, PaneCommand};
+use crate::commands::{
+    BuiltinCommand, CommandArgs, CommandRegistry, Owner, PaneCommand, UiCommand,
+};
 use crate::config::Config;
 use crate::editor::{Action, Editor, Mode, Transaction};
 use crate::keymap::Keymap;
@@ -158,6 +160,7 @@ pub enum HostAction {
     Undo,
     Redo,
     Pane(PaneCommand),
+    Ui(UiCommand),
 }
 
 impl From<Action> for HostAction {
@@ -228,7 +231,10 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
         "commands.execute" => {
             let id = text_param(&params, "id").unwrap_or_default();
             let args = command_args(&params);
-            if let Some(command) = PaneCommand::parse(&id) {
+            if let Some(command) = UiCommand::parse(&id) {
+                outcome.action = HostAction::Ui(command);
+                request.respond_value(Value::Null);
+            } else if let Some(command) = PaneCommand::parse(&id) {
                 outcome.action = HostAction::Pane(command);
                 request.respond_value(Value::Null);
             } else if let Some(command) = BuiltinCommand::parse(&id) {
@@ -252,6 +258,11 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 .map(|command| command.id().to_string())
                 .chain(
                     PaneCommand::all()
+                        .iter()
+                        .map(|command| command.id().to_string()),
+                )
+                .chain(
+                    UiCommand::all()
                         .iter()
                         .map(|command| command.id().to_string()),
                 )
