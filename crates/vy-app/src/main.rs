@@ -40,6 +40,8 @@ const VISIBLE_LINES: usize = 30;
 const CHROME_HEIGHT: f32 = 100.0;
 /// Width of one character at the default font size. Used to size the gutter.
 const CHARACTER_WIDTH: f32 = 10.0;
+/// Width of the bar that marks the insertion point.
+const CARET_WIDTH: f32 = 2.0;
 
 /// The kind of request we are waiting for a response to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1511,18 +1513,33 @@ impl EditorView {
     }
 
     /// Collects the lines visible in one pane.
-    fn visible_lines(&self, pane: &PaneState, document: &DocumentState) -> Vec<Div> {
+    fn visible_lines(
+        &self,
+        pane: &PaneState,
+        document: &DocumentState,
+        window: &mut Window,
+    ) -> Vec<Div> {
         let start = pane.scroll_top;
         let end = (start + pane.viewport_rows.max(1)).min(document.editor.line_count());
 
         (start..end)
-            .map(|line| self.render_line(pane, document, line))
+            .map(|line| self.render_line(pane, document, line, window))
             .collect()
     }
 
-    fn render_line(&self, pane: &PaneState, document: &DocumentState, line_number: usize) -> Div {
+    fn render_line(
+        &self,
+        pane: &PaneState,
+        document: &DocumentState,
+        line_number: usize,
+        window: &mut Window,
+    ) -> Div {
         let cursor_line = pane.view.cursor().line as usize;
-        let mut row = div().flex().h(px(self.line_height())).items_center();
+        let mut row = div()
+            .relative()
+            .flex()
+            .h(px(self.line_height()))
+            .items_center();
 
         if let Some(label) = self.config.line_numbers().label(line_number, cursor_line) {
             row = row.child(
@@ -1544,44 +1561,85 @@ impl EditorView {
             return row.child(text);
         }
 
+        if pane.view.mode() == Mode::Insert {
+            // Insert draws a thin bar between characters instead of the block that
+            // marks the selection in the other modes.
+            let (display, caret, preedit) = self.insert_marker(pane, &text);
+            let width = self.text_width(&display, caret, window);
+            let gutter = self.gutter_width(document.editor.line_count());
+
+            let mut line = StyledText::new(display);
+            if let Some(range) = preedit {
+                line = line.with_highlights(vec![(range, cursor_highlight())]);
+            }
+
+            return row.child(line).child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(px(gutter + f32::from(width)))
+                    .w(px(CARET_WIDTH))
+                    .h(px(self.line_height()))
+                    .bg(rgb(0xd4d4d4)),
+            );
+        }
+
         let (display, highlight) = self.cursor_marker(pane, &text);
 
-        row.child(StyledText::new(display).with_highlights(vec![(
-            highlight,
-            HighlightStyle {
-                background_color: Some(rgb(0x264f78).into()),
-                ..Default::default()
-            },
-        )]))
+        row.child(StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight())]))
+    }
+
+    /// Returns the text to draw on the Insert cursor line, the caret's byte offset in
+    /// it, and the range the input method is composing.
+    fn insert_marker(
+        &self,
+        pane: &PaneState,
+        text: &str,
+    ) -> (String, usize, Option<std::ops::Range<usize>>) {
+        let mut display = text.to_string();
+        let caret = utf16_to_byte(&display, pane.view.cursor().character);
+
+        if pane.preedit.is_empty() {
+            return (display, caret, None);
+        }
+
+        // The preedit is drawn on the cursor line without entering the buffer.
+        display.insert_str(caret, &pane.preedit);
+        let end = caret + pane.preedit.len();
+        (display, end, Some(caret..end))
+    }
+
+    /// Width in pixels from the start of a line to the byte offset `index`.
+    fn text_width(&self, text: &str, index: usize, window: &mut Window) -> Pixels {
+        if index == 0 {
+            return px(0.);
+        }
+
+        let run = TextRun {
+            len: text.len(),
+            font: gpui::font(self.config.font_family()),
+            color: rgb(0xd4d4d4).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let shaped = window.text_system().shape_line(
+            SharedString::from(text.to_string()),
+            px(self.config.font_size()),
+            &[run],
+            None,
+        );
+        shaped.x_for_index(index)
     }
 
     /// Returns the text to draw on the cursor line and the byte range to mark.
     ///
+    /// This covers Normal and Select. Insert draws a bar instead (see
+    /// [`Self::insert_marker`]).
     /// The line is shaped once as a whole. Splitting it into several elements would
     /// change the glyphs and widths under the cursor.
     fn cursor_marker(&self, pane: &PaneState, text: &str) -> (String, std::ops::Range<usize>) {
         let mut display = text.to_string();
-
-        if pane.view.mode() == Mode::Insert {
-            let caret = utf16_to_byte(&display, pane.view.cursor().character);
-
-            if !pane.preedit.is_empty() {
-                // The preedit is drawn on the cursor line without entering the buffer.
-                display.insert_str(caret, &pane.preedit);
-                let end = caret + pane.preedit.len();
-                return (display, caret..end);
-            }
-
-            if caret >= display.len() {
-                display.push(' ');
-            }
-            let end = display[caret..]
-                .chars()
-                .next()
-                .map(|character| caret + character.len_utf8())
-                .unwrap_or(caret + 1);
-            return (display, caret..end);
-        }
 
         let length = display
             .chars()
@@ -1607,6 +1665,14 @@ impl EditorView {
         }
 
         (display, from..to)
+    }
+}
+
+/// The background used for the selection and for the preedit text.
+fn cursor_highlight() -> HighlightStyle {
+    HighlightStyle {
+        background_color: Some(rgb(0x264f78).into()),
+        ..Default::default()
     }
 }
 
@@ -2000,7 +2066,7 @@ impl Render for EditorView {
             ));
 
         let content = match self.layout.clone() {
-            Some(layout) => self.render_node(&layout, cx),
+            Some(layout) => self.render_node(&layout, cx, window),
             None => div()
                 .flex_1()
                 .flex()
@@ -2042,9 +2108,9 @@ impl Render for EditorView {
 }
 
 impl EditorView {
-    fn render_node(&self, node: &LayoutNode, cx: &mut Context<Self>) -> Div {
+    fn render_node(&self, node: &LayoutNode, cx: &mut Context<Self>, window: &mut Window) -> Div {
         match node {
-            LayoutNode::Leaf { pane_id } => self.render_pane(*pane_id, cx),
+            LayoutNode::Leaf { pane_id } => self.render_pane(*pane_id, cx, window),
             LayoutNode::Split {
                 direction,
                 ratio,
@@ -2066,7 +2132,7 @@ impl EditorView {
                 .flex_basis(DefiniteLength::Fraction(*ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
-                .child(self.render_node(first, cx));
+                .child(self.render_node(first, cx, window));
 
                 let second_wrapper = match direction {
                     SplitDirection::Horizontal => div().h_full(),
@@ -2075,7 +2141,7 @@ impl EditorView {
                 .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
-                .child(self.render_node(second, cx));
+                .child(self.render_node(second, cx, window));
 
                 row.size_full().child(first_wrapper).child(second_wrapper)
             }
@@ -2096,7 +2162,22 @@ impl EditorView {
             .bg(rgb(0x252526))
             .text_sm()
             .child(div().text_color(rgb(0x9a9a9a)).child(":"))
-            .child(ex.input.clone())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .child(ex.input.clone())
+                    .child(self.input_caret()),
+            )
+    }
+
+    /// A thin bar drawn at the end of a client-side input, such as the Ex line.
+    fn input_caret(&self) -> Div {
+        div()
+            .w(px(CARET_WIDTH))
+            .h(px(self.config.font_size()))
+            .flex_shrink_0()
+            .bg(rgb(0xd4d4d4))
     }
 
     fn render_palette(&self) -> Div {
@@ -2126,7 +2207,13 @@ impl EditorView {
             .py_1()
             .border_b_1()
             .border_color(rgb(0x3c3c3c))
-            .child(format!("> {}", palette.query))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .child(format!("> {}", palette.query))
+                    .child(self.input_caret()),
+            )
             .child(
                 div()
                     .text_xs()
@@ -2198,7 +2285,7 @@ impl EditorView {
         )
     }
 
-    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>) -> Div {
+    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, window: &mut Window) -> Div {
         let pane = self.panes.get(&pane_id);
         let document = pane
             .and_then(|pane| pane.document_id)
@@ -2210,7 +2297,7 @@ impl EditorView {
             _ => format!("pane {pane_id} (empty)"),
         };
         let lines = match (pane, document) {
-            (Some(pane), Some(document)) => self.visible_lines(pane, document),
+            (Some(pane), Some(document)) => self.visible_lines(pane, document, window),
             _ => Vec::new(),
         };
 
