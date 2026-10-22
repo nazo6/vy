@@ -1,6 +1,7 @@
 //! Ex command line UI rendering.
 
-use gpui::{Div, div, prelude::*, px};
+use gpui::{Div, FocusHandle, div, prelude::*, px};
+use gpui_base::FocusTrapElement;
 use vy_app::ex::ExState;
 
 use crate::theme::Theme;
@@ -15,12 +16,18 @@ pub fn input_caret(theme: &Theme, font_size: f32, caret_width: f32) -> Div {
 }
 
 /// Renders the Ex command line input bar at the bottom of the window.
-pub fn render_ex(theme: &Theme, ex: Option<&ExState>, font_size: f32, caret_width: f32) -> Div {
+pub fn render_ex(
+    theme: &Theme,
+    focus_handle: &FocusHandle,
+    ex: Option<&ExState>,
+    font_size: f32,
+    caret_width: f32,
+) -> Div {
     let Some(ex) = ex else {
         return div();
     };
 
-    div()
+    let bar = div()
         .flex()
         .gap_1()
         .items_center()
@@ -37,4 +44,7 @@ pub fn render_ex(theme: &Theme, ex: Option<&ExState>, font_size: f32, caret_widt
                 .child(ex.input.clone())
                 .child(input_caret(theme, font_size, caret_width)),
         )
+        .focus_trap("ex-bar-trap", focus_handle);
+
+    div().child(bar)
 }

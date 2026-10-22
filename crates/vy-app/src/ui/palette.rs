@@ -1,6 +1,7 @@
 //! Command palette UI rendering.
 
-use gpui::{Div, div, prelude::*, px};
+use gpui::{Div, FocusHandle, div, prelude::*, px};
+use gpui_base::FocusTrapElement;
 use vy_app::commands::CommandDescriptor;
 use vy_app::palette::{
     PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteState, filtered_palette_indices,
@@ -12,6 +13,7 @@ use crate::theme::Theme;
 /// Renders the floating modal command palette.
 pub fn render_palette(
     theme: &Theme,
+    focus_handle: &FocusHandle,
     palette: Option<&PaletteState>,
     items: &[CommandDescriptor],
     font_size: f32,
@@ -140,6 +142,7 @@ pub fn render_palette(
                 .flex_col()
                 .child(query)
                 .children(rows)
-                .child(hint),
+                .child(hint)
+                .focus_trap("palette-modal-trap", focus_handle),
         )
 }

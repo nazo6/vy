@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
+use crate::focus::FocusStack;
 use crate::ui;
 
 mod commands;
@@ -78,6 +79,9 @@ pub struct EditorView {
     /// The script command that is currently running, if any.
     running_command: Option<String>,
     pub focus_handle: FocusHandle,
+    pub palette_focus_handle: FocusHandle,
+    pub ex_focus_handle: FocusHandle,
+    pub focus_stack: FocusStack,
     status: SharedString,
     frame_log: bool,
     last_frame: Option<Instant>,
@@ -144,6 +148,9 @@ impl EditorView {
             command_queue: VecDeque::new(),
             running_command: None,
             focus_handle: cx.focus_handle(),
+            palette_focus_handle: cx.focus_handle(),
+            ex_focus_handle: cx.focus_handle(),
+            focus_stack: FocusStack::new(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
@@ -390,13 +397,30 @@ impl EditorView {
         true
     }
 
-    fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    /// Synchronizes window focus with active modal overlays via the focus stack.
+    pub(super) fn sync_modal_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let is_modal_open = self.palette.is_some() || self.ex.is_some();
+        if is_modal_open && self.focus_stack.is_empty() {
+            let target = if self.palette.is_some() {
+                &self.palette_focus_handle
+            } else {
+                &self.ex_focus_handle
+            };
+            self.focus_stack
+                .push(self.focus_handle.clone(), target, window, cx);
+        } else if !is_modal_open && !self.focus_stack.is_empty() {
+            self.focus_stack.pop(window, cx);
+        }
+    }
+
+    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = ui::key::convert_key(&event.keystroke);
 
         if self.ex.is_some() {
             if let Some(key) = key {
                 self.handle_ex_key(key);
             }
+            self.sync_modal_focus(window, cx);
             cx.stop_propagation();
             cx.notify();
             return;
@@ -406,6 +430,7 @@ impl EditorView {
             if let Some(key) = key {
                 self.handle_palette_key(key);
             }
+            self.sync_modal_focus(window, cx);
             cx.stop_propagation();
             cx.notify();
             return;
@@ -431,6 +456,7 @@ impl EditorView {
         }
 
         if self.apply_key(key) {
+            self.sync_modal_focus(window, cx);
             cx.notify();
         }
     }

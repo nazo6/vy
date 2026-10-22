@@ -212,4 +212,3 @@ mod tests {
         assert_eq!(theme.statusline.normal, rgb(0x007acc));
     }
 }
-

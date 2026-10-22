@@ -104,6 +104,7 @@ impl Render for EditorView {
             pane.viewport_rows = rows;
         }
         self.clamp_scroll();
+        self.sync_modal_focus(window, cx);
 
         let theme = cx.theme().clone();
 
@@ -204,6 +205,7 @@ impl EditorView {
     fn render_ex(&self, theme: &Theme) -> Div {
         ui::ex::render_ex(
             theme,
+            &self.ex_focus_handle,
             self.ex.as_ref(),
             self.config.font_size(),
             CARET_WIDTH,
@@ -213,6 +215,7 @@ impl EditorView {
     fn render_palette(&self, theme: &Theme) -> Div {
         ui::palette::render_palette(
             theme,
+            &self.palette_focus_handle,
             self.palette.as_ref(),
             &self.palette_items(),
             self.config.font_size(),

@@ -2,6 +2,7 @@
 //!
 //! On startup it launches `vy-server` as a child process and opens the main editor window.
 
+pub mod focus;
 pub mod theme;
 mod ui;
 mod view;
