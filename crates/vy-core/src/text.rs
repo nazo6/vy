@@ -217,6 +217,33 @@ impl Text {
     }
 }
 
+/// Converts a UTF-16 offset in a line or string to a UTF-8 byte offset. A position inside a surrogate
+/// pair is rounded down to the start of the character.
+pub fn utf16_to_byte(text: &str, units: u32) -> usize {
+    let mut count = 0u32;
+
+    for (index, character) in text.char_indices() {
+        if count >= units || units < count + character.len_utf16() as u32 {
+            return index;
+        }
+        count += character.len_utf16() as u32;
+    }
+
+    text.len()
+}
+
+/// Converts a UTF-8 byte offset in a line or string to a UTF-16 offset.
+pub fn byte_to_utf16(text: &str, byte_offset: usize) -> u32 {
+    let mut units = 0u32;
+    for (index, character) in text.char_indices() {
+        if index >= byte_offset {
+            break;
+        }
+        units += character.len_utf16() as u32;
+    }
+    units
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,5 +335,19 @@ mod tests {
         assert_eq!(text.slice_utf16(0..4), "a😀b");
         assert_eq!(text.slice_utf16(4..7), "\n日本");
         assert_eq!(text.slice_utf16(6..99), "本");
+    }
+
+    #[test]
+    fn converts_utf16_and_byte_offsets() {
+        assert_eq!(utf16_to_byte("a😀b", 0), 0);
+        assert_eq!(utf16_to_byte("a😀b", 1), 1);
+        assert_eq!(utf16_to_byte("a😀b", 2), 1);
+        assert_eq!(utf16_to_byte("a😀b", 3), 5);
+        assert_eq!(utf16_to_byte("a😀b", 4), 6);
+
+        assert_eq!(byte_to_utf16("a😀b", 0), 0);
+        assert_eq!(byte_to_utf16("a😀b", 1), 1);
+        assert_eq!(byte_to_utf16("a😀b", 5), 3);
+        assert_eq!(byte_to_utf16("a😀b", 6), 4);
     }
 }

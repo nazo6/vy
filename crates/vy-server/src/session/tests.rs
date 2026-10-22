@@ -1,7 +1,9 @@
 use super::*;
 use vy_core::{Position, Range, Selection, SplitDirection, TextEdit};
 use vy_proto::value::object;
-use vy_proto::{PROTOCOL_VERSION, RpcResult};
+use vy_proto::{
+    DidChangeParams, InitializeParams, PROTOCOL_VERSION, PaneOpenParams, PaneOpenResult, RpcResult,
+};
 
 fn request(session: &mut Session, id: u64, method: &str, params: Value) -> Outcome {
     session.handle(RpcMessage::request(id, 1, method, params))
@@ -12,13 +14,13 @@ fn initialize(session: &mut Session) {
         1,
         0,
         "initialize",
-        object([
-            ("protocol_version", Value::from(PROTOCOL_VERSION)),
-            ("client_version", Value::from("0.1.0")),
-            ("client_capabilities", Value::Array(Vec::new())),
-            ("workspace", Value::from("file:///tmp")),
-            ("resume_session", Value::Nil),
-        ]),
+        to_value(&InitializeParams {
+            protocol_version: PROTOCOL_VERSION,
+            client_version: "0.1.0".into(),
+            client_capabilities: Vec::new(),
+            workspace: Some("file:///tmp".into()),
+            resume_session: None,
+        }),
     ));
     assert!(!outcome.close);
     assert_eq!(outcome.messages.len(), 2);
@@ -49,45 +51,32 @@ fn open_untitled(session: &mut Session) -> (u64, u64) {
         session,
         2,
         "pane/open",
-        object([("uri", Value::from("vy:untitled"))]),
+        to_value(&PaneOpenParams {
+            view: None,
+            uri: "vy:untitled".into(),
+            placement: None,
+        }),
     );
     let value = ok_value(&outcome.messages[0]);
-    let document_id = get(value, "document_id")
-        .and_then(Value::as_u64)
-        .expect("document_id");
-    let pane_id = get(value, "pane_id")
-        .and_then(Value::as_u64)
-        .expect("pane_id");
-    (document_id, pane_id)
-}
-
-fn position(line: u64, character: u64) -> Value {
-    object([
-        ("line", Value::from(line)),
-        ("character", Value::from(character)),
-    ])
+    let opened: PaneOpenResult = decode_params(value).expect("PaneOpenResult");
+    (opened.document_id, opened.pane_id)
 }
 
 fn insert_change(document_id: u64, base_version: u64, text: &str) -> RpcMessage {
     RpcMessage::notification(
         "buffer/did_change",
-        object([
-            ("document_id", Value::from(document_id)),
-            ("base_version", Value::from(base_version)),
-            ("transaction_id", Value::from(1)),
-            (
-                "edits",
-                Value::Array(vec![object([
-                    (
-                        "range",
-                        object([("start", position(0, 0)), ("end", position(0, 0))]),
-                    ),
-                    ("text", Value::from(text)),
-                ])]),
-            ),
-            ("selection_before", Value::Array(Vec::new())),
-            ("selection_after", Value::Array(Vec::new())),
-        ]),
+        to_value(&DidChangeParams {
+            document_id,
+            base_version,
+            version: base_version + 1,
+            transaction_id: 1,
+            edits: vec![TextEdit::new(
+                Range::new(Position::new(0, 0), Position::new(0, 0)),
+                text,
+            )],
+            selection_before: Vec::new(),
+            selection_after: Vec::new(),
+        }),
     )
 }
 

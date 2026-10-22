@@ -5,8 +5,8 @@ use std::process::{Command, Stdio};
 
 use rmpv::Value;
 use vy_proto::{
-    FrameDecoder, PROTOCOL_VERSION, RpcMessage, RpcResult, decode_message, encode_frame,
-    encode_message, get, object,
+    FrameDecoder, InitializeParams, InitializeResult, InitializedNotification, PROTOCOL_VERSION,
+    RpcMessage, RpcResult, decode_message, decode_value, encode_frame, encode_message, to_value,
 };
 
 struct Server {
@@ -64,13 +64,13 @@ fn initialize(version: u64) -> RpcMessage {
         1,
         0,
         "initialize",
-        object([
-            ("protocol_version", Value::from(version)),
-            ("client_version", Value::from("0.1.0")),
-            ("client_capabilities", Value::Array(Vec::new())),
-            ("workspace", Value::from("file:///tmp")),
-            ("resume_session", Value::Nil),
-        ]),
+        to_value(&InitializeParams {
+            protocol_version: version as u32,
+            client_version: "0.1.0".into(),
+            client_capabilities: Vec::new(),
+            workspace: Some("file:///tmp".into()),
+            resume_session: None,
+        }),
     )
 }
 
@@ -90,21 +90,20 @@ fn completes_the_handshake_over_stdio() {
     server.send(&initialize(PROTOCOL_VERSION as u64));
 
     let response = server.receive();
-    assert_eq!(
-        get(ok_value(&response), "session_id").and_then(Value::as_u64),
-        Some(1)
-    );
+    let init_res: InitializeResult = decode_value(ok_value(&response)).expect("InitializeResult");
+    assert_eq!(init_res.session_id, 1);
 
     match server.receive() {
         RpcMessage::Notification { method, params } => {
             assert_eq!(method, "initialized");
+            let notif: InitializedNotification =
+                decode_value(&params).expect("InitializedNotification");
+            assert_eq!(notif.protocol_version, PROTOCOL_VERSION);
+            assert_eq!(notif.server_version, env!("CARGO_PKG_VERSION"));
+            assert_eq!(notif.platform.os, std::env::consts::OS);
             assert_eq!(
-                get(&params, "protocol_version").and_then(Value::as_u64),
-                Some(PROTOCOL_VERSION as u64)
-            );
-            assert_eq!(
-                get(&params, "server_version").and_then(Value::as_str),
-                Some(env!("CARGO_PKG_VERSION"))
+                notif.platform.path_separator,
+                std::path::MAIN_SEPARATOR.to_string()
             );
         }
         other => panic!("expected a notification: {other:?}"),

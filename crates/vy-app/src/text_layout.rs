@@ -27,20 +27,7 @@ pub fn scroll_lines(top: usize, lines: isize, rows: usize, total: usize) -> usiz
     (top as isize + lines).clamp(0, max_top) as usize
 }
 
-/// Converts a UTF-16 offset to a UTF-8 byte offset. A position inside a surrogate
-/// pair is rounded down to the start of the character.
-pub fn utf16_to_byte(text: &str, units: u32) -> usize {
-    let mut count = 0u32;
-
-    for (index, character) in text.char_indices() {
-        if count >= units || units < count + character.len_utf16() as u32 {
-            return index;
-        }
-        count += character.len_utf16() as u32;
-    }
-
-    text.len()
-}
+pub use vy_core::{byte_to_utf16, utf16_to_byte};
 
 /// The part of one line covered by the selection. [`None`] if the line is outside it.
 pub fn selection_on_line(selection: Range, line: u32, length: u32) -> Option<(u32, u32)> {
