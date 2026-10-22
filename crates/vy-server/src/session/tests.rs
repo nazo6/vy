@@ -1,0 +1,504 @@
+use super::*;
+use vy_core::{Position, Range, Selection, SplitDirection, TextEdit};
+use vy_proto::{PROTOCOL_VERSION, RpcResult};
+
+fn request(session: &mut Session, id: u64, method: &str, params: Value) -> Outcome {
+    session.handle(RpcMessage::request(id, 1, method, params))
+}
+
+fn initialize(session: &mut Session) {
+    let outcome = session.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        object([
+            ("protocol_version", Value::from(PROTOCOL_VERSION)),
+            ("client_version", Value::from("0.1.0")),
+            ("client_capabilities", Value::Array(Vec::new())),
+            ("workspace", Value::from("file:///tmp")),
+            ("resume_session", Value::Nil),
+        ]),
+    ));
+    assert!(!outcome.close);
+    assert_eq!(outcome.messages.len(), 2);
+}
+
+fn ok_value(message: &RpcMessage) -> &Value {
+    match message {
+        RpcMessage::Response {
+            result: RpcResult::Ok { value },
+            ..
+        } => value,
+        other => panic!("expected Ok: {other:?}"),
+    }
+}
+
+fn is_error(message: &RpcMessage, code: ErrorCode) -> bool {
+    matches!(
+        message,
+        RpcMessage::Response {
+            result: RpcResult::Err { code: actual, .. },
+            ..
+        } if *actual == code
+    )
+}
+
+fn open_untitled(session: &mut Session) -> (u64, u64) {
+    let outcome = request(
+        session,
+        2,
+        "pane/open",
+        object([("uri", Value::from("vy:untitled"))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    let document_id = get(value, "document_id")
+        .and_then(Value::as_u64)
+        .expect("document_id");
+    let pane_id = get(value, "pane_id")
+        .and_then(Value::as_u64)
+        .expect("pane_id");
+    (document_id, pane_id)
+}
+
+fn position(line: u64, character: u64) -> Value {
+    object([
+        ("line", Value::from(line)),
+        ("character", Value::from(character)),
+    ])
+}
+
+fn insert_change(document_id: u64, base_version: u64, text: &str) -> RpcMessage {
+    RpcMessage::notification(
+        "buffer/did_change",
+        object([
+            ("document_id", Value::from(document_id)),
+            ("base_version", Value::from(base_version)),
+            ("transaction_id", Value::from(1)),
+            (
+                "edits",
+                Value::Array(vec![object([
+                    (
+                        "range",
+                        object([("start", position(0, 0)), ("end", position(0, 0))]),
+                    ),
+                    ("text", Value::from(text)),
+                ])]),
+            ),
+            ("selection_before", Value::Array(Vec::new())),
+            ("selection_after", Value::Array(Vec::new())),
+        ]),
+    )
+}
+
+#[test]
+fn answers_initialize_and_notifies() {
+    let mut session = Session::new();
+    let outcome = session.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        object([
+            ("protocol_version", Value::from(PROTOCOL_VERSION)),
+            ("workspace", Value::from("file:///tmp")),
+        ]),
+    ));
+
+    assert!(!outcome.close);
+    assert_eq!(outcome.messages.len(), 2);
+    assert_eq!(
+        get(ok_value(&outcome.messages[0]), "session_id").and_then(Value::as_u64),
+        Some(1)
+    );
+
+    match &outcome.messages[1] {
+        RpcMessage::Notification { method, params } => {
+            assert_eq!(method, "initialized");
+            assert_eq!(
+                get(params, "protocol_version").and_then(Value::as_u64),
+                Some(PROTOCOL_VERSION as u64)
+            );
+            assert_eq!(get(params, "session_id").and_then(Value::as_u64), Some(1));
+        }
+        other => panic!("expected a notification: {other:?}"),
+    }
+
+    assert_eq!(
+        session.workspace,
+        Some(Uri::parse("file:///tmp").expect("uri"))
+    );
+}
+
+#[test]
+fn closes_on_a_mismatched_protocol_version() {
+    let mut session = Session::new();
+    let outcome = session.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        object([("protocol_version", Value::from(99u64))]),
+    ));
+
+    assert!(outcome.close);
+    assert!(is_error(
+        &outcome.messages[0],
+        ErrorCode::UnsupportedProtocolVersion
+    ));
+}
+
+#[test]
+fn requires_initialize_first() {
+    let mut session = Session::new();
+    let outcome = request(&mut session, 1, "pane/open", Value::Map(Vec::new()));
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+}
+
+#[test]
+fn rejects_a_foreign_session_id() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let outcome = session.handle(RpcMessage::request(
+        2,
+        9,
+        "buffer/snapshot",
+        Value::Map(Vec::new()),
+    ));
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+}
+
+#[test]
+fn opens_a_document_and_returns_a_snapshot() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, pane_id) = open_untitled(&mut session);
+
+    assert_eq!(document_id, 1);
+    assert_eq!(pane_id, 1);
+
+    let outcome = request(
+        &mut session,
+        3,
+        "buffer/snapshot",
+        object([("document_id", Value::from(document_id))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(get(value, "version").and_then(Value::as_u64), Some(0));
+    assert_eq!(get(value, "text").and_then(Value::as_str), Some(""));
+}
+
+#[test]
+fn applies_a_change_and_undoes_it() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, _) = open_untitled(&mut session);
+
+    let outcome = session.handle(insert_change(document_id, 0, "こんにちは"));
+    assert!(outcome.messages.is_empty());
+
+    let outcome = request(
+        &mut session,
+        3,
+        "buffer/snapshot",
+        object([("document_id", Value::from(document_id))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(value, "text").and_then(Value::as_str),
+        Some("こんにちは")
+    );
+    assert_eq!(get(value, "version").and_then(Value::as_u64), Some(1));
+
+    let outcome = request(
+        &mut session,
+        4,
+        "buffer/undo",
+        object([("document_id", Value::from(document_id))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(get(value, "version").and_then(Value::as_u64), Some(2));
+    match get(value, "edits") {
+        Some(Value::Array(batches)) => {
+            assert_eq!(batches.len(), 1);
+            match &batches[0] {
+                Value::Array(edits) => assert_eq!(edits.len(), 1),
+                other => panic!("a batch is not an array: {other:?}"),
+            }
+        }
+        other => panic!("edits is not an array: {other:?}"),
+    }
+
+    let outcome = request(
+        &mut session,
+        5,
+        "buffer/snapshot",
+        object([("document_id", Value::from(document_id))]),
+    );
+    assert_eq!(
+        get(ok_value(&outcome.messages[0]), "text").and_then(Value::as_str),
+        Some("")
+    );
+}
+
+#[test]
+fn asks_for_a_resync_when_the_base_version_is_stale() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, _) = open_untitled(&mut session);
+
+    let outcome = session.handle(insert_change(document_id, 9, "x"));
+    assert_eq!(outcome.messages.len(), 1);
+    match &outcome.messages[0] {
+        RpcMessage::Notification { method, params } => {
+            assert_eq!(method, "buffer/resync");
+            assert_eq!(
+                get(params, "document_id").and_then(Value::as_u64),
+                Some(document_id)
+            );
+        }
+        other => panic!("expected a notification: {other:?}"),
+    }
+}
+
+#[test]
+fn reports_unknown_methods() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let outcome = request(&mut session, 2, "nope/nope", Value::Map(Vec::new()));
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+}
+
+#[test]
+fn closes_on_shutdown() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let outcome = request(&mut session, 2, "shutdown", Value::Map(Vec::new()));
+    assert!(outcome.close);
+}
+
+// Make sure the position types match the wire format.
+#[test]
+fn serializes_core_types_as_maps() {
+    let edit = TextEdit::new(Range::new(Position::new(1, 2), Position::new(1, 4)), "abc");
+    let value = to_value(&edit);
+    assert_eq!(get(&value, "text").and_then(Value::as_str), Some("abc"));
+    let start = get(&value, "range")
+        .and_then(|range| get(range, "start"))
+        .expect("start");
+    assert_eq!(get(start, "line").and_then(Value::as_u64), Some(1));
+    assert_eq!(get(start, "character").and_then(Value::as_u64), Some(2));
+
+    let selection = Selection::caret(Position::new(0, 0));
+    let decoded: Selection = decode_params(&to_value(&selection)).expect("selection round trip");
+    assert_eq!(decoded, selection);
+}
+
+fn layout_notification(outcome: &Outcome) -> (&Value, &Value) {
+    match &outcome.messages[1] {
+        RpcMessage::Notification { method, params } => {
+            assert_eq!(method, "layout/did_change");
+            let layout = get(params, "layout").expect("layout");
+            (params, layout)
+        }
+        other => panic!("expected a layout notification: {other:?}"),
+    }
+}
+
+#[test]
+fn opens_a_second_pane_next_to_the_first_and_shares_the_buffer() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, pane_id) = open_untitled(&mut session);
+
+    let outcome = request(
+        &mut session,
+        3,
+        "pane/open",
+        object([
+            ("uri", Value::from("vy:untitled")),
+            (
+                "placement",
+                object([
+                    ("target", Value::from(pane_id)),
+                    ("direction", Value::from("right")),
+                ]),
+            ),
+        ]),
+    );
+
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(value, "document_id").and_then(Value::as_u64),
+        Some(document_id),
+        "an open URI reuses the document"
+    );
+    assert_eq!(get(value, "pane_id").and_then(Value::as_u64), Some(2));
+
+    let (params, layout) = layout_notification(&outcome);
+    assert_eq!(get(params, "active_pane").and_then(Value::as_u64), Some(2));
+    assert_eq!(get(params, "reason").and_then(Value::as_str), Some("open"));
+    assert_eq!(
+        decode_params::<vy_core::LayoutNode>(layout),
+        Some(vy_core::LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(vy_core::LayoutNode::Leaf { pane_id }),
+            second: Box::new(vy_core::LayoutNode::Leaf { pane_id: 2 }),
+        })
+    );
+}
+
+#[test]
+fn focuses_and_closes_panes_through_the_layout_tree() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (_, first) = open_untitled(&mut session);
+    let outcome = request(
+        &mut session,
+        3,
+        "pane/open",
+        object([
+            ("uri", Value::from("vy:untitled")),
+            (
+                "placement",
+                object([
+                    ("target", Value::from(first)),
+                    ("direction", Value::from("below")),
+                ]),
+            ),
+        ]),
+    );
+    let second = get(ok_value(&outcome.messages[0]), "pane_id")
+        .and_then(Value::as_u64)
+        .expect("pane_id");
+
+    let outcome = request(
+        &mut session,
+        4,
+        "pane/focus",
+        object([("pane_id", Value::from(first))]),
+    );
+    let (params, _) = layout_notification(&outcome);
+    assert_eq!(
+        get(params, "active_pane").and_then(Value::as_u64),
+        Some(first)
+    );
+
+    let outcome = request(
+        &mut session,
+        5,
+        "pane/close",
+        object([("pane_id", Value::from(first))]),
+    );
+    let (params, layout) = layout_notification(&outcome);
+    assert_eq!(get(params, "reason").and_then(Value::as_str), Some("close"));
+    assert_eq!(
+        decode_params::<vy_core::LayoutNode>(layout),
+        Some(vy_core::LayoutNode::Leaf { pane_id: second })
+    );
+
+    let outcome = request(
+        &mut session,
+        6,
+        "pane/close",
+        object([("pane_id", Value::from(second))]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+}
+
+#[test]
+fn returns_the_layout_with_its_panes() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, pane_id) = open_untitled(&mut session);
+
+    let outcome = request(&mut session, 3, "layout/get", Value::Map(Vec::new()));
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(get(value, "revision").and_then(Value::as_u64), Some(1));
+    assert_eq!(
+        get(value, "active_pane").and_then(Value::as_u64),
+        Some(pane_id)
+    );
+
+    let panes = match get(value, "panes") {
+        Some(Value::Array(panes)) => panes,
+        other => panic!("expected panes: {other:?}"),
+    };
+    assert_eq!(panes.len(), 1);
+    assert_eq!(
+        get(&panes[0], "document_id").and_then(Value::as_u64),
+        Some(document_id)
+    );
+    assert_eq!(
+        get(&panes[0], "view").and_then(Value::as_str),
+        Some("editor")
+    );
+}
+
+#[test]
+fn editor_open_replaces_the_document_in_the_active_pane() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (first_document, pane_id) = open_untitled(&mut session);
+
+    let outcome = request(
+        &mut session,
+        3,
+        "editor/open",
+        object([("uri", Value::from("vy:second"))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    let second_document = get(value, "document_id")
+        .and_then(Value::as_u64)
+        .expect("document_id");
+    assert_ne!(first_document, second_document);
+    assert_eq!(get(value, "pane_id").and_then(Value::as_u64), Some(pane_id));
+    assert_eq!(get(value, "replaced").and_then(Value::as_bool), Some(true));
+
+    let outcome = request(
+        &mut session,
+        4,
+        "editor/open",
+        object([("uri", Value::from("vy:untitled"))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(value, "document_id").and_then(Value::as_u64),
+        Some(first_document)
+    );
+}
+
+#[test]
+fn saves_a_file_back_to_disk() {
+    let mut session = Session::new();
+    initialize(&mut session);
+
+    let path = std::env::temp_dir().join(format!("vy-save-{}-{}.txt", std::process::id(), line!()));
+    std::fs::write(&path, "old").expect("write fixture");
+    let uri = format!("file://{}", path.display());
+
+    let outcome = request(
+        &mut session,
+        2,
+        "pane/open",
+        object([("uri", Value::from(uri))]),
+    );
+    let document_id = get(ok_value(&outcome.messages[0]), "document_id")
+        .and_then(Value::as_u64)
+        .expect("document_id");
+
+    session.handle(insert_change(document_id, 0, "new"));
+
+    let outcome = request(
+        &mut session,
+        3,
+        "document/save",
+        object([("document_id", Value::from(document_id))]),
+    );
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(value, "document_id").and_then(Value::as_u64),
+        Some(document_id)
+    );
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), "newold");
+
+    std::fs::remove_file(path).ok();
+}
