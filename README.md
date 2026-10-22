@@ -75,8 +75,6 @@ cargo run -p vy-app -- README.md
   を探します。別の場所を使うときは `VY_SERVER=/path/to/vy-server` を指定します。
 - `vy-server` のログは標準エラーに出ます。量を変えるときは `VY_LOG=debug`
   を使います。
-- GPUI 0.2.2 が引く `xattr 0.2.3` は Linux でビルドできないため、`vendor/xattr`
-  にパッチ版を置いています（[`vendor/xattr/PATCH.md`](./vendor/xattr/PATCH.md)）。
 - `VY_FRAME_LOG=1`
   で起動すると、フレームの間隔と要素の組み立て時間を標準エラーに
   出します。キー入力の重さを測るときに使います。

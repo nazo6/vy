@@ -49,18 +49,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Client
 # Pin the version exactly, per ADR 0001.
-gpui = "=0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+gpui-platform = { package = "gpui-pre-platform", version = "=0.3.9" }
+gpui-base = "0.8.0"
 
 vy-capabilities = { path = "crates/vy-capabilities" }
 vy-core = { path = "crates/vy-core" }
 vy-js = { path = "crates/vy-js" }
 vy-proto = { path = "crates/vy-proto" }
-
-# xattr 0.2.3, pulled in by gpui 0.2.2, references libc::ENOATTR, which does not exist
-# on Linux, and fails to build. Until upstream fixes it, use the copy in vendor/ with
-# a local patch.
-[patch.crates-io]
-xattr = { path = "vendor/xattr" }
 
 # Without optimization, GPUI and wgpu take tens of milliseconds per frame and key
 # input stutters. Optimize dependencies only and keep debug info for our crates

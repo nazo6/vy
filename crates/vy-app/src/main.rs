@@ -5,11 +5,14 @@
 mod ui;
 mod view;
 
-use gpui::{App, Application, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui_platform::application;
 use view::EditorView;
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    application().run(|cx: &mut App| {
+        gpui_base::init(cx);
+
         let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
 
         let window = cx
@@ -23,8 +26,8 @@ fn main() {
             .expect("could not open the window");
 
         window
-            .update(cx, |view, window, _cx| {
-                view.focus_handle.focus(window);
+            .update(cx, |view, window, cx| {
+                view.focus_handle.focus(window, cx);
             })
             .ok();
 

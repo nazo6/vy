@@ -55,9 +55,6 @@
 - GPUI と wgpu は最適化なしだと 1 フレームに数十 ms かかります。`Cargo.toml` の
   `[profile.dev.package."*"]` で依存だけ最適化しています。依存を変えた直後は
   ビルドが長くなります。
-- `xattr 0.2.3` は Linux でビルドできないため、`vendor/xattr` にパッチ版を置いて
-  います（[`vendor/xattr/PATCH.md`](../vendor/xattr/PATCH.md)）。上流が直したら
-  削除します。
 - `vy-server` のログは必ず標準エラーに出します。標準出力は RPC
   のフレーム専用です。
 
