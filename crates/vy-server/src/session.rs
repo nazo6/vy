@@ -3,13 +3,21 @@ use std::collections::HashMap;
 use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use vy_core::{Applied, Buffer, TextEdit, Uri};
+use vy_core::{Applied, Buffer, DocumentId, Layout, PaneId, SplitDirection, TextEdit, Uri};
 use vy_proto::value::{get, object};
 use vy_proto::{ErrorCode, PROTOCOL_VERSION, RpcMessage};
 
+/// One pane in the layout tree.
+#[derive(Debug, Clone)]
+struct Pane {
+    view: String,
+    document_id: Option<DocumentId>,
+}
+
 /// State owned by one connection.
 ///
-/// The layout tree lands in Phase 3. For now this only maps panes to documents.
+/// The layout tree lives here. Floating panes, saved sessions, and views other than
+/// `editor` are not implemented yet.
 pub struct Session {
     state: State,
     next_session_id: u64,
@@ -17,7 +25,10 @@ pub struct Session {
     next_pane_id: u64,
     workspace: Option<Uri>,
     documents: HashMap<u64, Buffer>,
-    panes: HashMap<u64, u64>,
+    /// Documents already open, keyed by URI. A second pane reuses the buffer.
+    documents_by_uri: HashMap<String, DocumentId>,
+    panes: HashMap<PaneId, Pane>,
+    layout: Layout,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,7 +77,9 @@ impl Session {
             next_pane_id: 1,
             workspace: None,
             documents: HashMap::new(),
+            documents_by_uri: HashMap::new(),
             panes: HashMap::new(),
+            layout: Layout::new(1),
         }
     }
 
@@ -122,6 +135,14 @@ impl Session {
 
         match method {
             "pane/open" => self.open_pane(id, params),
+            "pane/focus" => self.focus_pane(id, params),
+            "pane/close" => self.close_pane(id, params),
+            "pane/resize" => Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::UnsupportedFeature,
+                "pane/resize is not implemented yet",
+            )),
+            "layout/get" => self.layout_get(id),
             "buffer/snapshot" => self.snapshot(id, params),
             "buffer/undo" => self.undo(id, params),
             "buffer/redo" => self.redo(id, params),
@@ -201,8 +222,19 @@ impl Session {
         }
     }
 
-    /// Opens a document and puts it in a pane. The layout tree lands in Phase 3.
+    /// Opens a document in a new pane. The placement decides where the pane goes.
     fn open_pane(&mut self, id: u64, params: Value) -> Outcome {
+        let view = get(&params, "view")
+            .and_then(Value::as_str)
+            .unwrap_or("editor");
+        if view != "editor" {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::UnsupportedFeature,
+                format!("view {view} is not implemented yet"),
+            ));
+        }
+
         let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
             return Outcome::one(RpcMessage::err(
                 id,
@@ -222,46 +254,239 @@ impl Session {
             }
         };
 
-        let text = if uri.scheme() == "file" {
-            let Some(path) = uri.file_path() else {
-                return Outcome::one(RpcMessage::err(
-                    id,
-                    ErrorCode::InvalidRequest,
-                    format!("cannot convert to a path: {uri}"),
-                ));
-            };
-            // Phase 1 reads synchronously. Move this to spawn_blocking when large files arrive.
-            match std::fs::read_to_string(&path) {
-                Ok(text) => text,
-                Err(error) => {
-                    return Outcome::one(RpcMessage::err(
-                        id,
-                        ErrorCode::NotFound,
-                        format!("{}: {error}", path.display()),
-                    ));
+        let placement = get(&params, "placement");
+        let target = placement
+            .and_then(|value| get(value, "target"))
+            .and_then(Value::as_u64);
+        let position = placement
+            .and_then(|value| get(value, "direction"))
+            .and_then(Value::as_str)
+            .unwrap_or("right");
+        let Some(direction) = SplitDirection::parse(position) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                format!("unknown placement direction: {position}"),
+            ));
+        };
+        if let Some(ratio) = placement
+            .and_then(|value| get(value, "ratio"))
+            .and_then(Value::as_f64)
+            && !(0.0 < ratio && ratio < 1.0)
+        {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "placement.ratio must be between 0 and 1",
+            ));
+        }
+
+        let key = uri.as_str().to_string();
+        let (document_id, version, line_count, created) =
+            match self.documents_by_uri.get(&key).copied() {
+                Some(document_id) => {
+                    let buffer = self
+                        .documents
+                        .get(&document_id)
+                        .expect("the URI index points at an open document");
+                    (document_id, buffer.version(), buffer.line_count(), false)
                 }
+                None => {
+                    let text = if uri.scheme() == "file" {
+                        let Some(path) = uri.file_path() else {
+                            return Outcome::one(RpcMessage::err(
+                                id,
+                                ErrorCode::InvalidRequest,
+                                format!("cannot convert to a path: {uri}"),
+                            ));
+                        };
+                        // Phase 1 reads synchronously. Move this to spawn_blocking when
+                        // large files arrive.
+                        match std::fs::read_to_string(&path) {
+                            Ok(text) => text,
+                            Err(error) => {
+                                return Outcome::one(RpcMessage::err(
+                                    id,
+                                    ErrorCode::NotFound,
+                                    format!("{}: {error}", path.display()),
+                                ));
+                            }
+                        }
+                    } else {
+                        String::new()
+                    };
+
+                    let document_id = self.next_document_id;
+                    self.next_document_id += 1;
+                    let buffer = Buffer::new(document_id, uri, text);
+                    let version = buffer.version();
+                    let line_count = buffer.line_count();
+                    self.documents.insert(document_id, buffer);
+                    self.documents_by_uri.insert(key, document_id);
+                    (document_id, version, line_count, true)
+                }
+            };
+
+        let pane_id = self.next_pane_id;
+        if let Err(error) = self.layout.open(
+            pane_id,
+            target,
+            direction,
+            SplitDirection::is_before(position),
+        ) {
+            if created {
+                self.documents.remove(&document_id);
+                self.documents_by_uri.retain(|_, id| *id != document_id);
             }
-        } else {
-            String::new()
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                error.to_string(),
+            ));
+        }
+
+        self.next_pane_id += 1;
+        self.panes.insert(
+            pane_id,
+            Pane {
+                view: view.to_string(),
+                document_id: Some(document_id),
+            },
+        );
+
+        let response = RpcMessage::ok(
+            id,
+            object([
+                ("pane_id", Value::from(pane_id)),
+                ("document_id", Value::from(document_id)),
+                ("version", Value::from(version)),
+                ("line_count", Value::from(line_count as u64)),
+                ("uri", Value::from(value)),
+            ]),
+        );
+
+        Outcome {
+            messages: vec![response, self.layout_notification("open")],
+            close: false,
+        }
+    }
+
+    /// Focuses a pane. The client only moves the caret after the confirmation.
+    fn focus_pane(&mut self, id: u64, params: Value) -> Outcome {
+        let Some(pane_id) = get(&params, "pane_id").and_then(Value::as_u64) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "pane/focus requires a pane_id",
+            ));
         };
 
-        let document_id = self.next_document_id;
-        self.next_document_id += 1;
-        let pane_id = self.next_pane_id;
-        self.next_pane_id += 1;
+        if let Err(error) = self.layout.focus(pane_id) {
+            return Outcome::one(RpcMessage::err(id, ErrorCode::NotFound, error.to_string()));
+        }
 
-        let buffer = Buffer::new(document_id, uri, text);
-        let response = object([
-            ("pane_id", Value::from(pane_id)),
-            ("document_id", Value::from(document_id)),
-            ("version", Value::from(buffer.version())),
-            ("line_count", Value::from(buffer.line_count() as u64)),
-        ]);
+        Outcome {
+            messages: vec![
+                RpcMessage::ok(id, object([("pane_id", Value::from(pane_id))])),
+                self.layout_notification("focus"),
+            ],
+            close: false,
+        }
+    }
 
-        self.documents.insert(document_id, buffer);
-        self.panes.insert(pane_id, document_id);
+    /// Closes a pane. The layout collapses the split that becomes empty.
+    fn close_pane(&mut self, id: u64, params: Value) -> Outcome {
+        let Some(pane_id) = get(&params, "pane_id").and_then(Value::as_u64) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "pane/close requires a pane_id",
+            ));
+        };
 
-        Outcome::one(RpcMessage::ok(id, response))
+        if let Err(error) = self.layout.close(pane_id) {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                error.to_string(),
+            ));
+        }
+
+        let document_id = self
+            .panes
+            .remove(&pane_id)
+            .and_then(|pane| pane.document_id);
+        if let Some(document_id) = document_id {
+            // Drop the buffer when no pane refers to it anymore, so a later open
+            // rereads the file instead of showing the stale copy.
+            let still_used = self
+                .panes
+                .values()
+                .any(|pane| pane.document_id == Some(document_id));
+            if !still_used {
+                self.documents.remove(&document_id);
+                self.documents_by_uri.retain(|_, id| *id != document_id);
+            }
+        }
+
+        Outcome {
+            messages: vec![
+                RpcMessage::ok(id, object([("pane_id", Value::from(pane_id))])),
+                self.layout_notification("close"),
+            ],
+            close: false,
+        }
+    }
+
+    /// Returns the whole layout. The client uses this after reconnecting.
+    fn layout_get(&self, id: u64) -> Outcome {
+        let mut panes = Vec::new();
+        for pane_id in self.layout.leaves() {
+            if let Some(pane) = self.panes.get(&pane_id) {
+                panes.push(object([
+                    ("pane_id", Value::from(pane_id)),
+                    ("view", Value::from(pane.view.clone())),
+                    (
+                        "document_id",
+                        pane.document_id.map(Value::from).unwrap_or(Value::Nil),
+                    ),
+                ]));
+            }
+        }
+
+        let mut value = self.layout_value();
+        if let Value::Map(entries) = &mut value {
+            entries.push((Value::from("panes"), Value::Array(panes)));
+        }
+
+        Outcome::one(RpcMessage::ok(id, value))
+    }
+
+    fn layout_notification(&self, reason: &str) -> RpcMessage {
+        let mut value = self.layout_value();
+        if let Value::Map(entries) = &mut value {
+            entries.push((Value::from("reason"), Value::from(reason)));
+        }
+        RpcMessage::notification("layout/did_change", value)
+    }
+
+    fn layout_value(&self) -> Value {
+        object([
+            ("window_id", Value::from(self.layout.window_id())),
+            ("revision", Value::from(self.layout.revision())),
+            (
+                "layout",
+                self.layout.root().map(to_value).unwrap_or(Value::Nil),
+            ),
+            ("floating", Value::Array(Vec::new())),
+            (
+                "active_pane",
+                self.layout
+                    .active_pane()
+                    .map(Value::from)
+                    .unwrap_or(Value::Nil),
+            ),
+        ])
     }
 
     fn snapshot(&self, id: u64, params: Value) -> Outcome {
@@ -775,5 +1000,147 @@ mod tests {
         let decoded: Selection =
             decode_params(&to_value(&selection)).expect("selection round trip");
         assert_eq!(decoded, selection);
+    }
+
+    fn layout_notification(outcome: &Outcome) -> (&Value, &Value) {
+        match &outcome.messages[1] {
+            RpcMessage::Notification { method, params } => {
+                assert_eq!(method, "layout/did_change");
+                let layout = get(params, "layout").expect("layout");
+                (params, layout)
+            }
+            other => panic!("expected a layout notification: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opens_a_second_pane_next_to_the_first_and_shares_the_buffer() {
+        let mut session = Session::new();
+        initialize(&mut session);
+        let (document_id, pane_id) = open_untitled(&mut session);
+
+        let outcome = request(
+            &mut session,
+            3,
+            "pane/open",
+            object([
+                ("uri", Value::from("vy:untitled")),
+                (
+                    "placement",
+                    object([
+                        ("target", Value::from(pane_id)),
+                        ("direction", Value::from("right")),
+                    ]),
+                ),
+            ]),
+        );
+
+        let value = ok_value(&outcome.messages[0]);
+        assert_eq!(
+            get(value, "document_id").and_then(Value::as_u64),
+            Some(document_id),
+            "an open URI reuses the document"
+        );
+        assert_eq!(get(value, "pane_id").and_then(Value::as_u64), Some(2));
+
+        let (params, layout) = layout_notification(&outcome);
+        assert_eq!(get(params, "active_pane").and_then(Value::as_u64), Some(2));
+        assert_eq!(get(params, "reason").and_then(Value::as_str), Some("open"));
+        assert_eq!(
+            decode_params::<vy_core::LayoutNode>(layout),
+            Some(vy_core::LayoutNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(vy_core::LayoutNode::Leaf { pane_id }),
+                second: Box::new(vy_core::LayoutNode::Leaf { pane_id: 2 }),
+            })
+        );
+    }
+
+    #[test]
+    fn focuses_and_closes_panes_through_the_layout_tree() {
+        let mut session = Session::new();
+        initialize(&mut session);
+        let (_, first) = open_untitled(&mut session);
+        let outcome = request(
+            &mut session,
+            3,
+            "pane/open",
+            object([
+                ("uri", Value::from("vy:untitled")),
+                (
+                    "placement",
+                    object([
+                        ("target", Value::from(first)),
+                        ("direction", Value::from("below")),
+                    ]),
+                ),
+            ]),
+        );
+        let second = get(ok_value(&outcome.messages[0]), "pane_id")
+            .and_then(Value::as_u64)
+            .expect("pane_id");
+
+        let outcome = request(
+            &mut session,
+            4,
+            "pane/focus",
+            object([("pane_id", Value::from(first))]),
+        );
+        let (params, _) = layout_notification(&outcome);
+        assert_eq!(
+            get(params, "active_pane").and_then(Value::as_u64),
+            Some(first)
+        );
+
+        let outcome = request(
+            &mut session,
+            5,
+            "pane/close",
+            object([("pane_id", Value::from(first))]),
+        );
+        let (params, layout) = layout_notification(&outcome);
+        assert_eq!(get(params, "reason").and_then(Value::as_str), Some("close"));
+        assert_eq!(
+            decode_params::<vy_core::LayoutNode>(layout),
+            Some(vy_core::LayoutNode::Leaf { pane_id: second })
+        );
+
+        let outcome = request(
+            &mut session,
+            6,
+            "pane/close",
+            object([("pane_id", Value::from(second))]),
+        );
+        assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+    }
+
+    #[test]
+    fn returns_the_layout_with_its_panes() {
+        let mut session = Session::new();
+        initialize(&mut session);
+        let (document_id, pane_id) = open_untitled(&mut session);
+
+        let outcome = request(&mut session, 3, "layout/get", Value::Map(Vec::new()));
+        let value = ok_value(&outcome.messages[0]);
+        assert_eq!(get(value, "revision").and_then(Value::as_u64), Some(1));
+        assert_eq!(
+            get(value, "active_pane").and_then(Value::as_u64),
+            Some(pane_id)
+        );
+
+        let panes = match get(value, "panes") {
+            Some(Value::Array(panes)) => panes,
+            other => panic!("expected panes: {other:?}"),
+        };
+        assert_eq!(panes.len(), 1);
+        assert_eq!(
+            get(&panes[0], "document_id").and_then(Value::as_u64),
+            Some(document_id)
+        );
+        assert_eq!(
+            get(&panes[0], "view").and_then(Value::as_str),
+            Some("editor")
+        );
     }
 }

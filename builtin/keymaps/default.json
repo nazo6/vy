@@ -272,5 +272,45 @@
         "keys": "`",
         "command": "vy.text_object.backtick",
         "when": "textObjectPending"
+    },
+    {
+        "keys": "ctrl-w h",
+        "command": "vy.pane.focus_left",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w j",
+        "command": "vy.pane.focus_down",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w k",
+        "command": "vy.pane.focus_up",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w l",
+        "command": "vy.pane.focus_right",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w v",
+        "command": "vy.pane.split_right",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w s",
+        "command": "vy.pane.split_down",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w q",
+        "command": "vy.pane.close",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w w",
+        "command": "vy.pane.next",
+        "when": "normalMode"
     }
 ]

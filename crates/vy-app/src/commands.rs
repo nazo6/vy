@@ -22,6 +22,55 @@ pub struct CommandArgs {
     pub register: Option<char>,
 }
 
+/// A command that changes the window layout instead of the buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneCommand {
+    SplitRight,
+    SplitDown,
+    Close,
+    FocusLeft,
+    FocusDown,
+    FocusUp,
+    FocusRight,
+    Next,
+}
+
+impl PaneCommand {
+    /// Stable identifier used by key bindings and `commands.execute`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::SplitRight => "vy.pane.split_right",
+            Self::SplitDown => "vy.pane.split_down",
+            Self::Close => "vy.pane.close",
+            Self::FocusLeft => "vy.pane.focus_left",
+            Self::FocusDown => "vy.pane.focus_down",
+            Self::FocusUp => "vy.pane.focus_up",
+            Self::FocusRight => "vy.pane.focus_right",
+            Self::Next => "vy.pane.next",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|command| command.id() == id)
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::SplitRight,
+            Self::SplitDown,
+            Self::Close,
+            Self::FocusLeft,
+            Self::FocusDown,
+            Self::FocusUp,
+            Self::FocusRight,
+            Self::Next,
+        ]
+    }
+}
+
 /// A command implemented in Rust.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinCommand {

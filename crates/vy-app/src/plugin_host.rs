@@ -16,7 +16,7 @@ use vy_capabilities::TrustedStore;
 use vy_core::{Position, Range, Selection, TextEdit};
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 
-use crate::commands::{BuiltinCommand, CommandArgs, CommandRegistry, Owner};
+use crate::commands::{BuiltinCommand, CommandArgs, CommandRegistry, Owner, PaneCommand};
 use crate::config::Config;
 use crate::editor::{Action, Editor, Mode, Transaction};
 use crate::keymap::Keymap;
@@ -157,6 +157,7 @@ pub enum HostAction {
     Edit(Transaction),
     Undo,
     Redo,
+    Pane(PaneCommand),
 }
 
 impl From<Action> for HostAction {
@@ -227,7 +228,10 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
         "commands.execute" => {
             let id = text_param(&params, "id").unwrap_or_default();
             let args = command_args(&params);
-            if let Some(command) = BuiltinCommand::parse(&id) {
+            if let Some(command) = PaneCommand::parse(&id) {
+                outcome.action = HostAction::Pane(command);
+                request.respond_value(Value::Null);
+            } else if let Some(command) = BuiltinCommand::parse(&id) {
                 outcome.action = context.editor.execute(command, args).into();
                 request.respond_value(Value::Null);
             } else if context.commands.is_registered(&id) {
@@ -246,6 +250,11 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
             let mut ids: Vec<String> = BuiltinCommand::all()
                 .iter()
                 .map(|command| command.id().to_string())
+                .chain(
+                    PaneCommand::all()
+                        .iter()
+                        .map(|command| command.id().to_string()),
+                )
                 .chain(context.commands.script_commands())
                 .collect();
             ids.sort();
@@ -611,6 +620,30 @@ mod tests {
                 args: CommandArgs::default()
             }
         );
+    }
+
+    #[test]
+    fn executes_pane_commands_from_scripts() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        let outcome = handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request("commands.execute", json!({ "id": "vy.pane.split_right" })),
+        );
+
+        assert_eq!(outcome.action, HostAction::Pane(PaneCommand::SplitRight));
     }
 
     #[test]

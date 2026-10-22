@@ -8,9 +8,9 @@
 //! See `docs/plugin-system.md` §2.2 and `docs/architecture.md`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, Value as JsValue};

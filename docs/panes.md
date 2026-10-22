@@ -255,13 +255,13 @@ JSON で、`ui` ビューの初期状態に使います。`placement` の `targe
 const root = await panes.activePane();
 
 await panes.open({
-    view: "list",
-    placement: { target: root, direction: "left", ratio: 0.25 },
+  view: "list",
+  placement: { target: root, direction: "left", ratio: 0.25 },
 });
 
 await panes.open({
-    view: "terminal",
-    placement: { target: root, direction: "below", ratio: 0.3 },
+  view: "terminal",
+  placement: { target: root, direction: "below", ratio: 0.3 },
 });
 ```
 
@@ -273,3 +273,24 @@ await panes.open({
 - フローティングのペインをキーボードだけで移動、リサイズできるようにするか。
 - 1つのウィンドウに置けるペインの上限。
 - 同じビューを複数のペインに置けるようにするか、`singleton` を既定にするか。
+
+## 12. 実装状況（Phase 3 の途中）
+
+実装済み:
+
+- レイアウト木（`vy-core` の `Layout`）。分割は `pane/open` の `placement`
+  で行い、 比率は 0.5 で固定です。
+- `pane/open`、`pane/focus`、`pane/close`、`layout/get` と
+  `layout/did_change`。フォーカスは `Ctrl-w h/j/k/l` と `Ctrl-w w` で移せます。
+- 同じ URI を開くと、既存の文書を新しいペインで共有します。
+- ペインをすべて閉じた文書は破棄します。最後の 1 ペインは閉じられません。
+
+未実装:
+
+- フローティング、比率の変更（`pane/resize`）、`pane/split`、`layout/set`、
+  保存と復元。
+- `views.register` と `editor` 以外のビュー。`pane/open` は `view: "editor"`
+  だけを 受け付けます。
+- カーソル、選択、スクロールは文書ごとに 1
+  つです。同じ文書を複数のペインで開くと
+  共有されます。ペインごとに持つのは次の段階です。

@@ -12,7 +12,7 @@ pub mod api;
 pub mod transpile;
 pub mod vm;
 
-pub use transpile::{strip_types, TranspileError};
+pub use transpile::{TranspileError, strip_types};
 pub use vm::{
     HostReply, HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, ScriptTask, WorkspaceEnv,
 };

@@ -10,15 +10,15 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use gpui::{
-    App, Application, Bounds, Context, Div, ElementInputHandler, EntityInputHandler, FocusHandle,
-    Focusable, HighlightStyle, KeyDownEvent, Keystroke, Pixels, Render, ScrollWheelEvent,
-    SharedString, StyledText, TextRun, UTF16Selection, Window, WindowBounds, WindowOptions, canvas,
-    div, point, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, DefiniteLength, Div, ElementInputHandler,
+    EntityInputHandler, FocusHandle, Focusable, HighlightStyle, KeyDownEvent, Keystroke, Pixels,
+    Render, ScrollWheelEvent, SharedString, StyledText, TextRun, UTF16Selection, Window,
+    WindowBounds, WindowOptions, canvas, div, point, prelude::*, px, rgb, size,
 };
 use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use vy_app::commands::{BuiltinCommand, CommandRegistry};
+use vy_app::commands::{BuiltinCommand, CommandRegistry, PaneCommand};
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
@@ -27,7 +27,7 @@ use vy_app::plugin_host::{
     self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext, WorkspaceInfo,
 };
 use vy_app::rpc::Client;
-use vy_core::{Range, Selection, TextEdit};
+use vy_core::{LayoutNode, PaneId, Range, Selection, SplitDirection, TextEdit};
 use vy_js::{HostRequest, ScriptEvent};
 use vy_proto::{PROTOCOL_VERSION, RpcMessage, RpcResult, get, object};
 
@@ -46,6 +46,47 @@ enum Pending {
     Snapshot,
     Undo,
     Redo,
+    Close,
+    Focus,
+}
+
+/// A buffer the client draws. The core owns the text; this copy is for rendering.
+struct DocumentState {
+    id: u64,
+    uri: String,
+    editor: Editor,
+    /// Whether a snapshot has filled this document.
+    loaded: bool,
+    /// Text the input method is still converting. It never reaches the core.
+    preedit: String,
+    /// Range the input method selected inside the preedit, in UTF-16 code units.
+    preedit_selection: Option<std::ops::Range<usize>>,
+    /// First line drawn in this view.
+    scroll_top: usize,
+}
+
+impl DocumentState {
+    fn new(id: u64, uri: String, text: &str, version: u64) -> Self {
+        let mut editor = Editor::with_text(text, version);
+        editor.set_transaction_idle(Duration::from_millis(500));
+        Self {
+            id,
+            uri,
+            editor,
+            loaded: false,
+            preedit: String::new(),
+            preedit_selection: None,
+            scroll_top: 0,
+        }
+    }
+}
+
+/// One pane in the layout tree.
+struct PaneState {
+    id: PaneId,
+    document_id: Option<u64>,
+    /// Rows that fit in this pane. Updated on every render.
+    viewport_rows: usize,
 }
 
 struct EditorView {
@@ -63,18 +104,16 @@ struct EditorView {
     script_generation: u64,
     /// Whether `init.ts` was evaluated since the last document load.
     init_evaluated: bool,
-    uri: String,
-    document_id: Option<u64>,
-    pane_id: Option<u64>,
-    editor: Editor,
-    /// Text the input method is still converting. It never reaches the core.
-    preedit: String,
-    /// Range the input method selected inside the preedit, in UTF-16 code units.
-    preedit_selection: Option<std::ops::Range<usize>>,
-    /// First line drawn in the text area.
-    scroll_top: usize,
-    /// Rows that fit in the text area. Updated on every render.
-    viewport_rows: usize,
+    /// URI of the document opened at startup.
+    initial_uri: String,
+    window_id: u64,
+    layout: Option<LayoutNode>,
+    layout_revision: u64,
+    active_pane: Option<PaneId>,
+    panes: HashMap<PaneId, PaneState>,
+    documents: HashMap<u64, DocumentState>,
+    /// Used when no pane has a document yet, so drawing has a valid editor.
+    fallback: DocumentState,
     focus_handle: FocusHandle,
     status: SharedString,
     frame_log: bool,
@@ -93,9 +132,6 @@ impl EditorView {
             eprintln!("vy: settings: {warning}");
         }
 
-        let mut editor = Editor::new();
-        editor.set_transaction_idle(Duration::from_millis(config.transaction_idle_ms()));
-
         let keymap = match Keymap::load_default(Duration::from_millis(config.sequence_timeout_ms()))
         {
             Ok(keymap) => keymap,
@@ -112,6 +148,11 @@ impl EditorView {
         }
         let plugin = Some(PluginHost::spawn(env, paths.init_ts()));
 
+        let mut fallback = DocumentState::new(0, "vy:empty".to_string(), "", 0);
+        fallback
+            .editor
+            .set_transaction_idle(Duration::from_millis(config.transaction_idle_ms()));
+
         let mut view = Self {
             client: None,
             pending: HashMap::new(),
@@ -124,14 +165,14 @@ impl EditorView {
             plugin,
             script_generation: 0,
             init_evaluated: false,
-            uri,
-            document_id: None,
-            pane_id: None,
-            editor,
-            preedit: String::new(),
-            preedit_selection: None,
-            scroll_top: 0,
-            viewport_rows: VISIBLE_LINES,
+            initial_uri: uri,
+            window_id: 1,
+            layout: None,
+            layout_revision: 0,
+            active_pane: None,
+            panes: HashMap::new(),
+            documents: HashMap::new(),
+            fallback,
             focus_handle: cx.focus_handle(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -167,6 +208,53 @@ impl EditorView {
         view.start_config_watch(cx);
         view.start_script(cx);
         view
+    }
+
+    fn active_pane_state(&self) -> Option<&PaneState> {
+        self.active_pane.and_then(|id| self.panes.get(&id))
+    }
+
+    fn active_pane_state_mut(&mut self) -> Option<&mut PaneState> {
+        let id = self.active_pane?;
+        self.panes.get_mut(&id)
+    }
+
+    fn active_document_id(&self) -> Option<u64> {
+        self.active_pane_state()?.document_id
+    }
+
+    fn active_document(&self) -> Option<&DocumentState> {
+        self.active_document_id()
+            .and_then(|id| self.documents.get(&id))
+    }
+
+    fn active_document_mut(&mut self) -> Option<&mut DocumentState> {
+        let id = self.active_document_id()?;
+        self.documents.get_mut(&id)
+    }
+
+    /// The active editor, or a blank one when no pane is ready yet.
+    fn editor(&self) -> &Editor {
+        self.active_document()
+            .map(|document| &document.editor)
+            .unwrap_or(&self.fallback.editor)
+    }
+
+    fn editor_mut(&mut self) -> &mut Editor {
+        let id = self.active_document_id();
+        if let Some(id) = id
+            && let Some(document) = self.documents.get_mut(&id)
+        {
+            return &mut document.editor;
+        }
+        &mut self.fallback.editor
+    }
+
+    fn set_transaction_idle(&mut self, idle: Duration) {
+        for document in self.documents.values_mut() {
+            document.editor.set_transaction_idle(idle);
+        }
+        self.fallback.editor.set_transaction_idle(idle);
     }
 
     /// Starts listeners for the script thread. Events and host requests arrive on
@@ -278,8 +366,15 @@ impl EditorView {
             return;
         };
 
+        let editor = {
+            let id = self.active_document_id();
+            match id.and_then(|id| self.documents.get_mut(&id)) {
+                Some(document) => &mut document.editor,
+                None => &mut self.fallback.editor,
+            }
+        };
         let context = RequestContext {
-            editor: &mut self.editor,
+            editor,
             config: &mut self.config,
             keymap: &mut self.keymap,
             commands: &mut self.commands,
@@ -295,11 +390,11 @@ impl EditorView {
         }
 
         if !outcome.config_changed.is_empty() {
-            self.editor
-                .set_transaction_idle(Duration::from_millis(self.config.transaction_idle_ms()));
-            self.keymap
-                .set_sequence_timeout(Duration::from_millis(self.config.sequence_timeout_ms()));
             plugin.emit_config_change(outcome.config_changed.clone());
+            let idle = Duration::from_millis(self.config.transaction_idle_ms());
+            let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
+            self.set_transaction_idle(idle);
+            self.keymap.set_sequence_timeout(timeout);
         }
 
         match outcome.action {
@@ -307,15 +402,17 @@ impl EditorView {
             HostAction::Edit(transaction) => self.send_transaction(transaction),
             HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
             HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
+            HostAction::Pane(command) => self.run_pane_command(command),
         }
 
         self.ensure_cursor_visible();
     }
 
     fn document_info(&self) -> Option<DocumentInfo> {
-        self.document_id.map(|id| DocumentInfo {
-            id,
-            uri: self.uri.clone(),
+        let document = self.active_document()?;
+        Some(DocumentInfo {
+            id: document.id,
+            uri: document.uri.clone(),
             language_id: "text".to_string(),
         })
     }
@@ -391,10 +488,10 @@ impl EditorView {
             eprintln!("vy: settings: {warning}");
         }
 
-        self.editor
-            .set_transaction_idle(Duration::from_millis(self.config.transaction_idle_ms()));
-        self.keymap
-            .set_sequence_timeout(Duration::from_millis(self.config.sequence_timeout_ms()));
+        let idle = Duration::from_millis(self.config.transaction_idle_ms());
+        let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
+        self.set_transaction_idle(idle);
+        self.keymap.set_sequence_timeout(timeout);
 
         let changed = self.config.changed_keys(&previous);
         if let Some(key) = changed.last().cloned() {
@@ -440,6 +537,7 @@ impl EditorView {
                 Pending::Open => self.opened(&value),
                 Pending::Snapshot => self.received_snapshot(&value),
                 Pending::Undo | Pending::Redo => self.received_history(&value),
+                Pending::Close | Pending::Focus => {}
             },
         }
     }
@@ -451,14 +549,53 @@ impl EditorView {
                 self.open_document();
             }
             "buffer/resync" => self.received_snapshot(&params),
+            "layout/did_change" => self.received_layout(&params),
             other => {
                 eprintln!("vy: unsupported notification: {other}");
             }
         }
     }
 
+    /// Applies the layout the core confirmed. The client never draws a tree the core
+    /// has not accepted, so this is the only place panes are added or removed.
+    fn received_layout(&mut self, params: &Value) {
+        let revision = get(params, "revision")
+            .and_then(Value::as_u64)
+            .unwrap_or_default();
+        if revision < self.layout_revision {
+            return;
+        }
+
+        self.layout_revision = revision;
+        self.window_id = get(params, "window_id")
+            .and_then(Value::as_u64)
+            .unwrap_or(self.window_id);
+        self.layout = get(params, "layout").and_then(decode_value::<LayoutNode>);
+        self.active_pane = get(params, "active_pane").and_then(Value::as_u64);
+
+        let mut pane_ids = Vec::new();
+        if let Some(layout) = &self.layout {
+            collect_pane_ids(layout, &mut pane_ids);
+        }
+        for pane_id in &pane_ids {
+            self.panes.entry(*pane_id).or_insert_with(|| PaneState {
+                id: *pane_id,
+                document_id: None,
+                viewport_rows: VISIBLE_LINES,
+            });
+        }
+        self.panes.retain(|pane_id, _| pane_ids.contains(pane_id));
+
+        let used: Vec<u64> = self
+            .panes
+            .values()
+            .filter_map(|pane| pane.document_id)
+            .collect();
+        self.documents.retain(|id, _| used.contains(id));
+    }
+
     fn open_document(&mut self) {
-        let uri = self.uri.clone();
+        let uri = self.initial_uri.clone();
         self.request(
             "pane/open",
             object([("uri", Value::from(uri))]),
@@ -467,13 +604,36 @@ impl EditorView {
     }
 
     fn opened(&mut self, value: &Value) {
-        let Some(document_id) = get(value, "document_id").and_then(Value::as_u64) else {
-            self.status = "pane/open response has no document_id".into();
+        let (Some(pane_id), Some(document_id)) = (
+            get(value, "pane_id").and_then(Value::as_u64),
+            get(value, "document_id").and_then(Value::as_u64),
+        ) else {
+            self.status = "pane/open response has no pane or document".into();
             return;
         };
 
-        self.document_id = Some(document_id);
-        self.pane_id = get(value, "pane_id").and_then(Value::as_u64);
+        self.panes
+            .entry(pane_id)
+            .or_insert_with(|| PaneState {
+                id: pane_id,
+                document_id: None,
+                viewport_rows: VISIBLE_LINES,
+            })
+            .document_id = Some(document_id);
+        if self.active_pane.is_none() {
+            self.active_pane = Some(pane_id);
+        }
+
+        if !self.documents.contains_key(&document_id) {
+            let uri = get(value, "uri")
+                .and_then(Value::as_str)
+                .unwrap_or("vy:untitled")
+                .to_string();
+            let idle = Duration::from_millis(self.config.transaction_idle_ms());
+            let mut document = DocumentState::new(document_id, uri, "", 0);
+            document.editor.set_transaction_idle(idle);
+            self.documents.insert(document_id, document);
+        }
 
         self.request(
             "buffer/snapshot",
@@ -484,29 +644,46 @@ impl EditorView {
 
     fn received_snapshot(&mut self, value: &Value) {
         let started = Instant::now();
+        let Some(document_id) = get(value, "document_id").and_then(Value::as_u64) else {
+            self.status = "snapshot has no document_id".into();
+            return;
+        };
         let text = get(value, "text")
             .and_then(Value::as_str)
             .unwrap_or_default();
         let version = get(value, "version")
             .and_then(Value::as_u64)
             .unwrap_or_default();
-        self.editor.reset(text, version);
-        self.clear_preedit();
-        self.scroll_top = 0;
 
-        if self.frame_log {
-            eprintln!(
-                "vy: snapshot {} lines in {:.1}ms",
-                self.editor.line_count(),
-                started.elapsed().as_secs_f64() * 1000.0
-            );
+        if let Some(document) = self.documents.get_mut(&document_id) {
+            // A second pane on the same buffer asks for a snapshot too. Keep the
+            // cursor when the copy is already at that version.
+            if !document.loaded || document.editor.version() != version {
+                document.editor.reset(text, version);
+                document.preedit.clear();
+                document.preedit_selection = None;
+                document.scroll_top = 0;
+            }
+            document.loaded = true;
+            if self.frame_log {
+                eprintln!(
+                    "vy: snapshot {} lines in {:.1}ms",
+                    document.editor.line_count(),
+                    started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
         }
 
+        let (line_count, version) = self
+            .documents
+            .get(&document_id)
+            .map(|document| (document.editor.line_count(), document.editor.version()))
+            .unwrap_or_default();
         self.status = format!(
             "{} lines / version {} / pane {}",
-            self.editor.line_count(),
-            self.editor.version(),
-            self.pane_id
+            line_count,
+            version,
+            self.active_pane
                 .map(|pane| pane.to_string())
                 .unwrap_or_else(|| "-".into())
         )
@@ -523,7 +700,7 @@ impl EditorView {
     fn received_history(&mut self, value: &Value) {
         let version = get(value, "version")
             .and_then(Value::as_u64)
-            .unwrap_or(self.editor.version());
+            .unwrap_or_else(|| self.editor().version());
         let batches = get(value, "edits")
             .and_then(decode_value::<Vec<Vec<TextEdit>>>)
             .unwrap_or_default();
@@ -531,7 +708,10 @@ impl EditorView {
             .and_then(decode_value::<Vec<Selection>>)
             .unwrap_or_default();
 
-        if let Err(error) = self.editor.apply_history(&batches, version, &selection) {
+        let Some(document) = self.active_document_mut() else {
+            return;
+        };
+        if let Err(error) = document.editor.apply_history(&batches, version, &selection) {
             self.status = format!("could not apply the history: {error}").into();
         }
     }
@@ -551,7 +731,7 @@ impl EditorView {
 
         // Printable text reaches Insert mode through `replace_text_in_range`, which every
         // platform calls for the same key press. Inserting here would duplicate it.
-        if self.editor.mode() == Mode::Insert && matches!(key, Key::Char(_)) {
+        if self.editor().mode() == Mode::Insert && matches!(key, Key::Char(_)) {
             return;
         }
 
@@ -571,24 +751,27 @@ impl EditorView {
     /// Passes the key to the keymap and runs the command it resolves to.
     fn apply_key(&mut self, key: Key) -> bool {
         let before = (
-            self.editor.mode(),
-            self.editor.selection(),
-            self.editor.version(),
+            self.editor().mode(),
+            self.editor().selection(),
+            self.editor().version(),
         );
 
-        let selection = self.editor.selection();
+        let selection = self.editor().selection();
         let context = KeyContext {
-            mode: self.editor.mode(),
+            mode: self.editor().mode(),
             has_selection: selection.start != selection.end,
-            operator_pending: self.editor.operator_pending(),
-            text_object_pending: self.editor.text_object_pending(),
+            operator_pending: self.editor().operator_pending(),
+            text_object_pending: self.editor().text_object_pending(),
             ..KeyContext::default()
         };
 
         match self.keymap.feed(key, &context) {
             KeymapOutcome::Command { id, args } => {
-                if let Some(command) = BuiltinCommand::parse(&id) {
-                    match self.editor.execute(command, args) {
+                if let Some(command) = PaneCommand::parse(&id) {
+                    self.run_pane_command(command);
+                } else if let Some(command) = BuiltinCommand::parse(&id) {
+                    let action = self.editor_mut().execute(command, args);
+                    match action {
                         Action::None => {}
                         Action::Edit(transaction) => self.send_transaction(transaction),
                         Action::Undo => self.send_history("buffer/undo", Pending::Undo),
@@ -617,16 +800,16 @@ impl EditorView {
         }
 
         // A preedit only makes sense while Insert mode keeps the caret.
-        if self.editor.mode() != Mode::Insert {
+        if self.editor().mode() != Mode::Insert {
             self.clear_preedit();
         }
 
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
         let changed = before
             != (
-                self.editor.mode(),
-                self.editor.selection(),
-                self.editor.version(),
+                self.editor().mode(),
+                self.editor().selection(),
+                self.editor().version(),
             );
 
         self.ensure_cursor_visible();
@@ -646,27 +829,36 @@ impl EditorView {
             return;
         }
 
+        let Some(pane) = self.active_pane_state() else {
+            return;
+        };
+        let Some(document) = self.active_document() else {
+            return;
+        };
+        let (viewport_rows, scroll_top, line_count) = (
+            pane.viewport_rows,
+            document.scroll_top,
+            document.editor.line_count(),
+        );
+
         // Positive deltas scroll up, so they move towards earlier lines.
         let mut lines = (delta / line_height).round() as isize;
         if lines == 0 {
             lines = delta.signum() as isize;
         }
 
-        let next = scroll_lines(
-            self.scroll_top,
-            -lines,
-            self.viewport_rows,
-            self.editor.line_count(),
-        );
+        let next = scroll_lines(scroll_top, -lines, viewport_rows, line_count);
 
-        if next != self.scroll_top {
-            self.scroll_top = next;
+        if next != scroll_top {
+            if let Some(document) = self.active_document_mut() {
+                document.scroll_top = next;
+            }
             cx.notify();
         }
     }
 
     fn send_transaction(&mut self, transaction: Transaction) {
-        let Some(document_id) = self.document_id else {
+        let Some(document_id) = self.active_document_id() else {
             return;
         };
         let Some(client) = self.client.as_mut() else {
@@ -688,7 +880,7 @@ impl EditorView {
     }
 
     fn send_history(&mut self, method: &str, pending: Pending) {
-        let Some(document_id) = self.document_id else {
+        let Some(document_id) = self.active_document_id() else {
             return;
         };
         let Some(client) = self.client.as_mut() else {
@@ -699,39 +891,123 @@ impl EditorView {
         self.pending.insert(id, pending);
     }
 
-    /// Collects the lines visible in the text area.
-    fn visible_lines(&self) -> Vec<Div> {
-        let start = self.first_visible_line();
-        let end = (start + self.viewport_rows.max(1)).min(self.editor.line_count());
-
-        (start..end).map(|line| self.render_line(line)).collect()
+    fn run_pane_command(&mut self, command: PaneCommand) {
+        match command {
+            PaneCommand::SplitRight => self.open_split("right"),
+            PaneCommand::SplitDown => self.open_split("below"),
+            PaneCommand::Close => self.close_active_pane(),
+            PaneCommand::FocusLeft => self.focus_direction("left"),
+            PaneCommand::FocusDown => self.focus_direction("down"),
+            PaneCommand::FocusUp => self.focus_direction("up"),
+            PaneCommand::FocusRight => self.focus_direction("right"),
+            PaneCommand::Next => self.focus_next_pane(),
+        }
     }
 
-    fn render_line(&self, line_number: usize) -> Div {
-        let cursor_line = self.editor.cursor().line as usize;
+    /// Splits the active pane and opens the same document in the new one.
+    fn open_split(&mut self, direction: &str) {
+        let Some(target) = self.active_pane else {
+            return;
+        };
+        let Some(uri) = self.active_document().map(|document| document.uri.clone()) else {
+            self.status = "cannot split a pane without a document".into();
+            return;
+        };
+
+        self.request(
+            "pane/open",
+            object([
+                ("uri", Value::from(uri)),
+                (
+                    "placement",
+                    object([
+                        ("target", Value::from(target)),
+                        ("direction", Value::from(direction)),
+                    ]),
+                ),
+            ]),
+            Pending::Open,
+        );
+        self.status = format!("splitting pane {target} {direction}").into();
+    }
+
+    fn close_active_pane(&mut self) {
+        let Some(pane_id) = self.active_pane else {
+            return;
+        };
+        self.request(
+            "pane/close",
+            object([("pane_id", Value::from(pane_id))]),
+            Pending::Close,
+        );
+    }
+
+    fn focus_direction(&mut self, direction: &str) {
+        let (Some(layout), Some(active)) = (self.layout.as_ref(), self.active_pane) else {
+            return;
+        };
+        let Some(pane_id) = focus_neighbor(layout, active, direction) else {
+            return;
+        };
+        self.request(
+            "pane/focus",
+            object([("pane_id", Value::from(pane_id))]),
+            Pending::Focus,
+        );
+    }
+
+    fn focus_next_pane(&mut self) {
+        let (Some(layout), Some(active)) = (self.layout.as_ref(), self.active_pane) else {
+            return;
+        };
+        let mut pane_ids = Vec::new();
+        collect_pane_ids(layout, &mut pane_ids);
+        let Some(index) = pane_ids.iter().position(|pane| *pane == active) else {
+            return;
+        };
+        let next = pane_ids[(index + 1) % pane_ids.len()];
+        self.request(
+            "pane/focus",
+            object([("pane_id", Value::from(next))]),
+            Pending::Focus,
+        );
+    }
+
+    /// Collects the lines visible in one pane.
+    fn visible_lines(&self, pane: &PaneState, document: &DocumentState) -> Vec<Div> {
+        let start = document.scroll_top;
+        let end = (start + pane.viewport_rows.max(1)).min(document.editor.line_count());
+
+        (start..end)
+            .map(|line| self.render_line(document, line))
+            .collect()
+    }
+
+    fn render_line(&self, document: &DocumentState, line_number: usize) -> Div {
+        let cursor_line = document.editor.cursor().line as usize;
         let mut row = div().flex().h(px(self.line_height())).items_center();
 
         if let Some(label) = self.config.line_numbers().label(line_number, cursor_line) {
             row = row.child(
                 div()
-                    .w(px(self.gutter_width()))
+                    .w(px(self.gutter_width(document.editor.line_count())))
                     .flex_shrink_0()
                     .text_color(rgb(0x5a5a5a))
                     .child(format!(
                         "{label:>width$} ",
-                        width = self.line_number_width()
+                        width = self.line_number_width(document.editor.line_count())
                     )),
             );
         }
 
-        let text = self.editor.line(line_number).unwrap_or_default();
-        let cursor = self.editor.cursor();
+        let text = document.editor.line(line_number).unwrap_or_default();
+        let cursor = document.editor.cursor();
 
         if line_number as u32 != cursor.line {
             return row.child(text);
         }
 
-        let (display, highlight) = self.cursor_marker(&text);
+        let (display, highlight) = self.cursor_marker(document, &text);
 
         row.child(StyledText::new(display).with_highlights(vec![(
             highlight,
@@ -746,16 +1022,20 @@ impl EditorView {
     ///
     /// The line is shaped once as a whole. Splitting it into several elements would
     /// change the glyphs and widths under the cursor.
-    fn cursor_marker(&self, text: &str) -> (String, std::ops::Range<usize>) {
+    fn cursor_marker(
+        &self,
+        document: &DocumentState,
+        text: &str,
+    ) -> (String, std::ops::Range<usize>) {
         let mut display = text.to_string();
 
-        if self.editor.mode() == Mode::Insert {
-            let caret = utf16_to_byte(&display, self.editor.cursor().character);
+        if document.editor.mode() == Mode::Insert {
+            let caret = utf16_to_byte(&display, document.editor.cursor().character);
 
-            if !self.preedit.is_empty() {
+            if !document.preedit.is_empty() {
                 // The preedit is drawn on the cursor line without entering the buffer.
-                display.insert_str(caret, &self.preedit);
-                let end = caret + self.preedit.len();
+                display.insert_str(caret, &document.preedit);
+                let end = caret + document.preedit.len();
                 return (display, caret..end);
             }
 
@@ -774,9 +1054,11 @@ impl EditorView {
             .chars()
             .map(|character| character.len_utf16() as u32)
             .sum();
-        let Some((from, to)) =
-            selection_on_line(self.editor.selection(), self.editor.cursor().line, length)
-        else {
+        let Some((from, to)) = selection_on_line(
+            document.editor.selection(),
+            document.editor.cursor().line,
+            length,
+        ) else {
             // An empty selection at the end of the document still needs a marker.
             display.push(' ');
             let start = display.len() - 1;
@@ -800,17 +1082,21 @@ impl EditorView {
 impl EditorView {
     /// Length of the preedit text in UTF-16 code units.
     fn preedit_len_utf16(&self) -> usize {
-        self.preedit.encode_utf16().count()
+        self.active_document()
+            .map(|document| document.preedit.encode_utf16().count())
+            .unwrap_or_default()
     }
 
     /// Flat UTF-16 offset of the caret in the text sent to the core.
     fn caret_utf16(&self) -> usize {
-        self.editor.utf16_offset(self.editor.cursor())
+        self.editor().utf16_offset(self.editor().cursor())
     }
 
     fn clear_preedit(&mut self) {
-        self.preedit.clear();
-        self.preedit_selection = None;
+        if let Some(document) = self.active_document_mut() {
+            document.preedit.clear();
+            document.preedit_selection = None;
+        }
     }
 
     /// Returns text in flat UTF-16 offsets, with the preedit spliced in at the caret.
@@ -818,44 +1104,53 @@ impl EditorView {
     /// The preedit never enters the document, so the input method only sees it through
     /// this view.
     fn document_text(&self, range: std::ops::Range<usize>) -> String {
-        if self.preedit.is_empty() {
-            return self.editor.text_utf16(range);
+        let Some(document) = self.active_document() else {
+            return String::new();
+        };
+        if document.preedit.is_empty() {
+            return document.editor.text_utf16(range);
         }
 
+        let preedit = &document.preedit;
         let caret = self.caret_utf16();
-        let preedit_end = caret + self.preedit_len_utf16();
+        let preedit_end = caret + preedit.encode_utf16().count();
         let mut text = String::new();
 
         if range.start < caret {
-            text.push_str(&self.editor.text_utf16(range.start..range.end.min(caret)));
+            text.push_str(
+                &document
+                    .editor
+                    .text_utf16(range.start..range.end.min(caret)),
+            );
         }
 
         if range.start <= preedit_end && range.end > caret {
             let from = range.start.saturating_sub(caret).min(preedit_end - caret);
             let to = range.end.saturating_sub(caret).min(preedit_end - caret);
-            let from = utf16_to_byte(&self.preedit, from as u32);
-            let to = utf16_to_byte(&self.preedit, to as u32);
-            text.push_str(&self.preedit[from..to]);
+            let from = utf16_to_byte(preedit, from as u32);
+            let to = utf16_to_byte(preedit, to as u32);
+            text.push_str(&preedit[from..to]);
         }
 
         if range.end > preedit_end {
             let start = range.start.max(preedit_end) - preedit_end;
-            text.push_str(&self.editor.text_utf16(start..range.end - preedit_end));
+            text.push_str(&document.editor.text_utf16(start..range.end - preedit_end));
         }
 
         text
     }
 
     fn commit_text(&mut self, text: &str) {
-        if let Action::Edit(transaction) = self.editor.insert_commit(text) {
+        let action = self.editor_mut().insert_commit(text);
+        if let Action::Edit(transaction) = action {
             self.send_transaction(transaction);
             self.ensure_cursor_visible();
         }
     }
 
     /// Digits used for line numbers. At least four, so small files do not shift.
-    fn line_number_width(&self) -> usize {
-        self.editor.line_count().max(1).to_string().len().max(4)
+    fn line_number_width(&self, line_count: usize) -> usize {
+        line_count.max(1).to_string().len().max(4)
     }
 
     /// Height of one text row from the settings.
@@ -870,35 +1165,44 @@ impl EditorView {
 
     /// Width of the line number gutter. It grows with the number of lines and is
     /// zero when line numbers are turned off.
-    fn gutter_width(&self) -> f32 {
+    fn gutter_width(&self, line_count: usize) -> f32 {
         if self.config.line_numbers() == LineNumbers::Off {
             return 0.0;
         }
         let width = self.character_width();
-        let digits = self.line_number_width();
+        let digits = self.line_number_width(line_count);
         digits as f32 * width + width * 1.2
     }
 
-    /// First line drawn in the text area.
-    fn first_visible_line(&self) -> usize {
-        self.scroll_top
-    }
-
-    /// Moves the viewport just enough to show the cursor.
+    /// Moves the active viewport just enough to show the cursor.
     fn ensure_cursor_visible(&mut self) {
-        self.scroll_top = scroll_to_show(
-            self.editor.cursor().line as usize,
-            self.scroll_top,
-            self.viewport_rows,
-            self.editor.line_count(),
+        let Some(pane) = self.active_pane_state() else {
+            return;
+        };
+        let viewport_rows = pane.viewport_rows;
+        let Some(document) = self.active_document_mut() else {
+            return;
+        };
+        document.scroll_top = scroll_to_show(
+            document.editor.cursor().line as usize,
+            document.scroll_top,
+            viewport_rows,
+            document.editor.line_count(),
         );
     }
 
     fn clamp_scroll(&mut self) {
-        self.scroll_top = clamp_scroll_top(
-            self.scroll_top,
-            self.viewport_rows,
-            self.editor.line_count(),
+        let Some(pane) = self.active_pane_state() else {
+            return;
+        };
+        let viewport_rows = pane.viewport_rows;
+        let Some(document) = self.active_document_mut() else {
+            return;
+        };
+        document.scroll_top = clamp_scroll_top(
+            document.scroll_top,
+            viewport_rows,
+            document.editor.line_count(),
         );
     }
 }
@@ -917,7 +1221,7 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
-        let length = self.editor.len_utf16() + self.preedit_len_utf16();
+        let length = self.editor().len_utf16() + self.preedit_len_utf16();
         let end = range_utf16.end.min(length);
         let start = range_utf16.start.min(end);
         adjusted_range.replace(start..end);
@@ -930,10 +1234,11 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
-        if self.preedit.is_empty() {
-            let selection = self.editor.selection();
-            let start = self.editor.utf16_offset(selection.start);
-            let end = self.editor.utf16_offset(selection.end);
+        let document = self.active_document()?;
+        if document.preedit.is_empty() {
+            let selection = document.editor.selection();
+            let start = document.editor.utf16_offset(selection.start);
+            let end = document.editor.utf16_offset(selection.end);
             return Some(UTF16Selection {
                 range: start..end.max(start),
                 reversed: false,
@@ -941,7 +1246,7 @@ impl EntityInputHandler for EditorView {
         }
 
         let caret = self.caret_utf16();
-        let range = self
+        let range = document
             .preedit_selection
             .clone()
             .unwrap_or_else(|| 0..self.preedit_len_utf16());
@@ -957,7 +1262,7 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<std::ops::Range<usize>> {
-        if self.preedit.is_empty() {
+        if self.preedit_len_utf16() == 0 {
             return None;
         }
 
@@ -966,7 +1271,7 @@ impl EntityInputHandler for EditorView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.preedit.is_empty() {
+        if self.preedit_len_utf16() == 0 {
             return;
         }
 
@@ -987,7 +1292,7 @@ impl EntityInputHandler for EditorView {
 
         // The marked text is kept outside the document, so the range only tells us what
         // the platform believes it replaces. The commit always lands at the caret.
-        let had_preedit = !self.preedit.is_empty();
+        let had_preedit = self.preedit_len_utf16() > 0;
         self.clear_preedit();
 
         if text.is_empty() {
@@ -1009,10 +1314,10 @@ impl EntityInputHandler for EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor.mode() != Mode::Insert {
+        if self.editor().mode() != Mode::Insert {
             // Typing in Normal or Select is a command, not text. Drop any preedit left
             // over from a mode change during composition.
-            let had_preedit = !self.preedit.is_empty();
+            let had_preedit = self.preedit_len_utf16() > 0;
             self.clear_preedit();
             if had_preedit {
                 cx.notify();
@@ -1020,9 +1325,11 @@ impl EntityInputHandler for EditorView {
             return;
         }
 
-        self.preedit.clear();
-        self.preedit.push_str(new_text);
-        self.preedit_selection = new_selected_range_utf16;
+        if let Some(document) = self.active_document_mut() {
+            document.preedit.clear();
+            document.preedit.push_str(new_text);
+            document.preedit_selection = new_selected_range_utf16;
+        }
         cx.notify();
     }
 
@@ -1033,8 +1340,9 @@ impl EntityInputHandler for EditorView {
         window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let position = self.editor.position_at_utf16(range_utf16.start);
-        let line = self.editor.line(position.line as usize)?;
+        let document = self.active_document()?;
+        let position = document.editor.position_at_utf16(range_utf16.start);
+        let line = document.editor.line(position.line as usize)?;
         let prefix = line.get(..utf16_to_byte(&line, position.character))?;
 
         let mut width = px(0.);
@@ -1056,10 +1364,10 @@ impl EntityInputHandler for EditorView {
             width = shaped.x_for_index(prefix.len());
         }
 
-        let row = (position.line as usize).saturating_sub(self.first_visible_line());
+        let row = (position.line as usize).saturating_sub(document.scroll_top);
         let origin = element_bounds.origin
             + point(
-                px(self.gutter_width()) + width,
+                px(self.gutter_width(document.editor.line_count())) + width,
                 px(row as f32 * self.line_height()),
             );
         Some(Bounds::new(origin, size(px(2.), px(self.line_height()))))
@@ -1081,7 +1389,10 @@ impl Render for EditorView {
 
         // Fit the viewport to the window before choosing which lines to draw.
         let height = f32::from(window.viewport_size().height) - CHROME_HEIGHT;
-        self.viewport_rows = ((height / self.line_height()).floor().max(1.0)) as usize;
+        let rows = ((height / self.line_height()).floor().max(1.0)) as usize;
+        if let Some(pane) = self.active_pane_state_mut() {
+            pane.viewport_rows = rows;
+        }
         self.clamp_scroll();
 
         let header = div()
@@ -1089,10 +1400,15 @@ impl Render for EditorView {
             .justify_between()
             .text_sm()
             .text_color(rgb(0x9a9a9a))
-            .child(format!("vy {}", env!("CARGO_PKG_VERSION")))
+            .child(format!(
+                "vy {} / {} pane{}",
+                env!("CARGO_PKG_VERSION"),
+                self.panes.len(),
+                if self.panes.len() == 1 { "" } else { "s" }
+            ))
             .child(self.status.clone());
 
-        let cursor = self.editor.cursor();
+        let cursor = self.editor().cursor();
         let footer = div()
             .flex()
             .justify_between()
@@ -1100,11 +1416,28 @@ impl Render for EditorView {
             .text_color(rgb(0x9a9a9a))
             .child(format!(
                 "{}  {}:{}",
-                self.editor.mode().label(),
+                self.editor().mode().label(),
                 cursor.line + 1,
                 cursor.character + 1
             ))
-            .child(format!("version {}", self.editor.version()));
+            .child(format!(
+                "pane {} / version {}",
+                self.active_pane
+                    .map(|pane| pane.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                self.editor().version()
+            ));
+
+        let content = match self.layout.clone() {
+            Some(layout) => self.render_node(&layout, cx),
+            None => div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(rgb(0x6a6a6a))
+                .child("waiting for vy-server"),
+        };
 
         let element = div()
             .id("vy-editor")
@@ -1121,47 +1454,118 @@ impl Render for EditorView {
             .p_4()
             .gap_2()
             .child(header)
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .overflow_hidden()
-                    .flex()
-                    .flex_col()
-                    .child({
-                        let view = cx.entity();
-                        canvas(
-                            |_, _, _| (),
-                            move |bounds, _, window, cx| {
-                                let focus = view.read(cx).focus_handle.clone();
-
-                                if !view.read(cx).input_registered {
-                                    view.update(cx, |view, _| {
-                                        view.input_registered = true;
-                                        if view.frame_log {
-                                            eprintln!("vy: input bounds={bounds:?}");
-                                        }
-                                    });
-                                }
-
-                                window.handle_input(
-                                    &focus,
-                                    ElementInputHandler::new(bounds, view.clone()),
-                                    cx,
-                                );
-                            },
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full()
-                    })
-                    .children(self.visible_lines()),
-            )
+            .child(div().flex_1().overflow_hidden().child(content))
             .child(footer);
 
         self.log_frame(started);
         element
+    }
+}
+
+impl EditorView {
+    fn render_node(&self, node: &LayoutNode, cx: &mut Context<Self>) -> Div {
+        match node {
+            LayoutNode::Leaf { pane_id } => self.render_pane(*pane_id, cx),
+            LayoutNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                let row = match direction {
+                    SplitDirection::Horizontal => div().flex().flex_row(),
+                    SplitDirection::Vertical => div().flex().flex_col(),
+                };
+
+                row.size_full()
+                    .child(
+                        self.render_node(first, cx)
+                            .flex_basis(DefiniteLength::Fraction(*ratio))
+                            .flex_shrink_0(),
+                    )
+                    .child(
+                        self.render_node(second, cx)
+                            .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
+                            .flex_shrink_0(),
+                    )
+            }
+        }
+    }
+
+    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>) -> Div {
+        let pane = self.panes.get(&pane_id);
+        let document = pane
+            .and_then(|pane| pane.document_id)
+            .and_then(|id| self.documents.get(&id));
+        let active = self.active_pane == Some(pane_id);
+
+        let title = match (pane, document) {
+            (Some(pane), Some(document)) => format!("{}  ·  pane {}", document.uri, pane.id),
+            _ => format!("pane {pane_id} (empty)"),
+        };
+        let lines = match (pane, document) {
+            (Some(pane), Some(document)) => self.visible_lines(pane, document),
+            _ => Vec::new(),
+        };
+
+        let mut area = div()
+            .relative()
+            .flex_1()
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .children(lines);
+
+        if active {
+            let view = cx.entity();
+            area = area.child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, cx| {
+                        let focus = view.read(cx).focus_handle.clone();
+
+                        if !view.read(cx).input_registered {
+                            view.update(cx, |view, _| {
+                                view.input_registered = true;
+                                if view.frame_log {
+                                    eprintln!("vy: input bounds={bounds:?}");
+                                }
+                            });
+                        }
+
+                        window.handle_input(
+                            &focus,
+                            ElementInputHandler::new(bounds, view.clone()),
+                            cx,
+                        );
+                    },
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            );
+        }
+
+        let border = if active { rgb(0x2b5e8c) } else { rgb(0x2d2d2d) };
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .border_1()
+            .border_color(border)
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .px_1()
+                    .text_xs()
+                    .text_color(if active { rgb(0x9cdcfe) } else { rgb(0x8a8a8a) })
+                    .child(title)
+                    .child(if active { "[active]" } else { "" }),
+            )
+            .child(area)
     }
 }
 
@@ -1292,6 +1696,115 @@ fn clamp_scroll_top(top: usize, rows: usize, total: usize) -> usize {
 fn scroll_lines(top: usize, lines: isize, rows: usize, total: usize) -> usize {
     let max_top = total.saturating_sub(rows.max(1)) as isize;
     (top as isize + lines).clamp(0, max_top) as usize
+}
+
+/// Collects pane ids from the layout tree in tree order.
+fn collect_pane_ids(node: &LayoutNode, ids: &mut Vec<PaneId>) {
+    match node {
+        LayoutNode::Split { first, second, .. } => {
+            collect_pane_ids(first, ids);
+            collect_pane_ids(second, ids);
+        }
+        LayoutNode::Leaf { pane_id } => ids.push(*pane_id),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PaneRect {
+    id: PaneId,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl PaneRect {
+    fn center(self) -> (f32, f32) {
+        (self.x + self.width / 2.0, self.y + self.height / 2.0)
+    }
+}
+
+fn collect_pane_rects(node: &LayoutNode, rect: PaneRect, rects: &mut Vec<PaneRect>) {
+    match node {
+        LayoutNode::Leaf { pane_id } => rects.push(PaneRect {
+            id: *pane_id,
+            ..rect
+        }),
+        LayoutNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => {
+            let ratio = ratio.clamp(0.0, 1.0);
+            let (first_rect, second_rect) = match direction {
+                SplitDirection::Horizontal => (
+                    PaneRect {
+                        width: rect.width * ratio,
+                        ..rect
+                    },
+                    PaneRect {
+                        x: rect.x + rect.width * ratio,
+                        width: rect.width * (1.0 - ratio),
+                        ..rect
+                    },
+                ),
+                SplitDirection::Vertical => (
+                    PaneRect {
+                        height: rect.height * ratio,
+                        ..rect
+                    },
+                    PaneRect {
+                        y: rect.y + rect.height * ratio,
+                        height: rect.height * (1.0 - ratio),
+                        ..rect
+                    },
+                ),
+            };
+            collect_pane_rects(first, first_rect, rects);
+            collect_pane_rects(second, second_rect, rects);
+        }
+    }
+}
+
+/// Picks the nearest pane in `direction` from `active`, using the split ratios.
+fn focus_neighbor(layout: &LayoutNode, active: PaneId, direction: &str) -> Option<PaneId> {
+    let mut rects = Vec::new();
+    collect_pane_rects(
+        layout,
+        PaneRect {
+            id: active,
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        },
+        &mut rects,
+    );
+    let current = rects.iter().find(|rect| rect.id == active)?;
+    let (current_x, current_y) = current.center();
+
+    rects
+        .iter()
+        .filter(|rect| rect.id != active)
+        .filter_map(|rect| {
+            let (x, y) = rect.center();
+            let (dx, dy) = (x - current_x, y - current_y);
+            let primary = match direction {
+                "left" => -dx,
+                "right" => dx,
+                "up" => -dy,
+                "down" => dy,
+                _ => return None,
+            };
+            let secondary = match direction {
+                "left" | "right" => dy.abs(),
+                _ => dx.abs(),
+            };
+            (primary > 0.0).then_some((primary + secondary * 3.0, rect.id))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, id)| id)
 }
 
 /// Converts a UTF-16 offset to a UTF-8 byte offset. A position inside a surrogate
@@ -1466,5 +1979,65 @@ mod tests {
             decode_value::<Vec<Selection>>(&value).expect("decode"),
             selection
         );
+    }
+
+    #[test]
+    fn collects_pane_ids_in_tree_order() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Split {
+                direction: SplitDirection::Vertical,
+                ratio: 0.5,
+                first: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+                second: Box::new(LayoutNode::Leaf { pane_id: 3 }),
+            }),
+        };
+
+        let mut ids = Vec::new();
+        collect_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn picks_the_neighbor_in_the_requested_direction() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+        };
+
+        assert_eq!(focus_neighbor(&layout, 1, "right"), Some(2));
+        assert_eq!(focus_neighbor(&layout, 2, "left"), Some(1));
+        assert_eq!(focus_neighbor(&layout, 1, "left"), None);
+
+        let stacked = LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.25,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+        };
+        assert_eq!(focus_neighbor(&stacked, 1, "down"), Some(2));
+        assert_eq!(focus_neighbor(&stacked, 2, "up"), Some(1));
+    }
+
+    #[test]
+    fn round_trips_the_layout_tree_through_message_pack() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.3,
+            first: Box::new(LayoutNode::Leaf { pane_id: 4 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 5 }),
+        };
+
+        let value = value_of(&layout);
+        assert_eq!(get(&value, "type").and_then(Value::as_str), Some("split"));
+        assert_eq!(
+            get(&value, "direction").and_then(Value::as_str),
+            Some("vertical")
+        );
+        assert_eq!(decode_value::<LayoutNode>(&value).expect("decode"), layout);
     }
 }

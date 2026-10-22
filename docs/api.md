@@ -239,6 +239,10 @@ version と一致したときだけ確定します。
 で始めます。`keymap.bind` の第2引数はコマンド ID か関数です。`options.when`
 にはコンテキスト式を書きます。
 
+Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
+`vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、
+`commands.execute` からも実行できます。戻り値はまだ `null` です。
+
 ```typescript
 keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });
 ```

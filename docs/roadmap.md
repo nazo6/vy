@@ -96,8 +96,13 @@ Phase 3 で仕上げます。
 
 ### Phase 3: ペイン・ビュー・コマンド実行
 
-- [ ] レイアウト木（分割、比率、フォーカス、フローティング）と `panes.*` の API
-- [ ] 同じバッファを複数のペインで開く（マルチバッファ）と、ペインごとのカーソル・選択・スクロール
+- [x] レイアウト木（分割、フォーカス）と `pane/open` / `pane/focus` /
+      `pane/close` / `layout/get`
+  - `layout/did_change` で確定した木を送る。フローティング、比率の変更、
+    `pane/split` はまだ無い
+- [x] 同じバッファを複数のペインで開く（マルチバッファ）
+  - カーソル・選択・スクロールはまだ文書ごとに 1
+    つ。ペインごとに持つのは次の段階
 - [ ] `editor.open` と、開いている文書の一覧・切り替え
 - [ ] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
@@ -105,12 +110,14 @@ Phase 3 で仕上げます。
 - [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
 - [ ] スロット（ステータスライン、ピッカー、ホバー、ガター）
 - [ ] コマンド実行の仕上げ
-  - `commands.getCommands` と、`commands.execute` の戻り値を JS へ返す
-  - 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
-  - コマンドパレット（`space`
-    リーダー、検索付きピッカー、`ui.picker.registerSource`）
-  - ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
-    など）
+  - [x] `commands.getCommands` に組み込みのペインコマンドを含める
+  - [x] `commands.execute` からペインコマンドを実行する
+  - [ ] `commands.execute` の戻り値を JS へ返す
+  - [ ] 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
+  - [ ] コマンドパレット（`space`
+        リーダー、検索付きピッカー、`ui.picker.registerSource`）
+  - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
+        など）
 
 ### Phase 4: リモート接続
 
