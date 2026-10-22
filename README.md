@@ -71,6 +71,12 @@ cargo run -p vy-app -- README.md
   を使います。
 - GPUI 0.2.2 が引く `xattr 0.2.3` は Linux でビルドできないため、`vendor/xattr`
   にパッチ版を置いています（[`vendor/xattr/PATCH.md`](./vendor/xattr/PATCH.md)）。
+- `VY_FRAME_LOG=1`
+  で起動すると、フレームの間隔と要素の組み立て時間を標準エラーに
+  出します。キー入力の重さを測るときに使います。
+- GPUI と wgpu は最適化なしだと 1 フレームに数十 ms かかります。`Cargo.toml` の
+  `[profile.dev.package."*"]` で依存だけ最適化しています。依存を変えた直後は
+  ビルドが長くなります。
 
 ### 操作（Phase 1）
 

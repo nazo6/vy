@@ -49,3 +49,12 @@ vy-proto = { path = "crates/vy-proto" }
 # ビルドできない。上流に修正が入るまでの間、vendor/ の複製にパッチを当てて使う。
 [patch.crates-io]
 xattr = { path = "vendor/xattr" }
+
+# GPUI と wgpu は最適化なしだと 1 フレームの描画に数十 ms かかり、キー入力が
+# ガクつく。依存だけ最適化し、自分のクレートはデバッグ情報を残す（Zed と同じ設定）。
+# 初回のビルドは依存の再コンパイルで長くなる。
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -9,7 +9,7 @@ mod editor;
 mod rpc;
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Application, Bounds, Context, Div, FocusHandle, Focusable, KeyDownEvent, Keystroke,
@@ -42,6 +42,8 @@ struct EditorView {
     editor: Editor,
     focus_handle: FocusHandle,
     status: SharedString,
+    frame_log: bool,
+    last_frame: Option<Instant>,
 }
 
 impl EditorView {
@@ -54,6 +56,8 @@ impl EditorView {
             editor: Editor::new(),
             focus_handle: cx.focus_handle(),
             status: "vy-server を起動しています".into(),
+            frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
+            last_frame: None,
         };
 
         match Client::spawn() {
@@ -91,8 +95,11 @@ impl EditorView {
                     .await;
 
                 let keep_polling = this.update(cx, |this, cx| {
-                    let keep_polling = this.drain();
-                    cx.notify();
+                    let (keep_polling, changed) = this.drain();
+                    // 何も届いていないフレームでは描き直さない。
+                    if changed {
+                        cx.notify();
+                    }
                     keep_polling
                 });
 
@@ -104,12 +111,13 @@ impl EditorView {
         .detach();
     }
 
-    fn drain(&mut self) -> bool {
+    /// 届いたメッセージを処理します。返すのは (ポーリングを続けるか, 描き直すか)。
+    fn drain(&mut self) -> (bool, bool) {
         let mut received = Vec::new();
 
         let closed = {
             let Some(client) = self.client.as_ref() else {
-                return false;
+                return (false, false);
             };
 
             loop {
@@ -121,6 +129,10 @@ impl EditorView {
             }
         };
 
+        let changed = !received.is_empty();
+        if changed && self.frame_log {
+            eprintln!("vy: メッセージ {} 件", received.len());
+        }
         for message in received {
             self.handle(message);
         }
@@ -128,10 +140,10 @@ impl EditorView {
         if closed {
             self.status = "vy-server との接続が切れました。再起動は手動で行います".into();
             self.client = None;
-            return false;
+            return (false, true);
         }
 
-        true
+        (true, changed)
     }
 
     fn handle(&mut self, message: RpcMessage) {
@@ -255,6 +267,19 @@ impl EditorView {
             return;
         };
 
+        if self.apply_key(key) {
+            cx.notify();
+        }
+    }
+
+    /// キーをエディタへ渡し、見た目が変わったかどうかを返します。
+    fn apply_key(&mut self, key: Key) -> bool {
+        let before = (
+            self.editor.mode(),
+            self.editor.selection(),
+            self.editor.version(),
+        );
+
         match self.editor.handle_key(key) {
             Action::None => {}
             Action::Edit(transaction) => self.send_transaction(transaction),
@@ -262,7 +287,13 @@ impl EditorView {
             Action::Redo => self.send_history("buffer/redo", Pending::Redo),
         }
 
-        cx.notify();
+        // 端で止まった移動のように、見た目が変わらないキーでは描き直さない。
+        before
+            != (
+                self.editor.mode(),
+                self.editor.selection(),
+                self.editor.version(),
+            )
     }
 
     fn send_transaction(&mut self, transaction: Transaction) {
@@ -367,6 +398,8 @@ impl Focusable for EditorView {
 
 impl Render for EditorView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let started = Instant::now();
+
         let header = div()
             .flex()
             .justify_between()
@@ -389,7 +422,7 @@ impl Render for EditorView {
             ))
             .child(format!("version {}", self.editor.version()));
 
-        div()
+        let element = div()
             .id("vy-editor")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
@@ -410,7 +443,29 @@ impl Render for EditorView {
                     .flex_col()
                     .children(self.visible_lines()),
             )
-            .child(footer)
+            .child(footer);
+
+        self.log_frame(started);
+        element
+    }
+}
+
+impl EditorView {
+    fn log_frame(&mut self, started: Instant) {
+        if !self.frame_log {
+            return;
+        }
+
+        let now = Instant::now();
+        let build = now.duration_since(started).as_secs_f64() * 1000.0;
+
+        match self.last_frame.replace(now) {
+            Some(last) => {
+                let gap = now.duration_since(last).as_secs_f64() * 1000.0;
+                eprintln!("vy: frame gap={gap:.1}ms build={build:.2}ms");
+            }
+            None => eprintln!("vy: frame gap=- build={build:.2}ms"),
+        }
     }
 }
 
