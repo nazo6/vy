@@ -7,12 +7,11 @@ mod pane;
 use std::collections::HashMap;
 
 use rmpv::Value;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use vy_core::{Applied, Buffer, DocumentId, Layout, PaneId, Uri};
 use vy_proto::ErrorCode;
 use vy_proto::RpcMessage;
-use vy_proto::value::{get, object};
+pub(super) use vy_proto::value::get;
+pub(super) use vy_proto::{decode_value as decode_params, to_value};
 
 /// One pane in the layout tree.
 #[derive(Debug, Clone)]
@@ -190,29 +189,14 @@ fn document_id(params: &Value) -> Option<u64> {
         .and_then(Value::as_u64)
 }
 
-fn decode_params<T: DeserializeOwned>(value: &Value) -> Option<T> {
-    // rmpv's serde support treats structs as tuples, so always go through rmp-serde.
-    let mut bytes = Vec::new();
-    rmpv::encode::write_value(&mut bytes, value).ok()?;
-    rmp_serde::from_slice(&bytes).ok()
-}
-
 /// Returns the value in the shape described by `docs/protocol.md`.
 fn applied_value(document_id: u64, applied: &Applied) -> Value {
-    object([
-        ("document_id", Value::from(document_id)),
-        ("version", Value::from(applied.version)),
-        ("edits", to_value(&applied.edits)),
-        ("selection", to_value(&applied.selection)),
-    ])
-}
-
-fn to_value<T: Serialize>(value: &T) -> Value {
-    // rmpv's serde support turns structs into tuples; rmp-serde keeps field names.
-    rmp_serde::to_vec_named(value)
-        .ok()
-        .and_then(|bytes| rmpv::decode::read_value(&mut bytes.as_slice()).ok())
-        .unwrap_or(Value::Nil)
+    to_value(&vy_proto::HistoryResult {
+        document_id,
+        version: applied.version,
+        edits: applied.edits.clone(),
+        selection: applied.selection.clone(),
+    })
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 //! Command execution and palette/ex handling for `EditorView`.
 
-use rmpv::Value;
 use vy_app::commands::{
     BuiltinCommand, CommandDescriptor, DocumentCommand, Invocation, InvocationArgs, PaneCommand,
     UiCommand, parse_ex_line, resolve_ex_name,
@@ -10,7 +9,10 @@ use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::palette::{PaletteState, filtered_palette_indices, move_palette_selection};
 use vy_app::workspace::uri_from_argument;
-use vy_proto::object;
+use vy_proto::{
+    DocumentIdParams, EditorOpenParams, PaneCloseParams, PaneFocusParams, PaneOpenParams,
+    PanePlacement, to_value,
+};
 
 use super::{EditorView, Pending};
 
@@ -47,7 +49,7 @@ impl EditorView {
                 let uri = uri_from_argument(raw, self.workspace.as_deref());
                 self.request(
                     "editor/open",
-                    object([("uri", Value::from(uri))]),
+                    to_value(&EditorOpenParams { uri, pane_id: None }),
                     Pending::EditorOpen,
                 );
             }
@@ -65,7 +67,7 @@ impl EditorView {
                 };
                 self.request(
                     "document/save",
-                    object([("document_id", Value::from(document_id))]),
+                    to_value(&DocumentIdParams { document_id }),
                     Pending::Save,
                 );
             }
@@ -84,16 +86,15 @@ impl EditorView {
 
         self.request(
             "pane/open",
-            object([
-                ("uri", Value::from(uri)),
-                (
-                    "placement",
-                    object([
-                        ("target", Value::from(target)),
-                        ("direction", Value::from(direction)),
-                    ]),
-                ),
-            ]),
+            to_value(&PaneOpenParams {
+                view: Some("editor".into()),
+                uri,
+                placement: Some(PanePlacement {
+                    target: Some(target),
+                    direction: Some(direction.to_string()),
+                    ratio: None,
+                }),
+            }),
             Pending::Open,
         );
         self.status = format!("splitting pane {target} {direction}").into();
@@ -105,7 +106,7 @@ impl EditorView {
         };
         self.request(
             "pane/close",
-            object([("pane_id", Value::from(pane_id))]),
+            to_value(&PaneCloseParams { pane_id }),
             Pending::Close,
         );
     }
@@ -119,7 +120,7 @@ impl EditorView {
         };
         self.request(
             "pane/focus",
-            object([("pane_id", Value::from(pane_id))]),
+            to_value(&PaneFocusParams { pane_id }),
             Pending::Focus,
         );
     }
@@ -136,7 +137,7 @@ impl EditorView {
         let next = pane_ids[(index + 1) % pane_ids.len()];
         self.request(
             "pane/focus",
-            object([("pane_id", Value::from(next))]),
+            to_value(&PaneFocusParams { pane_id: next }),
             Pending::Focus,
         );
     }

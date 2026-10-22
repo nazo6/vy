@@ -1,29 +1,37 @@
 use rmpv::Value;
 use vy_core::Uri;
-use vy_proto::value::{get, object};
-use vy_proto::{ErrorCode, PROTOCOL_VERSION, RpcMessage};
+use vy_proto::{
+    ErrorCode, InitializeParams, InitializeResult, InitializedNotification, PROTOCOL_VERSION,
+    PlatformInfo, RpcMessage, decode_value, to_value,
+};
 
 use super::{Outcome, Session, State};
 
 impl Session {
     pub(super) fn initialize(&mut self, id: u64, params: Value) -> Outcome {
-        let protocol_version = get(&params, "protocol_version").and_then(Value::as_u64);
+        let params: InitializeParams = match decode_value(&params) {
+            Some(params) => params,
+            None => {
+                return Outcome::closing(RpcMessage::err(
+                    id,
+                    ErrorCode::UnsupportedProtocolVersion,
+                    "missing protocol_version".to_string(),
+                ));
+            }
+        };
 
-        if protocol_version != Some(PROTOCOL_VERSION as u64) {
-            let message = match protocol_version {
-                Some(version) => format!(
-                    "protocol version mismatch: server {PROTOCOL_VERSION}, client {version}"
-                ),
-                None => "missing protocol_version".to_string(),
-            };
+        if params.protocol_version != PROTOCOL_VERSION {
             return Outcome::closing(RpcMessage::err(
                 id,
                 ErrorCode::UnsupportedProtocolVersion,
-                message,
+                format!(
+                    "protocol version mismatch: server {PROTOCOL_VERSION}, client {}",
+                    params.protocol_version
+                ),
             ));
         }
 
-        let workspace = match get(&params, "workspace").and_then(Value::as_str) {
+        let workspace = match params.workspace.as_deref() {
             Some(value) => match Uri::parse(value) {
                 Ok(uri) => Some(uri),
                 Err(error) => {
@@ -42,26 +50,19 @@ impl Session {
         self.next_session_id += 1;
         self.state = State::Ready { session_id };
 
-        let response = RpcMessage::ok(id, object([("session_id", Value::from(session_id))]));
+        let response = RpcMessage::ok(id, to_value(&InitializeResult { session_id }));
         let initialized = RpcMessage::notification(
             "initialized",
-            object([
-                ("protocol_version", Value::from(PROTOCOL_VERSION)),
-                ("session_id", Value::from(session_id)),
-                ("server_version", Value::from(env!("CARGO_PKG_VERSION"))),
-                // Streams, Blob, and multiplexing are not implemented yet, so this is empty.
-                ("server_capabilities", Value::Array(Vec::new())),
-                (
-                    "platform",
-                    object([
-                        ("os", Value::from(std::env::consts::OS)),
-                        (
-                            "path_separator",
-                            Value::from(std::path::MAIN_SEPARATOR.to_string()),
-                        ),
-                    ]),
-                ),
-            ]),
+            to_value(&InitializedNotification {
+                protocol_version: PROTOCOL_VERSION,
+                session_id,
+                server_version: env!("CARGO_PKG_VERSION").into(),
+                server_capabilities: Vec::new(),
+                platform: PlatformInfo {
+                    os: std::env::consts::OS.into(),
+                    path_separator: std::path::MAIN_SEPARATOR.to_string(),
+                },
+            }),
         );
 
         Outcome {

@@ -8,25 +8,9 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use rmpv::Value;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
 
-/// Serializes any serde type into an [`rmpv::Value`].
-pub fn value_of<T: Serialize>(value: &T) -> Value {
-    // rmpv's serde support turns structs into tuples, so go through rmp-serde.
-    rmp_serde::to_vec_named(value)
-        .ok()
-        .and_then(|bytes| rmpv::decode::read_value(&mut bytes.as_slice()).ok())
-        .unwrap_or(Value::Nil)
-}
-
-/// Deserializes a serde type from an [`rmpv::Value`].
-pub fn decode_value<T: DeserializeOwned>(value: &Value) -> Option<T> {
-    let mut bytes = Vec::new();
-    rmpv::encode::write_value(&mut bytes, value).ok()?;
-    rmp_serde::from_slice(&bytes).ok()
-}
+pub use vy_proto::{decode_value, to_value, value_of};
 
 pub struct Client {
     child: Child,

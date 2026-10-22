@@ -1,5 +1,6 @@
 use super::*;
 use vy_core::{Position, Range, Selection, SplitDirection, TextEdit};
+use vy_proto::value::object;
 use vy_proto::{PROTOCOL_VERSION, RpcResult};
 
 fn request(session: &mut Session, id: u64, method: &str, params: Value) -> Outcome {

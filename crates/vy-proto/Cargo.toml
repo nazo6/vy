@@ -11,3 +11,4 @@ rmpv.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
+vy-core.workspace = true

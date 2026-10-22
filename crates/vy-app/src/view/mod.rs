@@ -13,7 +13,6 @@ mod render;
 mod rpc;
 
 use gpui::{Context, FocusHandle, KeyDownEvent, ScrollWheelEvent, SharedString, Window, px};
-use rmpv::Value;
 use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
 use vy_app::editor::{Editor, Key, Mode, ViewState};
@@ -28,7 +27,7 @@ use vy_app::statusline::Statusline;
 use vy_app::text_layout::scroll_lines;
 use vy_app::workspace::{document_uri, workspace_info, workspace_uri};
 use vy_core::{LayoutNode, PaneId};
-use vy_proto::{PROTOCOL_VERSION, object};
+use vy_proto::{InitializeParams, PROTOCOL_VERSION, to_value};
 
 /// The kind of request we are waiting for a response to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,13 +155,13 @@ impl EditorView {
             Ok(mut client) => {
                 let id = client.request(
                     "initialize",
-                    object([
-                        ("protocol_version", Value::from(PROTOCOL_VERSION)),
-                        ("client_version", Value::from(env!("CARGO_PKG_VERSION"))),
-                        ("client_capabilities", Value::Array(Vec::new())),
-                        ("workspace", Value::from(workspace_uri())),
-                        ("resume_session", Value::Nil),
-                    ]),
+                    to_value(&InitializeParams {
+                        protocol_version: PROTOCOL_VERSION,
+                        client_version: env!("CARGO_PKG_VERSION").into(),
+                        client_capabilities: Vec::new(),
+                        workspace: Some(workspace_uri()),
+                        resume_session: None,
+                    }),
                 );
                 view.pending.insert(id, Pending::Initialize);
                 view.client = Some(client);

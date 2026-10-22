@@ -6,10 +6,13 @@ use gpui::Context;
 use rmpv::Value;
 use vy_app::editor::{Transaction, ViewState};
 use vy_app::geometry::collect_pane_ids;
-use vy_app::rpc::{Client, decode_value, value_of};
+use vy_app::rpc::Client;
 use vy_app::state::{DocumentState, PaneState};
-use vy_core::{LayoutNode, Selection, TextEdit};
-use vy_proto::{RpcMessage, RpcResult, get, object};
+use vy_proto::{
+    DidChangeParams, DocumentIdParams, DocumentSavedResult, HistoryResult, InitializeResult,
+    LayoutDidChangeNotification, PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult,
+    SnapshotResult, decode_value, to_value,
+};
 
 use super::{EditorView, Pending};
 
@@ -67,10 +70,10 @@ impl EditorView {
             }
             RpcResult::Ok { value } => match pending {
                 Pending::Initialize => {
-                    if let Some(session_id) = get(&value, "session_id").and_then(Value::as_u64)
+                    if let Some(init) = decode_value::<InitializeResult>(&value)
                         && let Some(client) = self.client.as_mut()
                     {
-                        client.set_session_id(session_id);
+                        client.set_session_id(init.session_id);
                     }
                 }
                 Pending::Open => self.opened(&value),
@@ -100,19 +103,19 @@ impl EditorView {
     /// Applies the layout the core confirmed. The client never draws a tree the core
     /// has not accepted, so this is the only place panes are added or removed.
     fn received_layout(&mut self, params: &Value) {
-        let revision = get(params, "revision")
-            .and_then(Value::as_u64)
-            .unwrap_or_default();
-        if revision < self.layout_revision {
+        let Some(layout_msg) = decode_value::<LayoutDidChangeNotification>(params) else {
+            return;
+        };
+        if layout_msg.revision < self.layout_revision {
             return;
         }
 
-        self.layout_revision = revision;
-        self.window_id = get(params, "window_id")
-            .and_then(Value::as_u64)
-            .unwrap_or(self.window_id);
-        self.layout = get(params, "layout").and_then(decode_value::<LayoutNode>);
-        let next_active = get(params, "active_pane").and_then(Value::as_u64);
+        self.layout_revision = layout_msg.revision;
+        if let Some(window_id) = layout_msg.window_id {
+            self.window_id = window_id;
+        }
+        self.layout = layout_msg.layout;
+        let next_active = layout_msg.active_pane;
         self.switch_active_pane(next_active);
 
         let mut pane_ids = Vec::new();
@@ -139,19 +142,22 @@ impl EditorView {
         let uri = self.initial_uri.clone();
         self.request(
             "pane/open",
-            object([("uri", Value::from(uri))]),
+            to_value(&PaneOpenParams {
+                view: Some("editor".into()),
+                uri,
+                placement: None,
+            }),
             Pending::Open,
         );
     }
 
     fn opened(&mut self, value: &Value) {
-        let (Some(pane_id), Some(document_id)) = (
-            get(value, "pane_id").and_then(Value::as_u64),
-            get(value, "document_id").and_then(Value::as_u64),
-        ) else {
+        let Some(opened) = decode_value::<PaneOpenResult>(value) else {
             self.status = "pane/open response has no pane or document".into();
             return;
         };
+        let pane_id = opened.pane_id;
+        let document_id = opened.document_id;
 
         let inherited = if self.documents.contains_key(&document_id) {
             self.active_view().unwrap_or_default()
@@ -182,10 +188,11 @@ impl EditorView {
         }
 
         if !self.documents.contains_key(&document_id) {
-            let uri = get(value, "uri")
-                .and_then(Value::as_str)
-                .unwrap_or("vy:untitled")
-                .to_string();
+            let uri = if opened.uri.is_empty() {
+                "vy:untitled".into()
+            } else {
+                opened.uri
+            };
             let idle = Duration::from_millis(self.config.transaction_idle_ms());
             let mut document = DocumentState::new(document_id, uri, "", 0);
             document.editor.set_transaction_idle(idle);
@@ -194,31 +201,29 @@ impl EditorView {
 
         self.request(
             "buffer/snapshot",
-            object([("document_id", Value::from(document_id))]),
+            to_value(&DocumentIdParams { document_id }),
             Pending::Snapshot,
         );
     }
 
     fn editor_opened(&mut self, value: &Value) {
-        let (Some(pane_id), Some(document_id)) = (
-            get(value, "pane_id").and_then(Value::as_u64),
-            get(value, "document_id").and_then(Value::as_u64),
-        ) else {
+        let Some(opened) = decode_value::<PaneOpenResult>(value) else {
             self.status = "editor/open response has no pane or document".into();
             return;
         };
-        let replaced = get(value, "replaced")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
+        let pane_id = opened.pane_id;
+        let document_id = opened.document_id;
+        let replaced = opened.replaced;
 
         // The old pane state belongs to the old document.
         self.store_active_view();
 
         if !self.documents.contains_key(&document_id) {
-            let uri = get(value, "uri")
-                .and_then(Value::as_str)
-                .unwrap_or("vy:untitled")
-                .to_string();
+            let uri = if opened.uri.is_empty() {
+                "vy:untitled".into()
+            } else {
+                opened.uri
+            };
             let idle = Duration::from_millis(self.config.transaction_idle_ms());
             let mut document = DocumentState::new(document_id, uri, "", 0);
             document.editor.set_transaction_idle(idle);
@@ -241,35 +246,34 @@ impl EditorView {
         self.activate_active_view();
         self.request(
             "buffer/snapshot",
-            object([("document_id", Value::from(document_id))]),
+            to_value(&DocumentIdParams { document_id }),
             Pending::Snapshot,
         );
     }
 
     fn saved(&mut self, value: &Value) {
-        let path = get(value, "path").and_then(Value::as_str).unwrap_or("-");
+        let path = decode_value::<DocumentSavedResult>(value)
+            .map(|saved| saved.path)
+            .unwrap_or_else(|| "-".into());
         self.status = format!("saved {path}").into();
     }
 
     fn received_snapshot(&mut self, value: &Value) {
         let started = Instant::now();
-        let Some(document_id) = get(value, "document_id").and_then(Value::as_u64) else {
-            self.status = "snapshot has no document_id".into();
+        let Some(snapshot) = decode_value::<SnapshotResult>(value) else {
+            self.status = "snapshot could not be decoded".into();
             return;
         };
-        let text = get(value, "text")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let version = get(value, "version")
-            .and_then(Value::as_u64)
-            .unwrap_or_default();
+        let document_id = snapshot.document_id;
+        let text = snapshot.text;
+        let version = snapshot.version;
 
         let mut reset = false;
         if let Some(document) = self.documents.get_mut(&document_id) {
             // A second pane on the same buffer asks for a snapshot too. Keep the
             // per-pane cursor when the copy is already at that version.
             if !document.loaded || document.editor.version() != version {
-                document.editor.reset(text, version);
+                document.editor.reset(&text, version);
                 reset = true;
             }
             document.loaded = true;
@@ -311,15 +315,13 @@ impl EditorView {
 
     fn received_history(&mut self, value: &Value) {
         self.activate_active_view();
-        let version = get(value, "version")
-            .and_then(Value::as_u64)
-            .unwrap_or_else(|| self.editor().version());
-        let batches = get(value, "edits")
-            .and_then(decode_value::<Vec<Vec<TextEdit>>>)
-            .unwrap_or_default();
-        let selection = get(value, "selection")
-            .and_then(decode_value::<Vec<Selection>>)
-            .unwrap_or_default();
+        let Some(history) = decode_value::<HistoryResult>(value) else {
+            self.status = "history could not be decoded".into();
+            return;
+        };
+        let version = history.version;
+        let batches = history.edits;
+        let selection = history.selection;
 
         let result = {
             let Some(document) = self.active_document_mut() else {
@@ -356,15 +358,15 @@ impl EditorView {
 
         client.notify(
             "buffer/did_change",
-            object([
-                ("document_id", Value::from(document_id)),
-                ("base_version", Value::from(transaction.base_version)),
-                ("version", Value::from(transaction.base_version + 1)),
-                ("transaction_id", Value::from(transaction.transaction_id)),
-                ("edits", value_of(&transaction.edits)),
-                ("selection_before", value_of(&transaction.selection_before)),
-                ("selection_after", value_of(&transaction.selection_after)),
-            ]),
+            to_value(&DidChangeParams {
+                document_id,
+                base_version: transaction.base_version,
+                version: transaction.base_version + 1,
+                transaction_id: transaction.transaction_id,
+                edits: transaction.edits,
+                selection_before: transaction.selection_before,
+                selection_after: transaction.selection_after,
+            }),
         );
     }
 
@@ -376,7 +378,7 @@ impl EditorView {
             return;
         };
 
-        let id = client.request(method, object([("document_id", Value::from(document_id))]));
+        let id = client.request(method, to_value(&DocumentIdParams { document_id }));
         self.pending.insert(id, pending);
     }
 }

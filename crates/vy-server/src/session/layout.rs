@@ -1,58 +1,48 @@
-use rmpv::Value;
-use vy_proto::RpcMessage;
-use vy_proto::value::object;
+use vy_proto::{
+    LayoutDidChangeNotification, LayoutGetResult, LayoutPaneInfo, RpcMessage, to_value,
+};
 
-use super::{Outcome, Session, to_value};
+use super::{Outcome, Session};
 
 impl Session {
     /// Returns the whole layout. The client uses this after reconnecting.
     pub(super) fn layout_get(&self, id: u64) -> Outcome {
-        let mut panes = Vec::new();
-        for pane_id in self.layout.leaves() {
-            if let Some(pane) = self.panes.get(&pane_id) {
-                panes.push(object([
-                    ("pane_id", Value::from(pane_id)),
-                    ("view", Value::from(pane.view.clone())),
-                    (
-                        "document_id",
-                        pane.document_id.map(Value::from).unwrap_or(Value::Nil),
-                    ),
-                ]));
-            }
-        }
+        let panes = self
+            .layout
+            .leaves()
+            .into_iter()
+            .filter_map(|pane_id| {
+                self.panes.get(&pane_id).map(|pane| LayoutPaneInfo {
+                    pane_id,
+                    view: pane.view.clone(),
+                    document_id: pane.document_id,
+                })
+            })
+            .collect();
 
-        let mut value = self.layout_value();
-        if let Value::Map(entries) = &mut value {
-            entries.push((Value::from("panes"), Value::Array(panes)));
-        }
+        let result = LayoutGetResult {
+            window_id: Some(self.layout.window_id()),
+            revision: self.layout.revision(),
+            layout: self.layout.root().cloned(),
+            floating: Vec::new(),
+            active_pane: self.layout.active_pane(),
+            panes,
+        };
 
-        Outcome::one(RpcMessage::ok(id, value))
+        Outcome::one(RpcMessage::ok(id, to_value(&result)))
     }
 
     pub(super) fn layout_notification(&self, reason: &str) -> RpcMessage {
-        let mut value = self.layout_value();
-        if let Value::Map(entries) = &mut value {
-            entries.push((Value::from("reason"), Value::from(reason)));
-        }
-        RpcMessage::notification("layout/did_change", value)
-    }
-
-    pub(super) fn layout_value(&self) -> Value {
-        object([
-            ("window_id", Value::from(self.layout.window_id())),
-            ("revision", Value::from(self.layout.revision())),
-            (
-                "layout",
-                self.layout.root().map(to_value).unwrap_or(Value::Nil),
-            ),
-            ("floating", Value::Array(Vec::new())),
-            (
-                "active_pane",
-                self.layout
-                    .active_pane()
-                    .map(Value::from)
-                    .unwrap_or(Value::Nil),
-            ),
-        ])
+        RpcMessage::notification(
+            "layout/did_change",
+            to_value(&LayoutDidChangeNotification {
+                window_id: Some(self.layout.window_id()),
+                revision: self.layout.revision(),
+                layout: self.layout.root().cloned(),
+                floating: Vec::new(),
+                active_pane: self.layout.active_pane(),
+                reason: Some(reason.to_string()),
+            }),
+        )
     }
 }

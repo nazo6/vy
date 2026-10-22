@@ -1,9 +1,9 @@
 use rmpv::Value;
 use vy_core::{Buffer, DocumentId, SplitDirection, Uri};
-use vy_proto::value::{get, object};
-use vy_proto::{ErrorCode, RpcMessage};
+use vy_proto::value::get;
+use vy_proto::{ErrorCode, PaneCloseResult, PaneFocusResult, PaneOpenResult, RpcMessage};
 
-use super::{Outcome, Pane, Session};
+use super::{Outcome, Pane, Session, to_value};
 
 impl Session {
     /// Returns the document for a URI, opening it when needed.
@@ -144,13 +144,14 @@ impl Session {
 
         let response = RpcMessage::ok(
             id,
-            object([
-                ("pane_id", Value::from(pane_id)),
-                ("document_id", Value::from(document_id)),
-                ("version", Value::from(version)),
-                ("line_count", Value::from(line_count as u64)),
-                ("uri", Value::from(value)),
-            ]),
+            to_value(&PaneOpenResult {
+                pane_id,
+                document_id,
+                version,
+                line_count: line_count as u64,
+                uri: value.to_string(),
+                replaced: false,
+            }),
         );
 
         Outcome {
@@ -175,7 +176,7 @@ impl Session {
 
         Outcome {
             messages: vec![
-                RpcMessage::ok(id, object([("pane_id", Value::from(pane_id))])),
+                RpcMessage::ok(id, to_value(&PaneFocusResult { pane_id })),
                 self.layout_notification("focus"),
             ],
             close: false,
@@ -219,7 +220,7 @@ impl Session {
 
         Outcome {
             messages: vec![
-                RpcMessage::ok(id, object([("pane_id", Value::from(pane_id))])),
+                RpcMessage::ok(id, to_value(&PaneCloseResult { pane_id })),
                 self.layout_notification("close"),
             ],
             close: false,
@@ -277,14 +278,14 @@ impl Session {
 
         Outcome::one(RpcMessage::ok(
             id,
-            object([
-                ("pane_id", Value::from(pane_id)),
-                ("document_id", Value::from(document_id)),
-                ("version", Value::from(version)),
-                ("line_count", Value::from(line_count as u64)),
-                ("uri", Value::from(value)),
-                ("replaced", Value::from(previous != document_id)),
-            ]),
+            to_value(&PaneOpenResult {
+                pane_id,
+                document_id,
+                version,
+                line_count: line_count as u64,
+                uri: value.to_string(),
+                replaced: previous != document_id,
+            }),
         ))
     }
 }
