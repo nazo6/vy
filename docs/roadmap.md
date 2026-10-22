@@ -103,7 +103,9 @@ Phase 3 で仕上げます。
 - [x] 同じバッファを複数のペインで開く（マルチバッファ）と、ペインごとのカーソル・選択・スクロール
   - モードと IME の前編集もペインごと。最後の選択範囲は文書ごとに `g v`
     で復元できる
-- [ ] `editor.open` と、開いている文書の一覧・切り替え
+- [x] `editor.open`（`:e`）
+- [x] `document.save`（`:w`）
+- [ ] 開いている文書の一覧・切り替え
 - [ ] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
   - `webview` は Phase 6
@@ -113,14 +115,13 @@ Phase 3 で仕上げます。
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する
   - [ ] `commands.execute` の戻り値を JS へ返す
-  - [ ] 実行キュー（実行中のコマンドを直列に進め、引数と `when` を渡す）
+  - [x] 実行キュー（実行中のコマンドを直列に進める）
   - [x] コマンドパレット（`space` リーダー、単語検索、選択、実行）
-  - [ ] コマンド記述子と `Invocation`
+  - [x] コマンド記述子と `Invocation`
         の共通化（キーマップ、パレット、Ex、スクリプト）
-  - [ ] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
+  - [x] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
   - [ ] ピッカー API（`ui.picker.registerSource`）と、パレットからの引数入力
-  - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split`、`editor.open`、`document.save`
-        など）
+  - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split` など。`editor.open` / `document.save` は実装済み）
 
 ### Phase 4: リモート接続
 

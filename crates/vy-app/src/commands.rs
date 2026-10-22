@@ -164,6 +164,47 @@ impl Invocation {
             _ => CommandArgs::default(),
         }
     }
+
+    pub fn ex_raw(&self) -> Option<&str> {
+        match &self.args {
+            InvocationArgs::Ex { raw } => Some(raw),
+            _ => None,
+        }
+    }
+}
+
+/// A command that acts on a document rather than the cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentCommand {
+    Open,
+    Save,
+}
+
+impl DocumentCommand {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Open => "vy.editor.open",
+            Self::Save => "vy.document.save",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Open => "Editor Open",
+            Self::Save => "Document Save",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|command| command.id() == id)
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::Open, Self::Save]
+    }
 }
 
 /// A command handled by the client UI instead of the editor.
@@ -274,6 +315,14 @@ pub const EX_ALIASES: &[ExAlias] = &[
     ExAlias {
         name: "q",
         id: "vy.pane.close",
+    },
+    ExAlias {
+        name: "e",
+        id: "vy.editor.open",
+    },
+    ExAlias {
+        name: "w",
+        id: "vy.document.save",
     },
 ];
 
@@ -672,6 +721,13 @@ impl CommandRegistry {
                 CommandSource::Pane,
             ));
         }
+        for command in DocumentCommand::all() {
+            let mut descriptor =
+                CommandDescriptor::new(command.id(), command.title(), CommandSource::Builtin);
+            descriptor.hidden = *command == DocumentCommand::Open;
+            descriptor.accepts_args = *command == DocumentCommand::Open;
+            descriptors.push(descriptor);
+        }
         for command in UiCommand::all() {
             let mut descriptor =
                 CommandDescriptor::new(command.id(), command.title(), CommandSource::Ui);
@@ -820,6 +876,8 @@ mod tests {
         assert_eq!(resolve_ex_name("vsp"), Ok("vy.pane.split_right"));
         assert_eq!(resolve_ex_name("close"), Ok("vy.pane.close"));
         assert_eq!(resolve_ex_name("q"), Ok("vy.pane.close"));
+        assert_eq!(resolve_ex_name("e"), Ok("vy.editor.open"));
+        assert_eq!(resolve_ex_name("w"), Ok("vy.document.save"));
         assert_eq!(
             resolve_ex_name("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
@@ -832,7 +890,9 @@ mod tests {
                     "sp".to_string(),
                     "vsp".to_string(),
                     "close".to_string(),
-                    "q".to_string()
+                    "q".to_string(),
+                    "e".to_string(),
+                    "w".to_string()
                 ],
             })
         );

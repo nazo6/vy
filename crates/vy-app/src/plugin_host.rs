@@ -17,7 +17,7 @@ use vy_core::{Position, Range, Selection, TextEdit};
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 
 use crate::commands::{
-    BuiltinCommand, CommandArgs, CommandRegistry, Owner, PaneCommand, UiCommand,
+    BuiltinCommand, CommandArgs, CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand,
 };
 use crate::config::Config;
 use crate::editor::{Action, Editor, Mode, Transaction};
@@ -160,6 +160,7 @@ pub enum HostAction {
     Undo,
     Redo,
     Pane(PaneCommand),
+    Document(DocumentCommand),
     Ui(UiCommand),
 }
 
@@ -237,6 +238,9 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
             } else if let Some(command) = PaneCommand::parse(&id) {
                 outcome.action = HostAction::Pane(command);
                 request.respond_value(Value::Null);
+            } else if let Some(command) = DocumentCommand::parse(&id) {
+                outcome.action = HostAction::Document(command);
+                request.respond_value(Value::Null);
             } else if let Some(command) = BuiltinCommand::parse(&id) {
                 outcome.action = context.editor.execute(command, args).into();
                 request.respond_value(Value::Null);
@@ -258,6 +262,11 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 .map(|command| command.id().to_string())
                 .chain(
                     PaneCommand::all()
+                        .iter()
+                        .map(|command| command.id().to_string()),
+                )
+                .chain(
+                    DocumentCommand::all()
                         .iter()
                         .map(|command| command.id().to_string()),
                 )

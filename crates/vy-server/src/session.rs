@@ -143,6 +143,8 @@ impl Session {
                 "pane/resize is not implemented yet",
             )),
             "layout/get" => self.layout_get(id),
+            "editor/open" => self.editor_open(id, params),
+            "document/save" => self.save_document(id, params),
             "buffer/snapshot" => self.snapshot(id, params),
             "buffer/undo" => self.undo(id, params),
             "buffer/redo" => self.redo(id, params),
@@ -222,6 +224,49 @@ impl Session {
         }
     }
 
+    /// Returns the document for a URI, opening it when needed.
+    fn document_for_uri(
+        &mut self,
+        uri: Uri,
+    ) -> Result<(DocumentId, u64, usize, bool), (ErrorCode, String)> {
+        let key = uri.as_str().to_string();
+        if let Some(document_id) = self.documents_by_uri.get(&key).copied() {
+            let buffer = self
+                .documents
+                .get(&document_id)
+                .expect("the URI index points at an open document");
+            return Ok((document_id, buffer.version(), buffer.line_count(), false));
+        }
+
+        let text = if uri.scheme() == "file" {
+            let Some(path) = uri.file_path() else {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    format!("cannot convert to a path: {uri}"),
+                ));
+            };
+            // Phase 1 reads synchronously. Move this to spawn_blocking when large
+            // files arrive.
+            match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) => {
+                    return Err((ErrorCode::NotFound, format!("{}: {error}", path.display())));
+                }
+            }
+        } else {
+            String::new()
+        };
+
+        let document_id = self.next_document_id;
+        self.next_document_id += 1;
+        let buffer = Buffer::new(document_id, uri, text);
+        let version = buffer.version();
+        let line_count = buffer.line_count();
+        self.documents.insert(document_id, buffer);
+        self.documents_by_uri.insert(key, document_id);
+        Ok((document_id, version, line_count, true))
+    }
+
     /// Opens a document in a new pane. The placement decides where the pane goes.
     fn open_pane(&mut self, id: u64, params: Value) -> Outcome {
         let view = get(&params, "view")
@@ -281,51 +326,12 @@ impl Session {
             ));
         }
 
-        let key = uri.as_str().to_string();
-        let (document_id, version, line_count, created) =
-            match self.documents_by_uri.get(&key).copied() {
-                Some(document_id) => {
-                    let buffer = self
-                        .documents
-                        .get(&document_id)
-                        .expect("the URI index points at an open document");
-                    (document_id, buffer.version(), buffer.line_count(), false)
-                }
-                None => {
-                    let text = if uri.scheme() == "file" {
-                        let Some(path) = uri.file_path() else {
-                            return Outcome::one(RpcMessage::err(
-                                id,
-                                ErrorCode::InvalidRequest,
-                                format!("cannot convert to a path: {uri}"),
-                            ));
-                        };
-                        // Phase 1 reads synchronously. Move this to spawn_blocking when
-                        // large files arrive.
-                        match std::fs::read_to_string(&path) {
-                            Ok(text) => text,
-                            Err(error) => {
-                                return Outcome::one(RpcMessage::err(
-                                    id,
-                                    ErrorCode::NotFound,
-                                    format!("{}: {error}", path.display()),
-                                ));
-                            }
-                        }
-                    } else {
-                        String::new()
-                    };
-
-                    let document_id = self.next_document_id;
-                    self.next_document_id += 1;
-                    let buffer = Buffer::new(document_id, uri, text);
-                    let version = buffer.version();
-                    let line_count = buffer.line_count();
-                    self.documents.insert(document_id, buffer);
-                    self.documents_by_uri.insert(key, document_id);
-                    (document_id, version, line_count, true)
-                }
-            };
+        let (document_id, version, line_count, created) = match self.document_for_uri(uri) {
+            Ok(document) => document,
+            Err((code, message)) => {
+                return Outcome::one(RpcMessage::err(id, code, message));
+            }
+        };
 
         let pane_id = self.next_pane_id;
         if let Err(error) = self.layout.open(
@@ -436,6 +442,121 @@ impl Session {
             ],
             close: false,
         }
+    }
+
+    /// Opens a document in an existing pane. Used by `:e` and `editor.open`.
+    fn editor_open(&mut self, id: u64, params: Value) -> Outcome {
+        let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "editor/open requires a uri",
+            ));
+        };
+        let uri = match Uri::parse(value) {
+            Ok(uri) => uri,
+            Err(error) => {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidRequest,
+                    error.to_string(),
+                ));
+            }
+        };
+
+        let pane_id = get(&params, "pane_id")
+            .and_then(Value::as_u64)
+            .or_else(|| self.layout.active_pane());
+        let Some(pane_id) = pane_id else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidState,
+                "there is no active pane",
+            ));
+        };
+        let Some(previous) = self.panes.get(&pane_id).and_then(|pane| pane.document_id) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::NotFound,
+                format!("pane {pane_id} is not open"),
+            ));
+        };
+
+        let (document_id, version, line_count, _created) = match self.document_for_uri(uri) {
+            Ok(document) => document,
+            Err((code, message)) => {
+                return Outcome::one(RpcMessage::err(id, code, message));
+            }
+        };
+
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.document_id = Some(document_id);
+        }
+
+        Outcome::one(RpcMessage::ok(
+            id,
+            object([
+                ("pane_id", Value::from(pane_id)),
+                ("document_id", Value::from(document_id)),
+                ("version", Value::from(version)),
+                ("line_count", Value::from(line_count as u64)),
+                ("uri", Value::from(value)),
+                ("replaced", Value::from(previous != document_id)),
+            ]),
+        ))
+    }
+
+    /// Writes a document back to its file.
+    fn save_document(&mut self, id: u64, params: Value) -> Outcome {
+        let Some(document_id) = document_id(&params) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "a document_id is required",
+            ));
+        };
+
+        let Some(buffer) = self.documents.get(&document_id) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::NotFound,
+                format!("document {document_id} is not open"),
+            ));
+        };
+        let Some(path) = buffer.uri().file_path() else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                format!("cannot save a non-file document: {}", buffer.uri()),
+            ));
+        };
+        let text = buffer.text();
+
+        if let Err(error) = std::fs::write(&path, text) {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::Internal,
+                format!("{}: {error}", path.display()),
+            ));
+        }
+
+        let Some(buffer) = self.documents.get_mut(&document_id) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::NotFound,
+                format!("document {document_id} is not open"),
+            ));
+        };
+        buffer.mark_saved();
+
+        Outcome::one(RpcMessage::ok(
+            id,
+            object([
+                ("document_id", Value::from(document_id)),
+                ("version", Value::from(buffer.version())),
+                ("path", Value::from(path.display().to_string())),
+            ]),
+        ))
     }
 
     /// Returns the whole layout. The client uses this after reconnecting.
@@ -1142,5 +1263,76 @@ mod tests {
             get(&panes[0], "view").and_then(Value::as_str),
             Some("editor")
         );
+    }
+
+    #[test]
+    fn editor_open_replaces_the_document_in_the_active_pane() {
+        let mut session = Session::new();
+        initialize(&mut session);
+        let (first_document, pane_id) = open_untitled(&mut session);
+
+        let outcome = request(
+            &mut session,
+            3,
+            "editor/open",
+            object([("uri", Value::from("vy:second"))]),
+        );
+        let value = ok_value(&outcome.messages[0]);
+        let second_document = get(value, "document_id")
+            .and_then(Value::as_u64)
+            .expect("document_id");
+        assert_ne!(first_document, second_document);
+        assert_eq!(get(value, "pane_id").and_then(Value::as_u64), Some(pane_id));
+        assert_eq!(get(value, "replaced").and_then(Value::as_bool), Some(true));
+
+        let outcome = request(
+            &mut session,
+            4,
+            "editor/open",
+            object([("uri", Value::from("vy:untitled"))]),
+        );
+        let value = ok_value(&outcome.messages[0]);
+        assert_eq!(
+            get(value, "document_id").and_then(Value::as_u64),
+            Some(first_document)
+        );
+    }
+
+    #[test]
+    fn saves_a_file_back_to_disk() {
+        let mut session = Session::new();
+        initialize(&mut session);
+
+        let path =
+            std::env::temp_dir().join(format!("vy-save-{}-{}.txt", std::process::id(), line!()));
+        std::fs::write(&path, "old").expect("write fixture");
+        let uri = format!("file://{}", path.display());
+
+        let outcome = request(
+            &mut session,
+            2,
+            "pane/open",
+            object([("uri", Value::from(uri))]),
+        );
+        let document_id = get(ok_value(&outcome.messages[0]), "document_id")
+            .and_then(Value::as_u64)
+            .expect("document_id");
+
+        session.handle(insert_change(document_id, 0, "new"));
+
+        let outcome = request(
+            &mut session,
+            3,
+            "document/save",
+            object([("document_id", Value::from(document_id))]),
+        );
+        let value = ok_value(&outcome.messages[0]);
+        assert_eq!(
+            get(value, "document_id").and_then(Value::as_u64),
+            Some(document_id)
+        );
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), "newold");
+
+        std::fs::remove_file(path).ok();
     }
 }

@@ -19,8 +19,8 @@ use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use vy_app::commands::{
-    BuiltinCommand, CommandDescriptor, CommandRegistry, Invocation, InvocationArgs, PaneCommand,
-    UiCommand, parse_ex_line, resolve_ex_name,
+    BuiltinCommand, CommandDescriptor, CommandRegistry, DocumentCommand, Invocation,
+    InvocationArgs, PaneCommand, UiCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction, ViewState};
@@ -51,6 +51,8 @@ enum Pending {
     Redo,
     Close,
     Focus,
+    EditorOpen,
+    Save,
 }
 
 /// A buffer the client draws. The core owns the text; this copy is for rendering.
@@ -566,6 +568,9 @@ impl EditorView {
             HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
             HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
             HostAction::Pane(command) => self.run_pane_command(command),
+            HostAction::Document(command) => {
+                self.run_document_command(command, &Invocation::palette(command.id()));
+            }
             HostAction::Ui(command) => self.run_ui_command(command),
         }
 
@@ -702,6 +707,8 @@ impl EditorView {
                 Pending::Snapshot => self.received_snapshot(&value),
                 Pending::Undo | Pending::Redo => self.received_history(&value),
                 Pending::Close | Pending::Focus => {}
+                Pending::EditorOpen => self.editor_opened(&value),
+                Pending::Save => self.saved(&value),
             },
         }
     }
@@ -820,6 +827,58 @@ impl EditorView {
             object([("document_id", Value::from(document_id))]),
             Pending::Snapshot,
         );
+    }
+
+    fn editor_opened(&mut self, value: &Value) {
+        let (Some(pane_id), Some(document_id)) = (
+            get(value, "pane_id").and_then(Value::as_u64),
+            get(value, "document_id").and_then(Value::as_u64),
+        ) else {
+            self.status = "editor/open response has no pane or document".into();
+            return;
+        };
+        let replaced = get(value, "replaced")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+
+        // The old pane state belongs to the old document.
+        self.store_active_view();
+
+        if !self.documents.contains_key(&document_id) {
+            let uri = get(value, "uri")
+                .and_then(Value::as_str)
+                .unwrap_or("vy:untitled")
+                .to_string();
+            let idle = Duration::from_millis(self.config.transaction_idle_ms());
+            let mut document = DocumentState::new(document_id, uri, "", 0);
+            document.editor.set_transaction_idle(idle);
+            self.documents.insert(document_id, document);
+        }
+
+        let pane = self
+            .panes
+            .entry(pane_id)
+            .or_insert_with(|| PaneState::new(pane_id, None));
+        pane.document_id = Some(document_id);
+        if replaced {
+            pane.view = ViewState::default();
+            pane.preedit.clear();
+            pane.preedit_selection = None;
+            pane.scroll_top = 0;
+        }
+
+        self.active_pane = Some(pane_id);
+        self.activate_active_view();
+        self.request(
+            "buffer/snapshot",
+            object([("document_id", Value::from(document_id))]),
+            Pending::Snapshot,
+        );
+    }
+
+    fn saved(&mut self, value: &Value) {
+        let path = get(value, "path").and_then(Value::as_str).unwrap_or("-");
+        self.status = format!("saved {path}").into();
     }
 
     fn received_snapshot(&mut self, value: &Value) {
@@ -1091,6 +1150,46 @@ impl EditorView {
         }
     }
 
+    fn run_document_command(&mut self, command: DocumentCommand, invocation: &Invocation) {
+        match command {
+            DocumentCommand::Open => {
+                let Some(raw) = invocation.ex_raw() else {
+                    self.status = "editor.open requires a path".into();
+                    return;
+                };
+                let raw = raw.trim();
+                if raw.is_empty() {
+                    self.status = "editor.open requires a path".into();
+                    return;
+                }
+                let uri = uri_from_argument(raw, self.workspace.as_deref());
+                self.request(
+                    "editor/open",
+                    object([("uri", Value::from(uri))]),
+                    Pending::EditorOpen,
+                );
+            }
+            DocumentCommand::Save => {
+                if invocation
+                    .ex_raw()
+                    .is_some_and(|raw| !raw.trim().is_empty())
+                {
+                    self.status = "saving to another path is not supported yet".into();
+                    return;
+                }
+                let Some(document_id) = self.active_document_id() else {
+                    self.status = "there is no active document".into();
+                    return;
+                };
+                self.request(
+                    "document/save",
+                    object([("document_id", Value::from(document_id))]),
+                    Pending::Save,
+                );
+            }
+        }
+    }
+
     /// Splits the active pane and opens the same document in the new one.
     fn open_split(&mut self, direction: &str) {
         let Some(target) = self.active_pane else {
@@ -1357,6 +1456,10 @@ impl EditorView {
         }
         if let Some(command) = PaneCommand::parse(&id) {
             self.run_pane_command(command);
+            return false;
+        }
+        if let Some(command) = DocumentCommand::parse(&id) {
+            self.run_document_command(command, &invocation);
             return false;
         }
         if let Some(command) = BuiltinCommand::parse(&id) {
@@ -2510,6 +2613,28 @@ fn document_uri() -> String {
     }
 }
 
+/// Resolves an Ex argument to a document URI. Relative paths use the workspace.
+fn uri_from_argument(argument: &str, workspace: Option<&Path>) -> String {
+    if argument.starts_with("file:") || argument.starts_with("vy:") {
+        return argument.to_string();
+    }
+
+    let path = PathBuf::from(argument);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        workspace
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
+            .join(path)
+    };
+
+    match std::fs::canonicalize(&path) {
+        Ok(absolute) => format!("file://{}", absolute.display()),
+        Err(_) => format!("file://{}", path.display()),
+    }
+}
+
 fn workspace_uri() -> String {
     match std::env::current_dir() {
         Ok(directory) => format!("file://{}", directory.display()),
@@ -2710,5 +2835,17 @@ mod tests {
         assert_eq!(move_palette_selection(2, 1, 3), 0);
         assert_eq!(move_palette_selection(1, 1, 3), 2);
         assert_eq!(move_palette_selection(0, 1, 0), 0);
+    }
+
+    #[test]
+    fn resolves_relative_ex_paths_against_the_workspace() {
+        assert_eq!(
+            uri_from_argument("README.md", Some(Path::new("/tmp/vy-ws"))),
+            "file:///tmp/vy-ws/README.md"
+        );
+        assert_eq!(
+            uri_from_argument("file:///tmp/readme.md", None),
+            "file:///tmp/readme.md"
+        );
     }
 }

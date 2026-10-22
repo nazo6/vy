@@ -484,9 +484,10 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 
 先送りしたもの:
 
-- `document.save`、`editor.open`、`workspace.state`、`fs`、`process`、`net`。
-  `document.save` と `editor.open` は Phase 3、`fs` / `process` / `net` は Phase
-  3 以降です。
+- `workspace.state`、`fs`、`process`、`net`。`workspace.state` と `fs` /
+  `process` / `net` は Phase 3 以降です。
+- JS の `editor.open` と `document.save` API はまだありません。クライアントの
+  コマンド `vy.editor.open`（`:e`）と `vy.document.save`（`:w`）は実装済みです。
 - `document.onDidChangeContent`、`editor.onDidChangeSelection` などのイベント。
   発火するには UI から JS へのイベント経路がもう1本必要です（Phase 3）。
 - `config.define`、`ui` ビュー、スロット、テーマは Phase 3。Webview は Phase 6

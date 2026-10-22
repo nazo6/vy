@@ -95,6 +95,7 @@ cargo run -p vy-app -- README.md
 | Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                         |
 | Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる   |
 | Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                 |
+| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` 閉じる） |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                   |
 | Select | 移動で選択を伸ばす。`d` で削除、`y` でコピーして Normal へ                     |
 
