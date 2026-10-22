@@ -1,0 +1,13 @@
+[package]
+name = "vy-app"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+rmp-serde.workspace = true
+rmpv.workspace = true
+vy-core.workspace = true
+vy-proto.workspace = true

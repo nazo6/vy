@@ -52,3 +52,22 @@
   - 実装フェーズ（Phase 1〜5）と、決定済みの項目、残っている論点
 - [**アーキテクチャ決定記録 (`docs/adr/`)**](./docs/adr/README.md)
   - 設計上の決定と、見直しの条件
+
+---
+
+## 🛠 開発
+
+```sh
+# ビルドとテスト
+cargo test --workspace
+
+# クライアントを起動する。引数は開くファイル（省略時は vy:untitled）
+cargo run -p vy-app -- README.md
+```
+
+- `vy-app` は、実行ファイルと同じディレクトリか `PATH` から `vy-server`
+  を探します。別の場所を使うときは `VY_SERVER=/path/to/vy-server` を指定します。
+- `vy-server` のログは標準エラーに出ます。量を変えるときは `VY_LOG=debug`
+  を使います。
+- GPUI 0.2.2 が引く `xattr 0.2.3` は Linux でビルドできないため、`vendor/xattr`
+  にパッチ版を置いています（[`vendor/xattr/PATCH.md`](./vendor/xattr/PATCH.md)）。

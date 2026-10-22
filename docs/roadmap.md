@@ -22,12 +22,14 @@ flowchart TD
 
 ### Phase 1: 2プロセスの骨格と編集の最小経路
 
-- [ ] `crates/vy-app`、`crates/vy-server`、`crates/vy-proto` の雛形を作る
-- [ ] クライアントが `vy-server`
+- [x] `crates/vy-app`、`crates/vy-server`、`crates/vy-proto`、`crates/vy-core`
+      の雛形を作る
+- [x] クライアントが `vy-server`
       を子プロセスで起動し、標準入出力でフレームを読み書きする
-- [ ] `initialize` と `initialized` のハンドシェイクを実装する
-- [ ] `pane/open` で文書を開き、`buffer/snapshot` で本文を受け取って描画する
-- [ ] `ropey` によるテキストバッファと、`buffer/did_change` の往復
+- [x] `initialize` と `initialized` のハンドシェイクを実装する
+- [x] `pane/open` で文書を開き、`buffer/snapshot` で本文を受け取って描画する
+- [x] `ropey` によるテキストバッファと、`buffer/did_change` のサーバー側の適用
+- [ ] クライアントからの `buffer/did_change` の送信と、`buffer/resync` の反映
 - [ ] Helix方式のモーダル入力エンジン:
   - `Selection -> Action`（文字・単語選択後に削除・変更）
   - Normal, Insert, Select モードの基本実装
@@ -35,9 +37,10 @@ flowchart TD
   - Linux (Wayland) と macOS で起動する。Windows は Phase 1 の対象外とする
   - 日本語 IME の前編集が、カーソル位置に正しく出る
   - 20万行のファイルを開き、スクロールと入力が引っかからない
-  - `vy-server` を終了したとき、クライアントが落ちずに通知を出す。再起動は手動で行う
+  - `vy-server`
+    を終了したとき、クライアントが落ちずに通知を出す。再起動は手動で行う
   - ローカル接続の往復が、入力の遅延として感じられない
-- [ ] ヘッドレスの `cargo test`:
+- [x] ヘッドレスの `cargo test`:
   - `vy-core` のバッファとアンドゥ
   - `vy-server` の RPC の往復と、プロトコルの版が合わないときに接続を閉じること
 
@@ -79,25 +82,25 @@ flowchart TD
 
 先に決めた項目です。詳細は各ドキュメントにあります。
 
-| 決定                   | 内容                                                                             | 記録                                                                             |
-| :--------------------- | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                              | [ADR 0001](./adr/0001-ui-framework.md)                                           |
-| プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ | [ADR 0002](./adr/0002-process-model.md)                                          |
-| 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                               | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md) |
-| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                       | [`panes.md`](./panes.md)                                                         |
-| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                             | [`plugin-system.md`](./plugin-system.md)                                         |
-| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                 | [`plugin-system.md`](./plugin-system.md)                                         |
-| API の形               | 名前空間の import と async ファースト                                            | [`api.md`](./api.md)                                                             |
-| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                           | [`layout.md`](./layout.md)                                                       |
-| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                       | [`protocol.md`](./protocol.md)                                                   |
-| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る            | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
-| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す   | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)         |
-| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う               | [`architecture.md`](./architecture.md)                                           |
-| フレームの形式         | 長さはリトルエンディアンの u32。上限 4 MiB。読み書きは各1本のスレッドに固定      | [`protocol.md`](./protocol.md)                                                   |
+| 決定                   | 内容                                                                               | 記録                                                                             |
+| :--------------------- | :--------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
+| UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                                | [ADR 0001](./adr/0001-ui-framework.md)                                           |
+| プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ   | [ADR 0002](./adr/0002-process-model.md)                                          |
+| 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                                 | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md) |
+| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                         | [`panes.md`](./panes.md)                                                         |
+| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                               | [`plugin-system.md`](./plugin-system.md)                                         |
+| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                   | [`plugin-system.md`](./plugin-system.md)                                         |
+| API の形               | 名前空間の import と async ファースト                                              | [`api.md`](./api.md)                                                             |
+| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                             | [`layout.md`](./layout.md)                                                       |
+| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                         | [`protocol.md`](./protocol.md)                                                   |
+| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る              | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
+| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す     | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)         |
+| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                 | [`architecture.md`](./architecture.md)                                           |
+| フレームの形式         | 長さはリトルエンディアンの u32。上限 4 MiB。読み書きは各1本のスレッドに固定        | [`protocol.md`](./protocol.md)                                                   |
 | 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う | [`architecture.md`](./architecture.md)                                           |
-| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する             | [`architecture.md`](./architecture.md)                                           |
-| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                         | [`protocol.md`](./protocol.md)                                                   |
-| Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                      | [`roadmap.md`](./roadmap.md)                                                     |
+| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する               | [`architecture.md`](./architecture.md)                                           |
+| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                           | [`protocol.md`](./protocol.md)                                                   |
+| Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                        | [`roadmap.md`](./roadmap.md)                                                     |
 
 ## 残っている論点
 

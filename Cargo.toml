@@ -1,0 +1,51 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/vy-app",
+  "crates/vy-core",
+  "crates/vy-proto",
+  "crates/vy-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/nazo6/vy"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+rmp-serde = "1"
+rmpv = { version = "1", features = ["with-serde"] }
+# プロトコル
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+# コア
+ropey = "1"
+
+# サーバー
+tokio = {
+  version = "1",
+  features = [
+    "io-std",
+    "io-util",
+    "macros",
+    "rt-multi-thread",
+    "sync",
+    "time",
+  ]
+}
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# クライアント
+# ADR 0001 によりバージョンは完全に固定する。
+gpui = "=0.2.2"
+
+vy-core = { path = "crates/vy-core" }
+vy-proto = { path = "crates/vy-proto" }
+
+# gpui 0.2.2 が引く xattr 0.2.3 は、Linux で存在しない libc::ENOATTR を参照して
+# ビルドできない。上流に修正が入るまでの間、vendor/ の複製にパッチを当てて使う。
+[patch.crates-io]
+xattr = { path = "vendor/xattr" }

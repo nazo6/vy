@@ -1,0 +1,11 @@
+[package]
+name = "vy-core"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+ropey.workspace = true
+serde.workspace = true
+thiserror.workspace = true
