@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// 文書を指す値です。`file:` は実在するファイル、`vy:` は実体を持たない文書です。
+/// A value that points at a document. `file:` is a real file; `vy:` has no backing file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Uri(String);
 
@@ -27,7 +27,7 @@ impl Uri {
             .unwrap_or_default()
     }
 
-    /// `file:` の URI をローカルのパスに変換します。`localhost` 以外の権限は扱いません。
+    /// Converts a `file:` URI to a local path. Authorities other than `localhost` are not supported.
     pub fn file_path(&self) -> Option<PathBuf> {
         let rest = self.0.strip_prefix("file:")?;
         let rest = rest.strip_prefix("//").unwrap_or(rest);
@@ -44,11 +44,11 @@ impl std::fmt::Display for Uri {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum UriError {
-    #[error("対応していない scheme です: {0}")]
+    #[error("unsupported URI scheme: {0}")]
     UnsupportedScheme(String),
 }
 
-/// `%XX` を復号します。不正な並びはそのまま残します。
+/// Decodes `%XX` escapes. Invalid sequences are left as they are.
 fn percent_decode(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());

@@ -4,16 +4,16 @@ use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_me
 
 use crate::session::Session;
 
-/// 標準入出力で RPC を処理します。
+/// Handles RPC over stdio.
 ///
-/// ログは必ず標準エラーへ出します。標準出力はフレーム専用です。
+/// Logs always go to stderr. Stdout is reserved for frames.
 pub async fn serve() -> std::io::Result<()> {
     let mut input = tokio::io::stdin();
     let mut output = tokio::io::stdout();
     serve_with(&mut input, &mut output).await
 }
 
-/// 読み書きを差し替えられる形にした本体です。テストから使います。
+/// Core loop with swappable I/O. Used by tests.
 pub async fn serve_with<R, W>(input: &mut R, output: &mut W) -> std::io::Result<()>
 where
     R: AsyncRead + Unpin,
@@ -27,7 +27,7 @@ where
         let read = input.read(&mut chunk).await?;
 
         if read == 0 {
-            tracing::info!("標準入力が閉じました");
+            tracing::info!("stdin closed");
             return Ok(());
         }
 
@@ -42,7 +42,7 @@ where
             }
 
             if outcome.close {
-                tracing::info!("クライアントの要求で接続を閉じます");
+                tracing::info!("closing the connection at the client's request");
                 return Ok(());
             }
         }

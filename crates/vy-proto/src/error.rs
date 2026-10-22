@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// プロトコルのエラーコードです。値と意味は `docs/protocol.md` の「エラー」にあります。
+/// Protocol error codes. Values and meanings are in "Errors" in `docs/protocol.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
     InvalidRequest,
@@ -34,15 +34,15 @@ impl std::fmt::Display for ErrorCode {
     }
 }
 
-/// フレームとメッセージの変換で起きた失敗です。
+/// A failure while converting frames or messages.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProtoError {
-    #[error("フレームが上限 {limit} バイトを超えています: {actual} バイト")]
+    #[error("frame exceeds the {limit} byte limit: {actual} bytes")]
     FrameTooLarge { actual: usize, limit: usize },
 
-    #[error("メッセージを符号化できません: {0}")]
+    #[error("could not encode the message: {0}")]
     Encode(String),
 
-    #[error("メッセージを復号できません: {0}")]
+    #[error("could not decode the message: {0}")]
     Decode(String),
 }

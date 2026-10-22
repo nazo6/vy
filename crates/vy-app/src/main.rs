@@ -1,9 +1,9 @@
-//! `vy-app` の雛形です。
+//! Skeleton of `vy-app`.
 //!
-//! 起動すると `vy-server` を子プロセスで立ち上げ、`initialize`、`pane/open`、
-//! `buffer/snapshot` の順に要求を出して、受け取った本文を 1 つのペインに描きます。
-//! キー入力は `editor` のモーダル入力が処理し、`buffer/did_change` でコアへ送ります。
-//! レイアウト木は Phase 3 で足します。
+//! On startup it launches `vy-server` as a child process, sends `initialize`,
+//! `pane/open`, and `buffer/snapshot` in that order, and draws the returned text in
+//! one pane. The modal input in `editor` handles keys and sends `buffer/did_change`
+//! to the core. The layout tree lands in Phase 3.
 
 mod editor;
 mod rpc;
@@ -12,8 +12,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Application, Bounds, Context, Div, FocusHandle, Focusable, KeyDownEvent, Keystroke,
-    Render, SharedString, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, Div, FocusHandle, Focusable, HighlightStyle, KeyDownEvent,
+    Keystroke, Render, SharedString, StyledText, Window, WindowBounds, WindowOptions, div,
+    prelude::*, px, rgb, size,
 };
 use rmpv::Value;
 use serde::Serialize;
@@ -24,7 +25,7 @@ use vy_proto::{PROTOCOL_VERSION, RpcMessage, RpcResult, get, object};
 use crate::editor::{Action, Editor, Key, Mode, Transaction};
 use crate::rpc::{Client, Poll};
 
-/// 応答を待っている要求の種類です。
+/// The kind of request we are waiting for a response to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pending {
     Initialize,
@@ -55,7 +56,7 @@ impl EditorView {
             pane_id: None,
             editor: Editor::new(),
             focus_handle: cx.focus_handle(),
-            status: "vy-server を起動しています".into(),
+            status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
         };
@@ -74,10 +75,10 @@ impl EditorView {
                 );
                 view.pending.insert(id, Pending::Initialize);
                 view.client = Some(client);
-                view.status = "initialize への応答を待っています".into();
+                view.status = "waiting for the initialize response".into();
             }
             Err(error) => {
-                view.status = format!("vy-server を起動できません: {error}").into();
+                view.status = format!("could not start vy-server: {error}").into();
             }
         }
 
@@ -85,8 +86,8 @@ impl EditorView {
         view
     }
 
-    /// 16ms ごとに受信キューを見ます。UI のスレッドを止めないため、読み取りは
-    /// 別スレッドが行い、ここでは溜まった分を取り出すだけにします。
+    /// Polls the receive queue every 16ms. Reads happen on another thread, so the UI
+    /// thread stays free; this only drains what has arrived.
     fn start_polling(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
@@ -96,7 +97,7 @@ impl EditorView {
 
                 let keep_polling = this.update(cx, |this, cx| {
                     let (keep_polling, changed) = this.drain();
-                    // 何も届いていないフレームでは描き直さない。
+                    // Do not repaint when nothing arrived in this frame.
                     if changed {
                         cx.notify();
                     }
@@ -111,7 +112,7 @@ impl EditorView {
         .detach();
     }
 
-    /// 届いたメッセージを処理します。返すのは (ポーリングを続けるか, 描き直すか)。
+    /// Handles arrived messages. Returns (keep polling, repaint).
     fn drain(&mut self) -> (bool, bool) {
         let mut received = Vec::new();
 
@@ -131,14 +132,14 @@ impl EditorView {
 
         let changed = !received.is_empty();
         if changed && self.frame_log {
-            eprintln!("vy: メッセージ {} 件", received.len());
+            eprintln!("vy: {} message(s)", received.len());
         }
         for message in received {
             self.handle(message);
         }
 
         if closed {
-            self.status = "vy-server との接続が切れました。再起動は手動で行います".into();
+            self.status = "lost the connection to vy-server; restart it manually".into();
             self.client = None;
             return (false, true);
         }
@@ -153,7 +154,7 @@ impl EditorView {
                 self.handle_notification(&method, params)
             }
             other => {
-                eprintln!("vy: 未対応のメッセージ: {other:?}");
+                eprintln!("vy: unsupported message: {other:?}");
             }
         }
     }
@@ -185,12 +186,12 @@ impl EditorView {
     fn handle_notification(&mut self, method: &str, params: Value) {
         match method {
             "initialized" => {
-                self.status = "接続しました。文書を開いています".into();
+                self.status = "connected; opening the document".into();
                 self.open_document();
             }
             "buffer/resync" => self.received_snapshot(&params),
             other => {
-                eprintln!("vy: 未対応の通知: {other}");
+                eprintln!("vy: unsupported notification: {other}");
             }
         }
     }
@@ -206,7 +207,7 @@ impl EditorView {
 
     fn opened(&mut self, value: &Value) {
         let Some(document_id) = get(value, "document_id").and_then(Value::as_u64) else {
-            self.status = "pane/open の応答に document_id がありません".into();
+            self.status = "pane/open response has no document_id".into();
             return;
         };
 
@@ -230,7 +231,7 @@ impl EditorView {
         self.editor.reset(text, version);
 
         self.status = format!(
-            "{} 行 / version {} / pane {}",
+            "{} lines / version {} / pane {}",
             self.editor.line_count(),
             self.editor.version(),
             self.pane_id
@@ -272,7 +273,7 @@ impl EditorView {
         }
     }
 
-    /// キーをエディタへ渡し、見た目が変わったかどうかを返します。
+    /// Passes the key to the editor and reports whether the display changed.
     fn apply_key(&mut self, key: Key) -> bool {
         let before = (
             self.editor.mode(),
@@ -287,7 +288,7 @@ impl EditorView {
             Action::Redo => self.send_history("buffer/redo", Pending::Redo),
         }
 
-        // 端で止まった移動のように、見た目が変わらないキーでは描き直さない。
+        // Do not repaint for keys that change nothing, such as a motion at a boundary.
         before
             != (
                 self.editor.mode(),
@@ -330,7 +331,7 @@ impl EditorView {
         self.pending.insert(id, pending);
     }
 
-    /// カーソルの前後を描くための行を集めます。スクロールは Phase 1 では固定です。
+    /// Collects the lines to draw around the cursor. Scrolling is fixed in Phase 1.
     fn visible_lines(&self) -> Vec<Div> {
         const AROUND: usize = 20;
         const COUNT: usize = 40;
@@ -353,40 +354,66 @@ impl EditorView {
 
         let text = self.editor.line(line_number).unwrap_or_default();
         let cursor = self.editor.cursor();
-        let length: u32 = text
-            .chars()
-            .map(|character| character.len_utf16() as u32)
-            .sum();
 
         if line_number as u32 != cursor.line {
             return row.child(text);
         }
 
+        let (display, highlight) = self.cursor_marker(&text);
+
+        row.child(StyledText::new(display).with_highlights(vec![(
+            highlight,
+            HighlightStyle {
+                background_color: Some(rgb(0x264f78).into()),
+                ..Default::default()
+            },
+        )]))
+    }
+
+    /// Returns the text to draw on the cursor line and the byte range to mark.
+    ///
+    /// The line is shaped once as a whole. Splitting it into several elements would
+    /// change the glyphs and widths under the cursor.
+    fn cursor_marker(&self, text: &str) -> (String, std::ops::Range<usize>) {
+        let mut display = text.to_string();
+
         if self.editor.mode() == Mode::Insert {
-            let (before, after) = split_at_units(&text, cursor.character);
-            return row
-                .child(before.to_string())
-                .child(div().text_color(rgb(0x4a9eff)).child("▏"))
-                .child(after.to_string());
+            let caret = utf16_to_byte(&display, self.editor.cursor().character);
+            if caret >= display.len() {
+                display.push(' ');
+            }
+            let end = display[caret..]
+                .chars()
+                .next()
+                .map(|character| caret + character.len_utf8())
+                .unwrap_or(caret + 1);
+            return (display, caret..end);
         }
 
+        let length = display
+            .chars()
+            .map(|character| character.len_utf16() as u32)
+            .sum();
         let Some((from, to)) =
-            selection_on_line(self.editor.selection(), line_number as u32, length)
+            selection_on_line(self.editor.selection(), self.editor.cursor().line, length)
         else {
-            return row.child(text);
+            // An empty selection at the end of the document still needs a marker.
+            display.push(' ');
+            let start = display.len() - 1;
+            let end = display.len();
+            return (display, start..end);
         };
 
-        if from >= to {
-            // 改行だけを選んでいるときは、行末に印を出す。
-            return row.child(text).child(div().bg(rgb(0x264f78)).child(" "));
+        let from = utf16_to_byte(&display, from);
+        let mut to = utf16_to_byte(&display, to);
+
+        if to <= from {
+            // Selecting only the line break: mark the end of the line.
+            display.push(' ');
+            to = display.len();
         }
 
-        let (before, rest) = split_at_units(&text, from);
-        let (selected, after) = split_at_units(rest, to - from);
-
-        row.child(before.to_string())
-            .child(div().bg(rgb(0x264f78)).child(selected.to_string()))
-            .child(after.to_string())
+        (display, from..to)
     }
 }
 
@@ -481,7 +508,7 @@ fn main() {
                 },
                 |_window, cx| cx.new(EditorView::new),
             )
-            .expect("ウィンドウを開けません");
+            .expect("could not open the window");
 
         window
             .update(cx, |view, window, _cx| {
@@ -493,7 +520,7 @@ fn main() {
     });
 }
 
-/// GPUI のキーを、エディタのキーに直します。
+/// Converts a GPUI keystroke into an editor key.
 fn convert_key(keystroke: &Keystroke) -> Option<Key> {
     if keystroke.modifiers.control {
         return match keystroke.key.as_str() {
@@ -522,26 +549,27 @@ fn convert_key(keystroke: &Keystroke) -> Option<Key> {
         _ => {}
     }
 
-    // IME の前編集はまだ受け取らない。確定した文字だけを `key_char` から拾う。
+    // IME preedit is not handled yet; take only committed characters from `key_char`.
     let character = keystroke.key_char.as_ref()?.chars().next()?;
     Some(Key::Char(character))
 }
 
-/// UTF-16 の位置で文字列を 2 つに分けます。サロゲートペアの途中は文字の先頭で切ります。
-fn split_at_units(text: &str, units: u32) -> (&str, &str) {
+/// Converts a UTF-16 offset to a UTF-8 byte offset. A position inside a surrogate
+/// pair is rounded down to the start of the character.
+fn utf16_to_byte(text: &str, units: u32) -> usize {
     let mut count = 0u32;
 
     for (index, character) in text.char_indices() {
         if count >= units || units < count + character.len_utf16() as u32 {
-            return (&text[..index], &text[index..]);
+            return index;
         }
         count += character.len_utf16() as u32;
     }
 
-    (text, "")
+    text.len()
 }
 
-/// 1 行のうち選択に含まれる範囲です。行が選択の外なら [`None`] です。
+/// The part of one line covered by the selection. [`None`] if the line is outside it.
 fn selection_on_line(selection: Range, line: u32, length: u32) -> Option<(u32, u32)> {
     if selection.start == selection.end || line < selection.start.line || line > selection.end.line
     {
@@ -560,7 +588,7 @@ fn selection_on_line(selection: Range, line: u32, length: u32) -> Option<(u32, u
     };
 
     if from >= to {
-        // 行末の改行だけを選んでいる場合は、印を出してもらう。
+        // Selecting only the line break: let the caller draw a marker.
         return (to >= length).then_some((length, length));
     }
 
@@ -568,7 +596,7 @@ fn selection_on_line(selection: Range, line: u32, length: u32) -> Option<(u32, u
 }
 
 fn value_of<T: Serialize>(value: &T) -> Value {
-    // rmpv の serde 連携は struct をタプルにするため、rmp-serde を通す。
+    // rmpv's serde support turns structs into tuples, so go through rmp-serde.
     rmp_serde::to_vec_named(value)
         .ok()
         .and_then(|bytes| rmpv::decode::read_value(&mut bytes.as_slice()).ok())
@@ -581,16 +609,16 @@ fn decode_value<T: DeserializeOwned>(value: &Value) -> Option<T> {
     rmp_serde::from_slice(&bytes).ok()
 }
 
-/// 開く文書の URI を決めます。
+/// Resolves the URI of the document to open.
 ///
-/// 引数が `file:` か `vy:` で始まればそのまま、パスなら絶対パスにして `file:` を
-/// 付けます。引数がなければ空の `vy:untitled` を開きます。
+/// Arguments starting with `file:` or `vy:` are used as-is. Other arguments are made
+/// absolute and prefixed with `file:`. With no argument, opens an empty `vy:untitled`.
 fn document_uri() -> String {
     match std::env::args().nth(1) {
         Some(argument) if argument.starts_with("file:") || argument.starts_with("vy:") => argument,
         Some(path) => match std::fs::canonicalize(&path) {
             Ok(absolute) => format!("file://{}", absolute.display()),
-            // まだ存在しないファイルは、渡されたパスのまま開かせる。
+            // Let a file that does not exist yet open with the path as given.
             Err(_) => format!("file://{path}"),
         },
         None => "vy:untitled".to_string(),
@@ -610,13 +638,13 @@ mod tests {
     use vy_core::Position;
 
     #[test]
-    fn splits_at_utf16_units() {
-        assert_eq!(split_at_units("a😀b", 0), ("", "a😀b"));
-        assert_eq!(split_at_units("a😀b", 1), ("a", "😀b"));
-        // サロゲートペアの途中は、その文字の先頭で切る。
-        assert_eq!(split_at_units("a😀b", 2), ("a", "😀b"));
-        assert_eq!(split_at_units("a😀b", 3), ("a😀", "b"));
-        assert_eq!(split_at_units("a😀b", 4), ("a😀b", ""));
+    fn converts_utf16_units_to_byte_offsets() {
+        assert_eq!(utf16_to_byte("a😀b", 0), 0);
+        assert_eq!(utf16_to_byte("a😀b", 1), 1);
+        // A position inside a surrogate pair is rounded down.
+        assert_eq!(utf16_to_byte("a😀b", 2), 1);
+        assert_eq!(utf16_to_byte("a😀b", 3), 5);
+        assert_eq!(utf16_to_byte("a😀b", 4), 6);
     }
 
     #[test]

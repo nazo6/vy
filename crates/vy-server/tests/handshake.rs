@@ -1,4 +1,4 @@
-//! ビルドした `vy-server` を子プロセスで起動し、標準入出力でハンドシェイクします。
+//! Starts the built `vy-server` as a child process and performs the handshake over stdio.
 
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
@@ -24,7 +24,7 @@ impl Server {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("vy-server を起動できません");
+            .expect("could not start vy-server");
 
         let stdin = child.stdin.take().expect("stdin");
         let stdout = child.stdout.take().expect("stdout");
@@ -53,7 +53,7 @@ impl Server {
             }
 
             let read = self.stdout.read(&mut chunk).expect("read");
-            assert!(read > 0, "サーバーが応答の前に終了しました");
+            assert!(read > 0, "the server exited before responding");
             self.decoder.push(&chunk[..read]);
         }
     }
@@ -80,7 +80,7 @@ fn ok_value(message: &RpcMessage) -> &Value {
             result: RpcResult::Ok { value },
             ..
         } => value,
-        other => panic!("Ok ではありません: {other:?}"),
+        other => panic!("expected Ok: {other:?}"),
     }
 }
 
@@ -107,7 +107,7 @@ fn completes_the_handshake_over_stdio() {
                 Some(env!("CARGO_PKG_VERSION"))
             );
         }
-        other => panic!("通知ではありません: {other:?}"),
+        other => panic!("expected a notification: {other:?}"),
     }
 
     server.send(&RpcMessage::request(
@@ -140,7 +140,7 @@ fn closes_when_the_protocol_version_does_not_match() {
             result: RpcResult::Err { code, .. },
             ..
         } => assert_eq!(code, vy_proto::ErrorCode::UnsupportedProtocolVersion),
-        other => panic!("エラーの応答ではありません: {other:?}"),
+        other => panic!("expected an error response: {other:?}"),
     }
 
     drop(server.stdin);

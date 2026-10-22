@@ -10,36 +10,36 @@ use crate::uri::Uri;
 pub type DocumentId = u64;
 pub type Version = u64;
 
-/// アンドゥの履歴に積む項目の上限です。超えた分は古いものから捨てます。
+/// Upper bound on undo entries. Older entries are dropped first.
 pub const DEFAULT_UNDO_LIMIT: usize = 1000;
 
-/// 編集を適用した結果です。
+/// The result of applying an edit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Applied {
-    /// 適用後の version です。
+    /// Version after the edit.
     pub version: Version,
-    /// クライアントが適用すべき変更です。編集の要求では空です。
+    /// Edits the client must apply. Empty for edit requests.
     pub edits: Vec<TextEdit>,
-    /// 適用後に置く選択です。
+    /// Selection to place after the edit.
     pub selection: Vec<Selection>,
 }
 
 #[derive(Debug, Clone)]
 struct UndoEntry {
-    /// まとめる単位です。同じ ID が続く間は 1 つの項目にします。
+    /// Grouping key. Consecutive edits with the same ID become one entry.
     transaction_id: u64,
-    /// 1 つの項目を戻すための変更です。適用した順に並びます。
+    /// Edits that undo the entry, in the order they were applied.
     inverse: Vec<TextEdit>,
-    /// やり直すための変更です。元の座標で並びます。
+    /// Edits that redo the entry, in their original coordinates.
     forward: Vec<TextEdit>,
     selection_before: Vec<Selection>,
     selection_after: Vec<Selection>,
 }
 
-/// 1 つの文書の本文と version、アンドゥの履歴です。
+/// The text, version, and undo history of one document.
 ///
-/// 本文の正はコアにあります（`docs/adr/0003-editor-state.md`）。カーソルと選択は
-/// クライアントが持つため、編集の前後の選択を呼び出し側から受け取ります。
+/// The core owns the text (see `docs/adr/0003-editor-state.md`). The client owns the
+/// cursor and selection, so it passes the selections before and after an edit.
 pub struct Buffer {
     id: DocumentId,
     uri: Uri,
@@ -65,13 +65,13 @@ impl Buffer {
         }
     }
 
-    /// ファイルを読み込んでバッファを作ります。
+    /// Reads a file and creates a buffer.
     pub fn open(id: DocumentId, uri: Uri, path: impl AsRef<Path>) -> std::io::Result<Self> {
         let text = std::fs::read_to_string(path)?;
         Ok(Self::new(id, uri, text))
     }
 
-    /// アンドゥの履歴の上限を変えます。テストと診断に使います。
+    /// Changes the undo limit. Used by tests and diagnostics.
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.undo_limit = limit.max(1);
         self
@@ -109,28 +109,28 @@ impl Buffer {
         self.saved_version = self.version;
     }
 
-    /// UTF-16 単位の位置を、コアの char index に変換します。
+    /// Converts a UTF-16 position to the core's char index.
     ///
-    /// 行末を超える位置は失敗します。サロゲートペアの途中を指した場合は、
-    /// その文字の先頭に切り下げます。
+    /// A position past the end of the line fails. A position inside a surrogate pair is
+    /// rounded down to the start of the character.
     pub fn position_to_char(&self, position: Position) -> Result<usize, EditError> {
         self.text.position_to_char(position)
     }
 
-    /// char index を UTF-16 単位の位置に変換します。
+    /// Converts a char index to a UTF-16 position.
     pub fn char_to_position(&self, char_index: usize) -> Result<Position, EditError> {
         self.text.char_to_position(char_index)
     }
 
-    /// 範囲の本文を取り出します。
+    /// Returns the text in a range.
     pub fn slice(&self, range: Range) -> Result<String, EditError> {
         self.text.slice(range)
     }
 
-    /// 編集のトランザクションを適用します。
+    /// Applies an edit transaction.
     ///
-    /// `base_version` が現在の version と合わない場合は何も変えません。呼び出し側は
-    /// 本文を送り直して再同期します（`docs/protocol.md` の「バッファ差分通知」）。
+    /// If `base_version` does not match the current version, nothing changes. The caller
+    /// resends the text and resyncs (see "Buffer change notifications" in `docs/protocol.md`).
     pub fn apply_edits(
         &mut self,
         base_version: Version,
@@ -188,7 +188,7 @@ impl Buffer {
         })
     }
 
-    /// 直前の項目を戻します。戻す変更がなければ [`None`] です。
+    /// Undoes the previous entry. [`None`] if there is nothing to undo.
     pub fn undo(&mut self) -> Result<Option<Applied>, EditError> {
         let Some(entry) = self.undo.pop() else {
             return Ok(None);
@@ -208,7 +208,7 @@ impl Buffer {
         }))
     }
 
-    /// 戻した項目をやり直します。やり直す変更がなければ [`None`] です。
+    /// Redoes the entry that was undone. [`None`] if there is nothing to redo.
     pub fn redo(&mut self) -> Result<Option<Applied>, EditError> {
         let Some(entry) = self.redo.pop() else {
             return Ok(None);

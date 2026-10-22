@@ -16,14 +16,14 @@ license = "Apache-2.0"
 [workspace.dependencies]
 rmp-serde = "1"
 rmpv = { version = "1", features = ["with-serde"] }
-# プロトコル
+# Protocol
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
-# コア
+# Core
 ropey = "1"
 
-# サーバー
+# Server
 tokio = {
   version = "1",
   features = [
@@ -38,21 +38,22 @@ tokio = {
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# クライアント
-# ADR 0001 によりバージョンは完全に固定する。
+# Client
+# Pin the version exactly, per ADR 0001.
 gpui = "=0.2.2"
 
 vy-core = { path = "crates/vy-core" }
 vy-proto = { path = "crates/vy-proto" }
 
-# gpui 0.2.2 が引く xattr 0.2.3 は、Linux で存在しない libc::ENOATTR を参照して
-# ビルドできない。上流に修正が入るまでの間、vendor/ の複製にパッチを当てて使う。
+# xattr 0.2.3, pulled in by gpui 0.2.2, references libc::ENOATTR, which does not exist
+# on Linux, and fails to build. Until upstream fixes it, use the copy in vendor/ with
+# a local patch.
 [patch.crates-io]
 xattr = { path = "vendor/xattr" }
 
-# GPUI と wgpu は最適化なしだと 1 フレームの描画に数十 ms かかり、キー入力が
-# ガクつく。依存だけ最適化し、自分のクレートはデバッグ情報を残す（Zed と同じ設定）。
-# 初回のビルドは依存の再コンパイルで長くなる。
+# Without optimization, GPUI and wgpu take tens of milliseconds per frame and key
+# input stutters. Optimize dependencies only and keep debug info for our crates
+# (the same setup Zed uses). The first build is slower because dependencies rebuild.
 [profile.dev]
 opt-level = 1
 

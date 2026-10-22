@@ -1,8 +1,8 @@
-//! `vy-server` の入口です。
+//! Entry point for `vy-server`.
 //!
-//! 標準入出力で MessagePack RPC を流します。引数は `--stdio` と `--version` だけです。
-//! ワークスペースとログの出力先は `initialize` の params で受け取ります
-//! （`docs/protocol.md`）。
+//! It carries MessagePack RPC over stdio. The only arguments are `--stdio` and
+//! `--version`. The workspace and the log destination come in the `initialize`
+//! params (`docs/protocol.md`).
 
 mod session;
 mod stdio;
@@ -10,17 +10,17 @@ mod stdio;
 use std::process::ExitCode;
 
 const HELP: &str = "\
-vy-server: Vy のヘッドレスコア
+vy-server: headless core for Vy
 
-使い方:
+Usage:
   vy-server [--stdio]
 
-オプション:
-  --stdio      標準入出力で RPC を流す（既定）
-  --version    版を表示する
-  -h, --help   この説明を表示する
+Options:
+  --stdio      carry RPC over stdio (default)
+  --version    print the version
+  -h, --help   show this help
 
-ログは標準エラーに出す。標準出力は RPC のフレーム専用。
+Logs go to stderr. Stdout is reserved for RPC frames.
 ";
 
 #[tokio::main]
@@ -37,7 +37,7 @@ async fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             other => {
-                eprintln!("未知の引数です: {other}\n\n{HELP}");
+                eprintln!("unknown argument: {other}\n\n{HELP}");
                 return ExitCode::from(2);
             }
         }
@@ -48,7 +48,7 @@ async fn main() -> ExitCode {
     match stdio::serve().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            tracing::error!(%error, "標準入出力の処理に失敗しました");
+            tracing::error!(%error, "failed to process stdio");
             ExitCode::FAILURE
         }
     }

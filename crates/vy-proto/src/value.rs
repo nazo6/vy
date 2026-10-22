@@ -1,6 +1,6 @@
 use rmpv::Value;
 
-/// 文字列のキーを持つマップを作ります。
+/// Builds a map with string keys.
 pub fn object<'a>(entries: impl IntoIterator<Item = (&'a str, Value)>) -> Value {
     Value::Map(
         entries
@@ -10,7 +10,7 @@ pub fn object<'a>(entries: impl IntoIterator<Item = (&'a str, Value)>) -> Value 
     )
 }
 
-/// マップから文字列のキーで値を取り出します。
+/// Looks up a value by a string key.
 pub fn get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     match value {
         Value::Map(entries) => {

@@ -9,7 +9,7 @@ macro_rules! platforms {
             pub use self::$module::*;
 
             #[cfg(any($(target_os = $platform),*))]
-            // Vy のパッチ: Linux と Android には ENOATTR がなく、ENODATA が同じ意味を持つ。
+            // Vy patch: Linux and Android have no ENOATTR; ENODATA has the same meaning.
             #[cfg(any(target_os = "linux", target_os = "android"))]
             pub const ENOATTR: ::libc::c_int = ::libc::ENODATA;
 

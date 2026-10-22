@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-/// 0 始まりの行と、UTF-16 コード単位の桁です。
+/// A zero-based line and a column in UTF-16 code units.
 ///
-/// JS の文字列と同じ数え方にそろえています。コアの内部では char index で持ち、
-/// 境界でこの型に変換します（`docs/architecture.md` の「位置の表現」）。
+/// This matches how JavaScript counts string positions. The core stores char indices
+/// internally and converts to this type at the boundary (see "Position representation"
+/// in `docs/architecture.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Position {
     pub line: u32,
@@ -16,7 +17,7 @@ impl Position {
     }
 }
 
-/// 2 つの位置で挟まれた範囲です。端は含みません。
+/// A range between two positions. The end is exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Range {
     pub start: Position,
@@ -28,13 +29,13 @@ impl Range {
         Self { start, end }
     }
 
-    /// 同じ位置を指す空の範囲です。
+    /// An empty range at a single position.
     pub const fn empty(at: Position) -> Self {
         Self { start: at, end: at }
     }
 }
 
-/// カーソルの位置です。`anchor` と `head` が同じなら点、違えば選択です。
+/// A cursor. A point when `anchor` and `head` are equal, otherwise a selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Selection {
     pub anchor: Position,

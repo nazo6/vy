@@ -1,7 +1,7 @@
-//! `vy-server` を子プロセスとして起動し、標準入出力で RPC をやり取りします。
+//! Starts `vy-server` as a child process and exchanges RPC over stdio.
 //!
-//! ADR 0002 により、ローカル接続でもコアは別プロセスです。読み取りは専用の
-//! スレッドで行い、UI のスレッドを止めません。
+//! Per ADR 0002, the core is a separate process even for local connections. Reads
+//! happen on a dedicated thread so the UI thread never blocks.
 
 use std::io::{BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use rmpv::Value;
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
 
-/// 受信したメッセージがあるか、まだか、接続が切れたかです。
+/// Whether a message has arrived, none has arrived yet, or the connection closed.
 pub enum Poll {
     Message(RpcMessage),
     Empty,
@@ -31,12 +31,12 @@ impl Client {
             .arg("--stdio")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            // サーバーのログはクライアントの標準エラーへ流す。
+            // Forward the server's logs to the client's stderr.
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let stdin = child.stdin.take().expect("標準入力を取れません");
-        let stdout = child.stdout.take().expect("標準出力を取れません");
+        let stdin = child.stdin.take().expect("could not take stdin");
+        let stdout = child.stdout.take().expect("could not take stdout");
 
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::Builder::new()
@@ -52,23 +52,23 @@ impl Client {
         })
     }
 
-    /// 要求を送り、対応する id を返します。
+    /// Sends a request and returns its id.
     pub fn request(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
 
         let message = RpcMessage::request(id, self.session_id, method, params);
         if let Err(error) = self.write(&message) {
-            eprintln!("vy: 要求を送れません: {error}");
+            eprintln!("vy: could not send the request: {error}");
         }
         id
     }
 
-    /// 応答を待たない通知を送ります。
+    /// Sends a notification that expects no response.
     pub fn notify(&mut self, method: &str, params: Value) {
         let message = RpcMessage::notification(method, params);
         if let Err(error) = self.write(&message) {
-            eprintln!("vy: 通知を送れません: {error}");
+            eprintln!("vy: could not send the notification: {error}");
         }
     }
 
@@ -94,7 +94,7 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        // クライアントが閉じたらサーバーも終わらせる。孤児を残さない。
+        // Kill the server when the client closes so no orphan is left behind.
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -110,7 +110,7 @@ fn read_loop(stdout: std::process::ChildStdout, sender: Sender<RpcMessage>) {
             Ok(0) => return,
             Ok(read) => read,
             Err(error) => {
-                eprintln!("vy: 標準出力を読めません: {error}");
+                eprintln!("vy: could not read stdout: {error}");
                 return;
             }
         };
@@ -126,13 +126,13 @@ fn read_loop(stdout: std::process::ChildStdout, sender: Sender<RpcMessage>) {
                         }
                     }
                     Err(error) => {
-                        eprintln!("vy: メッセージを復号できません: {error}");
+                        eprintln!("vy: could not decode the message: {error}");
                         return;
                     }
                 },
                 Ok(None) => break,
                 Err(error) => {
-                    eprintln!("vy: フレームを読めません: {error}");
+                    eprintln!("vy: could not read a frame: {error}");
                     return;
                 }
             }
@@ -140,10 +140,10 @@ fn read_loop(stdout: std::process::ChildStdout, sender: Sender<RpcMessage>) {
     }
 }
 
-/// `vy-server` の場所を決めます。
+/// Resolves the location of `vy-server`.
 ///
-/// `VY_SERVER` があればそれを使います。なければ `vy-app` と同じディレクトリを探し、
-/// 最後に `PATH` から起動します。
+/// Uses `VY_SERVER` when set. Otherwise it looks next to `vy-app` and finally falls
+/// back to `PATH`.
 fn server_command() -> Command {
     if let Some(path) = std::env::var_os("VY_SERVER") {
         return Command::new(path);

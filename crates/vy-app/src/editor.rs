@@ -1,17 +1,18 @@
-//! クライアント側のモーダル入力です。
+//! Modal input on the client side.
 //!
-//! 本文の写しと、カーソル、選択、モードを持ちます。キーを意味のある操作に変え、
-//! コアへ送る変更（`buffer/did_change`）を作ります。状態の所在は
-//! `docs/architecture.md` の「状態の所在」、キー入力の流れは `docs/ui.md` にあります。
+//! It holds the client's copy of the text, the cursor, the selection, and the mode.
+//! It turns keys into meaningful actions and builds the `buffer/did_change` payload
+//! for the core. See "Where state lives" in `docs/architecture.md` and the key flow
+//! in `docs/ui.md`.
 //!
-//! Phase 1 の範囲は Normal、Insert、Select の基本と、`h j k l w b e 0 $ G x d i a v`
-//! です。カウント、レジスタ、`.` の繰り返しは次の段階で足します。
+//! Phase 1 covers Normal, Insert, and Select plus `h j k l w b e 0 $ G x d i a v`.
+//! Counts, registers, and `.` repeat come later.
 
 use std::time::{Duration, Instant};
 
 use vy_core::{Position, Range, Selection, Text, TextEdit};
 
-/// 入力が続いている間、同じアンドゥの項目にまとめる間隔です。
+/// Interval within which consecutive input is grouped into one undo entry.
 pub const TRANSACTION_IDLE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +32,7 @@ impl Mode {
     }
 }
 
-/// GPUI のキーイベントを、テストできる形に直したものです。
+/// A GPUI key event reduced to a testable form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Char(char),
@@ -48,7 +49,7 @@ pub enum Key {
     End,
 }
 
-/// コアへ送る 1 回分の変更です。
+/// One change to send to the core.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transaction {
     pub transaction_id: u64,
@@ -58,7 +59,7 @@ pub struct Transaction {
     pub selection_after: Vec<Selection>,
 }
 
-/// キーを処理した結果です。
+/// The result of handling a key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -76,7 +77,7 @@ pub struct Editor {
     next_transaction_id: u64,
     last_edit: Option<Instant>,
     pending_g: bool,
-    /// 縦移動で保つ桁です。横移動で更新し、それ以外の移動で捨てます。
+    /// Column kept across vertical moves. Updated by horizontal moves and dropped by others.
     preferred_character: Option<u32>,
 }
 
@@ -101,7 +102,7 @@ impl Editor {
         editor
     }
 
-    /// スナップショットか再同期の結果で、本文と version を置き換えます。
+    /// Replaces the text and version with a snapshot or a resync result.
     pub fn reset(&mut self, text: impl AsRef<str>, version: u64) {
         self.text = Text::new(text);
         self.version = version;
@@ -133,12 +134,12 @@ impl Editor {
         self.text.as_string()
     }
 
-    /// 描画に使うカーソルです。Normal では選択の始点、それ以外は選択の終端です。
+    /// Cursor used for drawing. The selection start in Normal, otherwise the end.
     pub fn cursor(&self) -> Position {
         self.current()
     }
 
-    /// 選択の範囲です。Insert では空になります。
+    /// The selection range. Empty in Insert.
     pub fn selection(&self) -> Range {
         let (start, end) = self.ordered();
         Range::new(start, end)
@@ -151,10 +152,10 @@ impl Editor {
         }
     }
 
-    /// コアが返したアンドゥとリドゥの結果を反映します。
+    /// Applies the undo or redo result returned by the core.
     pub fn apply_history(&mut self, edits: &[TextEdit], version: u64, selection: &[Selection]) {
         if let Err(error) = self.text.apply(edits) {
-            eprintln!("vy: 履歴の変更を適用できません: {error}");
+            eprintln!("vy: could not apply the history edit: {error}");
             return;
         }
 
@@ -331,7 +332,7 @@ impl Editor {
         self.commit(vec![edit], start, mode)
     }
 
-    /// 変更を写しに適用し、コアへ送るトランザクションを作ります。
+    /// Applies the change to the mirror and builds the transaction for the core.
     fn commit(&mut self, edits: Vec<TextEdit>, new_head: Position, mode: Mode) -> Action {
         let selection_before = vec![Selection {
             anchor: self.anchor,
@@ -341,7 +342,7 @@ impl Editor {
         let transaction_id = self.next_transaction_id();
 
         if let Err(error) = self.text.apply(&edits) {
-            eprintln!("vy: 編集を適用できません: {error}");
+            eprintln!("vy: could not apply the edit: {error}");
             return Action::None;
         }
 
@@ -388,12 +389,12 @@ impl Editor {
     fn set_mode(&mut self, mode: Mode) {
         if self.mode != mode {
             self.mode = mode;
-            // モードが変わったら、次の編集は別のアンドゥの項目にする。
+            // A mode change starts a new undo entry for the next edit.
             self.last_edit = None;
         }
     }
 
-    /// 現在の位置です。Normal は選択の始点、Insert と Select は終端です。
+    /// Current position: the selection start in Normal, the end in Insert and Select.
     fn current(&self) -> Position {
         match self.mode {
             Mode::Normal => self.ordered().0,
@@ -444,7 +445,7 @@ impl Editor {
         let desired = self.preferred_character.unwrap_or(current.character);
         let line = (current.line as i64 + delta).clamp(0, self.last_line() as i64) as u32;
         let length = self.text.line_len_utf16(line as usize).unwrap_or_default();
-        // Normal は行の文字の上に置く。Select は行末（改行の位置）まで許す。
+        // Normal stays on a character; Select may reach the line end (the line break).
         let limit = match self.mode {
             Mode::Normal => length.saturating_sub(1),
             _ => length,
@@ -454,14 +455,14 @@ impl Editor {
         self.move_to_inner(position);
     }
 
-    /// カーソルの位置に 1 文字ぶんの選択を置きます。末尾では空の選択になります。
+    /// Selects one character at the cursor. The selection is empty at the end of the text.
     fn select_one_char(&mut self, at: Position) {
         let at = self.clamp(at);
         self.anchor = at;
         self.head = self.next_char(at).unwrap_or(at);
     }
 
-    /// Insert から戻るときに、カーソルの直前の文字を選びます。
+    /// When leaving Insert, selects the character right before the caret.
     fn select_near_caret(&mut self) {
         let caret = self.clamp(self.head);
         let index = self.text.position_to_char(caret).unwrap_or(0);
@@ -504,7 +505,7 @@ impl Editor {
         self.text.char_to_position(index - 1).ok()
     }
 
-    /// 挿入した文字列の直後の位置を返します。
+    /// Returns the position right after inserted text.
     fn advance(&self, from: Position, value: &str) -> Position {
         let mut line = from.line;
         let mut character = from.character;
@@ -606,7 +607,7 @@ mod tests {
     fn last_edit(editor: &mut Editor, key: Key) -> Transaction {
         match editor.handle_key(key) {
             Action::Edit(transaction) => transaction,
-            other => panic!("編集ではありません: {other:?}"),
+            other => panic!("expected an edit: {other:?}"),
         }
     }
 
@@ -651,7 +652,7 @@ mod tests {
             transactions[2].transaction_id
         );
 
-        // モードを変えると次の編集は別の項目になる。
+        // A mode change starts a new entry for the next edit.
         editor.handle_key(Key::Esc);
         editor.handle_key(Key::Char('i'));
         let next = last_edit(&mut editor, Key::Char('d'));
@@ -662,16 +663,16 @@ mod tests {
     fn deletes_a_character_with_x() {
         let mut editor = Editor::with_text("あ😀い", 0);
         editor.handle_key(Key::Char('l'));
-        // サロゲートペアでも 1 文字ぶん進み、選択は UTF-16 で 2 単位になる。
+        // Moves one character even for a surrogate pair; the selection is 2 UTF-16 units.
         assert_eq!(editor.selection(), Range::new(at(0, 1), at(0, 3)));
 
-        // まずは先頭の「あ」を消す。
+        // First delete the leading character.
         let mut editor = Editor::with_text("あ😀い", 0);
         let deleted = last_edit(&mut editor, Key::Char('x'));
         assert_eq!(deleted.edits[0].range, Range::new(at(0, 0), at(0, 1)));
         assert_eq!(editor.text(), "😀い");
 
-        // カーソルは消した位置に残る。
+        // The cursor stays at the deletion point.
         assert_eq!(editor.cursor(), at(0, 0));
         assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 2)));
     }

@@ -3,11 +3,11 @@ use ropey::Rope;
 use crate::edit::{EditError, TextEdit};
 use crate::position::{Position, Range};
 
-/// 本文だけを持つ型です。
+/// Plain text.
 ///
-/// 位置の数え方（UTF-16 と char index の変換）と、変更の適用を 1 か所にまとめます。
-/// `Buffer` は version とアンドゥの履歴を足したもの、クライアントは本文の写しとして
-/// これを使います。
+/// It centralizes position conversion (UTF-16 and char indices) and edit application.
+/// `Buffer` adds a version and undo history to it; the client uses it as its copy of
+/// the document.
 pub struct Text {
     rope: Rope,
 }
@@ -31,7 +31,7 @@ impl Text {
         self.rope.len_chars()
     }
 
-    /// 行の内容の長さを UTF-16 のコード単位で返します。改行は含みません。
+    /// Length of the line content in UTF-16 code units, excluding the line break.
     pub fn line_len_utf16(&self, line: usize) -> Option<u32> {
         if line >= self.rope.len_lines() {
             return None;
@@ -63,7 +63,7 @@ impl Text {
         Some(content)
     }
 
-    /// 位置の文字を返します。行末や文書の外では [`None`] です。
+    /// Returns the character at a position, or [`None`] at a line end or outside the document.
     pub fn char_at(&self, position: Position) -> Option<char> {
         let index = self.position_to_char(position).ok()?;
         self.char_at_index(index)
@@ -73,10 +73,10 @@ impl Text {
         self.rope.get_char(index)
     }
 
-    /// UTF-16 単位の位置を、char index に変換します。
+    /// Converts a UTF-16 position to a char index.
     ///
-    /// 行末を超える位置は失敗します。サロゲートペアの途中を指した場合は、
-    /// その文字の先頭に切り下げます。
+    /// A position past the end of the line fails. A position inside a surrogate pair is
+    /// rounded down to the start of the character.
     pub fn position_to_char(&self, position: Position) -> Result<usize, EditError> {
         let line_index = position.line as usize;
         if line_index >= self.rope.len_lines() {
@@ -111,7 +111,7 @@ impl Text {
         Ok(self.rope.line_to_char(line_index) + chars)
     }
 
-    /// char index を UTF-16 単位の位置に変換します。
+    /// Converts a char index to a UTF-16 position.
     pub fn char_to_position(&self, char_index: usize) -> Result<Position, EditError> {
         if char_index > self.rope.len_chars() {
             return Err(EditError::InvalidOffset(char_index));
@@ -129,7 +129,7 @@ impl Text {
         Ok(Position::new(line_index as u32, character))
     }
 
-    /// 範囲の本文を取り出します。
+    /// Returns the text in a range.
     pub fn slice(&self, range: Range) -> Result<String, EditError> {
         let start = self.position_to_char(range.start)?;
         let end = self.position_to_char(range.end)?;
@@ -139,10 +139,10 @@ impl Text {
         Ok(self.rope.slice(start..end).to_string())
     }
 
-    /// 1 回分の変更を適用し、戻すための変更を返します。
+    /// Applies one batch of edits and returns the edits that undo them.
     ///
-    /// 変更は同じ座標系（適用前の本文）で表されている必要があります。位置の昇順に
-    /// 並べ替え、前の変更でずれた分を足しながら適用します。
+    /// The edits must use the same coordinate space (the text before applying them). They
+    /// are sorted by position, and earlier length changes are added to later offsets.
     pub fn apply(&mut self, edits: &[TextEdit]) -> Result<Vec<TextEdit>, EditError> {
         let mut resolved = Vec::with_capacity(edits.len());
 

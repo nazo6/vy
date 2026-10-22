@@ -1,12 +1,12 @@
 use crate::error::ProtoError;
 
-/// 1つのフレームの上限です。`docs/protocol.md` の「ストリームと大容量データ」にあります。
+/// Upper bound for a single frame. See "Streams and large data" in `docs/protocol.md`.
 pub const MAX_FRAME_LEN: usize = 4 * 1024 * 1024;
 
-/// 長さヘッダーの大きさです。リトルエンディアンの u32 です。
+/// Size of the length header: a little-endian u32.
 pub const LENGTH_HEADER_LEN: usize = 4;
 
-/// ペイロードに長さヘッダーを付けたフレームを作ります。
+/// Builds a frame by prefixing the payload with its length.
 pub fn encode_frame(payload: &[u8]) -> Result<Vec<u8>, ProtoError> {
     if payload.len() > MAX_FRAME_LEN {
         return Err(ProtoError::FrameTooLarge {
@@ -21,22 +21,22 @@ pub fn encode_frame(payload: &[u8]) -> Result<Vec<u8>, ProtoError> {
     Ok(frame)
 }
 
-/// メッセージを MessagePack に符号化します。長さヘッダーは付けません。
+/// Encodes a message as MessagePack without the length header.
 ///
-/// フレームにするときは [`encode_frame`] で包みます。
+/// Wrap it with [`encode_frame`] to send it.
 pub fn encode_message(message: &crate::message::RpcMessage) -> Result<Vec<u8>, ProtoError> {
     rmp_serde::to_vec_named(message).map_err(|error| ProtoError::Encode(error.to_string()))
 }
 
-/// フレームのペイロードをメッセージに戻します。
+/// Decodes a frame payload back into a message.
 pub fn decode_message(payload: &[u8]) -> Result<crate::message::RpcMessage, ProtoError> {
     rmp_serde::from_slice(payload).map_err(|error| ProtoError::Decode(error.to_string()))
 }
 
-/// 読み取ったバイト列からフレームを切り出します。
+/// Splits frames out of the bytes read from a stream.
 ///
-/// ストリームは途中で切れて届くため、呼び出し側は [`FrameDecoder::push`] に
-/// 受け取った分を足し、[`FrameDecoder::next_frame`] が [`None`] を返すまで繰り返します。
+/// Streams arrive in pieces, so callers push bytes with [`FrameDecoder::push`] and
+/// repeat until [`FrameDecoder::next_frame`] returns [`None`].
 #[derive(Debug, Default)]
 pub struct FrameDecoder {
     buffer: Vec<u8>,
@@ -49,7 +49,8 @@ impl FrameDecoder {
     }
 
     pub fn push(&mut self, bytes: &[u8]) {
-        // 読み終えた分が半分を超えたら詰め直す。毎回詰めると O(n^2) になる。
+        // Compact the buffer once the consumed prefix is at least half of it.
+        // Compacting on every call would make this O(n^2).
         if self.start > 0 && self.start * 2 >= self.buffer.len() {
             self.buffer.drain(..self.start);
             self.start = 0;
@@ -57,7 +58,7 @@ impl FrameDecoder {
         self.buffer.extend_from_slice(bytes);
     }
 
-    /// 次に処理できるフレームのペイロードを返します。まだ届いていなければ [`None`] です。
+    /// Returns the payload of the next complete frame, or [`None`] if it has not arrived yet.
     pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>, ProtoError> {
         let available = &self.buffer[self.start..];
         if available.len() < LENGTH_HEADER_LEN {
@@ -92,7 +93,7 @@ impl FrameDecoder {
         Ok(Some(payload))
     }
 
-    /// まだ切り出していないバイト数です。テストと診断に使います。
+    /// Number of bytes not yet split into a frame. Used by tests and diagnostics.
     pub fn buffered_len(&self) -> usize {
         self.buffer.len() - self.start
     }

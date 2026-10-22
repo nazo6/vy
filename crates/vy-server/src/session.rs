@@ -7,9 +7,9 @@ use vy_core::{Applied, Buffer, TextEdit, Uri};
 use vy_proto::value::{get, object};
 use vy_proto::{ErrorCode, PROTOCOL_VERSION, RpcMessage};
 
-/// 1 つの接続が持つ状態です。
+/// State owned by one connection.
 ///
-/// レイアウト木は Phase 3 で足します。ここではペインと文書の対応だけを持ちます。
+/// The layout tree lands in Phase 3. For now this only maps panes to documents.
 pub struct Session {
     state: State,
     next_session_id: u64,
@@ -26,11 +26,11 @@ enum State {
     Ready { session_id: u64 },
 }
 
-/// 1 つのメッセージを処理した結果です。
+/// The result of handling one message.
 pub struct Outcome {
-    /// クライアントへ送るメッセージです。順序を保って送ります。
+    /// Messages to send to the client, in order.
     pub messages: Vec<RpcMessage>,
-    /// 送り終えたあとに接続を閉じるかどうかです。
+    /// Whether to close the connection after sending them.
     pub close: bool,
 }
 
@@ -70,7 +70,7 @@ impl Session {
         }
     }
 
-    /// メッセージを 1 つ処理します。I/O は呼び出し側が行います。
+    /// Handles one message. The caller does the I/O.
     pub fn handle(&mut self, message: RpcMessage) -> Outcome {
         match message {
             RpcMessage::Request {
@@ -82,7 +82,7 @@ impl Session {
             } => self.request(id, session_id, &method, params),
             RpcMessage::Notification { method, params } => self.notification(&method, params),
             RpcMessage::Cancel { id, reason } => {
-                tracing::debug!(id, ?reason, "取り消しは Phase 1 では扱いません");
+                tracing::debug!(id, ?reason, "cancellation is not handled in Phase 1");
                 Outcome::empty()
             }
             RpcMessage::Response { .. } | RpcMessage::Stream { .. } => Outcome::empty(),
@@ -95,7 +95,7 @@ impl Session {
                 return Outcome::one(RpcMessage::err(
                     id,
                     ErrorCode::InvalidState,
-                    "initialize は接続ごとに 1 回だけ送れます",
+                    "initialize can only be sent once per connection",
                 ));
             }
             return self.initialize(id, params);
@@ -108,7 +108,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                "initialize を先に送る必要があります",
+                "send initialize first",
             ));
         };
 
@@ -116,7 +116,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                format!("session_id {session_id} はこの接続のセッションではありません"),
+                format!("session_id {session_id} does not belong to this connection"),
             ));
         }
 
@@ -132,7 +132,7 @@ impl Session {
             other => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                format!("未知のメソッドです: {other}"),
+                format!("unknown method: {other}"),
             )),
         }
     }
@@ -143,9 +143,9 @@ impl Session {
         if protocol_version != Some(PROTOCOL_VERSION as u64) {
             let message = match protocol_version {
                 Some(version) => format!(
-                    "プロトコルの版が合いません: サーバーは {PROTOCOL_VERSION}、クライアントは {version}"
+                    "protocol version mismatch: server {PROTOCOL_VERSION}, client {version}"
                 ),
-                None => "protocol_version がありません".to_string(),
+                None => "missing protocol_version".to_string(),
             };
             return Outcome::closing(RpcMessage::err(
                 id,
@@ -180,7 +180,7 @@ impl Session {
                 ("protocol_version", Value::from(PROTOCOL_VERSION)),
                 ("session_id", Value::from(session_id)),
                 ("server_version", Value::from(env!("CARGO_PKG_VERSION"))),
-                // ストリーム、Blob、多重化はまだ実装していないため、空にしています。
+                // Streams, Blob, and multiplexing are not implemented yet, so this is empty.
                 ("server_capabilities", Value::Array(Vec::new())),
                 (
                     "platform",
@@ -201,13 +201,13 @@ impl Session {
         }
     }
 
-    /// 文書を開き、ペインに載せます。レイアウト木は Phase 3 で足します。
+    /// Opens a document and puts it in a pane. The layout tree lands in Phase 3.
     fn open_pane(&mut self, id: u64, params: Value) -> Outcome {
         let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                "pane/open には uri が必要です",
+                "pane/open requires a uri",
             ));
         };
 
@@ -227,10 +227,10 @@ impl Session {
                 return Outcome::one(RpcMessage::err(
                     id,
                     ErrorCode::InvalidRequest,
-                    format!("パスに変換できません: {uri}"),
+                    format!("cannot convert to a path: {uri}"),
                 ));
             };
-            // Phase 1 は同期で読む。大きなファイルを扱うときに spawn_blocking へ移す。
+            // Phase 1 reads synchronously. Move this to spawn_blocking when large files arrive.
             match std::fs::read_to_string(&path) {
                 Ok(text) => text,
                 Err(error) => {
@@ -269,7 +269,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                "document_id が必要です",
+                "a document_id is required",
             ));
         };
 
@@ -277,7 +277,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::NotFound,
-                format!("文書 {document_id} は開かれていません"),
+                format!("document {document_id} is not open"),
             ));
         };
 
@@ -297,7 +297,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                "document_id が必要です",
+                "a document_id is required",
             ));
         };
 
@@ -305,7 +305,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::NotFound,
-                format!("文書 {document_id} は開かれていません"),
+                format!("document {document_id} is not open"),
             ));
         };
 
@@ -333,7 +333,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::InvalidRequest,
-                "document_id が必要です",
+                "a document_id is required",
             ));
         };
 
@@ -341,7 +341,7 @@ impl Session {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::NotFound,
-                format!("文書 {document_id} は開かれていません"),
+                format!("document {document_id} is not open"),
             ));
         };
 
@@ -368,7 +368,7 @@ impl Session {
         match method {
             "buffer/did_change" => self.did_change(params),
             other => {
-                tracing::debug!(method = other, "未知の通知です");
+                tracing::debug!(method = other, "unknown notification");
                 Outcome::empty()
             }
         }
@@ -376,30 +376,24 @@ impl Session {
 
     fn did_change(&mut self, params: Value) -> Outcome {
         let Some(document_id) = document_id(&params) else {
-            tracing::warn!("buffer/did_change に document_id がありません");
+            tracing::warn!("buffer/did_change has no document_id");
             return Outcome::empty();
         };
 
         let Some(base_version) = get(&params, "base_version").and_then(Value::as_u64) else {
-            tracing::warn!(
-                document_id,
-                "buffer/did_change に base_version がありません"
-            );
+            tracing::warn!(document_id, "buffer/did_change has no base_version");
             return Outcome::empty();
         };
 
         let Some(transaction_id) = get(&params, "transaction_id").and_then(Value::as_u64) else {
-            tracing::warn!(
-                document_id,
-                "buffer/did_change に transaction_id がありません"
-            );
+            tracing::warn!(document_id, "buffer/did_change has no transaction_id");
             return Outcome::empty();
         };
 
         let edits: Vec<TextEdit> = match get(&params, "edits").and_then(decode_params) {
             Some(edits) => edits,
             None => {
-                tracing::warn!(document_id, "buffer/did_change の edits を読めません");
+                tracing::warn!(document_id, "could not read edits in buffer/did_change");
                 return Outcome::empty();
             }
         };
@@ -413,7 +407,7 @@ impl Session {
 
         let result = {
             let Some(buffer) = self.documents.get_mut(&document_id) else {
-                tracing::warn!(document_id, "開かれていない文書への変更です");
+                tracing::warn!(document_id, "change for a document that is not open");
                 return Outcome::empty();
             };
             buffer.apply_edits(
@@ -427,11 +421,11 @@ impl Session {
 
         match result {
             Ok(applied) => {
-                tracing::trace!(document_id, version = applied.version, "変更を適用しました");
+                tracing::trace!(document_id, version = applied.version, "applied the change");
                 Outcome::empty()
             }
             Err(error) => {
-                tracing::warn!(document_id, %error, "変更を受け付けられません。再同期を要求します");
+                tracing::warn!(document_id, %error, "rejected the change; requesting a resync");
                 let (version, text) = self
                     .documents
                     .get(&document_id)
@@ -463,13 +457,13 @@ fn document_id(params: &Value) -> Option<u64> {
 }
 
 fn decode_params<T: DeserializeOwned>(value: &Value) -> Option<T> {
-    // rmpv の serde 連携は struct をタプルとして扱うため、必ず rmp-serde を通す。
+    // rmpv's serde support treats structs as tuples, so always go through rmp-serde.
     let mut bytes = Vec::new();
     rmpv::encode::write_value(&mut bytes, value).ok()?;
     rmp_serde::from_slice(&bytes).ok()
 }
 
-/// `docs/protocol.md` の形にそろえて返します。
+/// Returns the value in the shape described by `docs/protocol.md`.
 fn applied_value(document_id: u64, applied: &Applied) -> Value {
     object([
         ("document_id", Value::from(document_id)),
@@ -480,7 +474,7 @@ fn applied_value(document_id: u64, applied: &Applied) -> Value {
 }
 
 fn to_value<T: Serialize>(value: &T) -> Value {
-    // rmpv の serde 連携は struct をタプルにするため、フィールド名を保つ rmp-serde を通す。
+    // rmpv's serde support turns structs into tuples; rmp-serde keeps field names.
     rmp_serde::to_vec_named(value)
         .ok()
         .and_then(|bytes| rmpv::decode::read_value(&mut bytes.as_slice()).ok())
@@ -520,7 +514,7 @@ mod tests {
                 result: RpcResult::Ok { value },
                 ..
             } => value,
-            other => panic!("Ok ではありません: {other:?}"),
+            other => panic!("expected Ok: {other:?}"),
         }
     }
 
@@ -610,7 +604,7 @@ mod tests {
                 );
                 assert_eq!(get(params, "session_id").and_then(Value::as_u64), Some(1));
             }
-            other => panic!("通知ではありません: {other:?}"),
+            other => panic!("expected a notification: {other:?}"),
         }
 
         assert_eq!(
@@ -708,7 +702,7 @@ mod tests {
         assert_eq!(get(value, "version").and_then(Value::as_u64), Some(2));
         match get(value, "edits") {
             Some(Value::Array(edits)) => assert_eq!(edits.len(), 1),
-            other => panic!("edits が配列ではありません: {other:?}"),
+            other => panic!("edits is not an array: {other:?}"),
         }
 
         let outcome = request(
@@ -739,7 +733,7 @@ mod tests {
                     Some(document_id)
                 );
             }
-            other => panic!("通知ではありません: {other:?}"),
+            other => panic!("expected a notification: {other:?}"),
         }
     }
 
@@ -759,7 +753,7 @@ mod tests {
         assert!(outcome.close);
     }
 
-    // 位置の型が wire 形式と一致していることを確かめる。
+    // Make sure the position types match the wire format.
     #[test]
     fn serializes_core_types_as_maps() {
         let edit = TextEdit::new(Range::new(Position::new(1, 2), Position::new(1, 4)), "abc");

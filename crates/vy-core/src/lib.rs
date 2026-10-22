@@ -1,6 +1,6 @@
-//! エディタのコアです。文書、バッファ、位置、アンドゥを持ちます。
+//! The editor core: documents, buffers, positions, and undo.
 //!
-//! 描画には依存しません。ヘッドレスのテストと `vy-server` の両方で使います。
+//! It does not depend on rendering. It is used by headless tests and `vy-server`.
 
 pub mod buffer;
 pub mod edit;

@@ -3,16 +3,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ErrorCode;
 
-/// プロトコルの版です。`initialize` で突き合わせます。
+/// Protocol version. Matched during `initialize`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
-/// すべての RPC フレームのペイロードです。
+/// Payload of every RPC frame.
 ///
-/// 形は `docs/protocol.md` の「メッセージエンベロープ仕様」に従います。
+/// It follows the message envelope in `docs/protocol.md`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum RpcMessage {
-    /// クライアントからサーバーへの要求です。
+    /// A request from the client to the server.
     Request {
         id: u64,
         session_id: u64,
@@ -20,13 +20,13 @@ pub enum RpcMessage {
         params: Value,
         deadline_ms: Option<u32>,
     },
-    /// 要求への応答です。
+    /// A response to a request.
     Response { id: u64, result: RpcResult },
-    /// 実行中の要求の取り消しです。
+    /// Cancels a request that is still running.
     Cancel { id: u64, reason: Option<String> },
-    /// 一方向の通知です。クライアントとサーバーのどちらからも送ります。
+    /// A one-way notification, sent in either direction.
     Notification { method: String, params: Value },
-    /// 連続するデータの断片です。
+    /// A chunk of streamed data.
     Stream {
         stream_id: u64,
         seq: u64,
