@@ -4,6 +4,7 @@
 //! defaults so tests and development builds can use a separate tree.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// Roots for configuration, data, and cache files.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +57,21 @@ impl Paths {
     /// `<workspace>/.vy/settings.json`, which only holds values and never code.
     pub fn workspace_settings(&self, workspace: impl AsRef<Path>) -> PathBuf {
         workspace.as_ref().join(".vy").join("settings.json")
+    }
+
+    /// Modification time of the newest settings file, if any exists.
+    pub fn settings_stamp(&self, workspace: Option<&Path>) -> Option<SystemTime> {
+        let project = workspace.map(|ws| self.workspace_settings(ws));
+        let mut newest: Option<SystemTime> = None;
+
+        for path in std::iter::once(self.settings_json()).chain(project) {
+            if let Ok(modified) = std::fs::metadata(&path).and_then(|metadata| metadata.modified())
+            {
+                newest = Some(newest.map_or(modified, |current| current.max(modified)));
+            }
+        }
+
+        newest
     }
 }
 

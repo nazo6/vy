@@ -8,7 +8,25 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use rmpv::Value;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
+
+/// Serializes any serde type into an [`rmpv::Value`].
+pub fn value_of<T: Serialize>(value: &T) -> Value {
+    // rmpv's serde support turns structs into tuples, so go through rmp-serde.
+    rmp_serde::to_vec_named(value)
+        .ok()
+        .and_then(|bytes| rmpv::decode::read_value(&mut bytes.as_slice()).ok())
+        .unwrap_or(Value::Nil)
+}
+
+/// Deserializes a serde type from an [`rmpv::Value`].
+pub fn decode_value<T: DeserializeOwned>(value: &Value) -> Option<T> {
+    let mut bytes = Vec::new();
+    rmpv::encode::write_value(&mut bytes, value).ok()?;
+    rmp_serde::from_slice(&bytes).ok()
+}
 
 pub struct Client {
     child: Child,
@@ -190,4 +208,47 @@ fn server_command() -> Command {
     }
 
     Command::new("vy-server")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vy_core::{LayoutNode, Position, Range, Selection, SplitDirection, TextEdit};
+    use vy_proto::get;
+
+    #[test]
+    fn round_trips_edits_through_message_pack() {
+        let edits = vec![TextEdit::new(
+            Range::new(Position::new(0, 0), Position::new(0, 5)),
+            "hello",
+        )];
+        let value = value_of(&edits);
+        let decoded = decode_value::<Vec<TextEdit>>(&value).expect("decode");
+        assert_eq!(decoded, edits);
+
+        let selection = vec![Selection::caret(Position::new(1, 2))];
+        let value = value_of(&selection);
+        assert_eq!(
+            decode_value::<Vec<Selection>>(&value).expect("decode"),
+            selection
+        );
+    }
+
+    #[test]
+    fn round_trips_the_layout_tree_through_message_pack() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.3,
+            first: Box::new(LayoutNode::Leaf { pane_id: 4 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 5 }),
+        };
+
+        let value = value_of(&layout);
+        assert_eq!(get(&value, "type").and_then(Value::as_str), Some("split"));
+        assert_eq!(
+            get(&value, "direction").and_then(Value::as_str),
+            Some("vertical")
+        );
+        assert_eq!(decode_value::<LayoutNode>(&value).expect("decode"), layout);
+    }
 }
