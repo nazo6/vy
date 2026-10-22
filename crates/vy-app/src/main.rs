@@ -42,6 +42,10 @@ const CHROME_HEIGHT: f32 = 100.0;
 const CHARACTER_WIDTH: f32 = 10.0;
 /// Width of the bar that marks the insertion point.
 const CARET_WIDTH: f32 = 2.0;
+/// Widest the command palette grows before it stops filling the window.
+const PALETTE_MAX_WIDTH: f32 = 560.0;
+/// Tallest the command palette grows before the row list is clipped.
+const PALETTE_MAX_HEIGHT: f32 = 420.0;
 
 /// The kind of request we are waiting for a response to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2211,11 +2215,14 @@ impl EditorView {
                 div()
                     .flex()
                     .items_center()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
                     .child(format!("> {}", palette.query))
                     .child(self.input_caret()),
             )
             .child(
                 div()
+                    .flex_shrink_0()
                     .text_xs()
                     .text_color(rgb(0x8a8a8a))
                     .child(format!("{} commands", filtered.len())),
@@ -2230,7 +2237,8 @@ impl EditorView {
                 .items_center()
                 .px_2()
                 .py_1()
-                .w_full();
+                .w_full()
+                .overflow_hidden();
             let row = if index == selected {
                 row.bg(rgb(0x094771))
             } else {
@@ -2238,15 +2246,22 @@ impl EditorView {
             };
             rows.push(
                 row.child(
-                    div().flex().gap_2().child(item.title.clone()).child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x8a8a8a))
-                            .child(item.id.clone()),
-                    ),
+                    div()
+                        .flex()
+                        .gap_2()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(item.title.clone())
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(0x8a8a8a))
+                                .child(item.id.clone()),
+                        ),
                 )
                 .child(
                     div()
+                        .flex_shrink_0()
                         .text_xs()
                         .text_color(rgb(0x8a8a8a))
                         .child(item.source.label().to_string()),
@@ -2269,20 +2284,32 @@ impl EditorView {
             .pt_1()
             .text_xs()
             .text_color(rgb(0x8a8a8a))
+            .whitespace_nowrap()
             .child("Enter run  ·  Esc close  ·  Up/Down move");
 
-        div().absolute().top_0().left_0().w_full().p_4().child(
-            div()
-                .w_full()
-                .bg(rgb(0x252526))
-                .border_1()
-                .border_color(rgb(0x3c3c3c))
-                .flex()
-                .flex_col()
-                .child(query)
-                .children(rows)
-                .child(hint),
-        )
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .w_full()
+            .p_4()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(PALETTE_MAX_WIDTH))
+                    .max_h(px(PALETTE_MAX_HEIGHT))
+                    .overflow_hidden()
+                    .bg(rgb(0x252526))
+                    .border_1()
+                    .border_color(rgb(0x3c3c3c))
+                    .flex()
+                    .flex_col()
+                    .child(query)
+                    .children(rows)
+                    .child(hint),
+            )
     }
 
     fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, window: &mut Window) -> Div {
