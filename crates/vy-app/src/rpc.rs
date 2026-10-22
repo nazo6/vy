@@ -64,6 +64,14 @@ impl Client {
         id
     }
 
+    /// 応答を待たない通知を送ります。
+    pub fn notify(&mut self, method: &str, params: Value) {
+        let message = RpcMessage::notification(method, params);
+        if let Err(error) = self.write(&message) {
+            eprintln!("vy: 通知を送れません: {error}");
+        }
+    }
+
     pub fn set_session_id(&mut self, session_id: u64) {
         self.session_id = session_id;
     }

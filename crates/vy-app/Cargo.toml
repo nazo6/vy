@@ -9,5 +9,6 @@ license.workspace = true
 gpui.workspace = true
 rmp-serde.workspace = true
 rmpv.workspace = true
+serde.workspace = true
 vy-core.workspace = true
 vy-proto.workspace = true

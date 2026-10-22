@@ -71,3 +71,14 @@ cargo run -p vy-app -- README.md
   を使います。
 - GPUI 0.2.2 が引く `xattr 0.2.3` は Linux でビルドできないため、`vendor/xattr`
   にパッチ版を置いています（[`vendor/xattr/PATCH.md`](./vendor/xattr/PATCH.md)）。
+
+### 操作（Phase 1）
+
+| モード | キー                                                                   |
+| :----- | :--------------------------------------------------------------------- |
+| Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾 |
+| Normal | `x` `d` 選択の削除、`v` 選択モード、`i` `a` 挿入、`u` / `Ctrl-r` 履歴  |
+| Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ           |
+| Select | 移動で選択を伸ばす。`d` で削除して Normal へ                           |
+
+カウント、レジスタ、`.` の繰り返し、IME の前編集はまだありません。

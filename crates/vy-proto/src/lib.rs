@@ -11,7 +11,7 @@ pub mod value;
 
 pub use error::{ErrorCode, ProtoError};
 pub use frame::{
-    decode_message, encode_frame, encode_message, FrameDecoder, LENGTH_HEADER_LEN, MAX_FRAME_LEN,
+    FrameDecoder, LENGTH_HEADER_LEN, MAX_FRAME_LEN, decode_message, encode_frame, encode_message,
 };
-pub use message::{RpcMessage, RpcResult, StreamPayload, PROTOCOL_VERSION};
+pub use message::{PROTOCOL_VERSION, RpcMessage, RpcResult, StreamPayload};
 pub use value::{get, object};

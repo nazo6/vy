@@ -29,10 +29,13 @@ flowchart TD
 - [x] `initialize` と `initialized` のハンドシェイクを実装する
 - [x] `pane/open` で文書を開き、`buffer/snapshot` で本文を受け取って描画する
 - [x] `ropey` によるテキストバッファと、`buffer/did_change` のサーバー側の適用
-- [ ] クライアントからの `buffer/did_change` の送信と、`buffer/resync` の反映
-- [ ] Helix方式のモーダル入力エンジン:
+- [x] クライアントからの `buffer/did_change` の送信と、`buffer/resync` の反映
+- [x] Helix方式のモーダル入力エンジン:
   - `Selection -> Action`（文字・単語選択後に削除・変更）
   - Normal, Insert, Select モードの基本実装
+- [ ] モーダル入力の残り:
+  - カウント（`5j`）、レジスタ、`.` の繰り返し
+  - 日本語 IME の前編集（`EntityInputHandler`）
 - [ ] Phase 1 の検証項目:
   - Linux (Wayland) と macOS で起動する。Windows は Phase 1 の対象外とする
   - 日本語 IME の前編集が、カーソル位置に正しく出る

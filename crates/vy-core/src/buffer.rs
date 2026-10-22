@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use ropey::Rope;
 use serde::{Deserialize, Serialize};
 
 use crate::edit::{EditError, TextEdit};
 use crate::position::{Position, Range, Selection};
+use crate::text::Text;
 use crate::uri::Uri;
 
 pub type DocumentId = u64;
@@ -43,7 +43,7 @@ struct UndoEntry {
 pub struct Buffer {
     id: DocumentId,
     uri: Uri,
-    rope: Rope,
+    text: Text,
     version: Version,
     saved_version: Version,
     undo_limit: usize,
@@ -52,11 +52,11 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new(id: DocumentId, uri: Uri, text: impl Into<String>) -> Self {
+    pub fn new(id: DocumentId, uri: Uri, text: impl AsRef<str>) -> Self {
         Self {
             id,
             uri,
-            rope: Rope::from_str(&text.into()),
+            text: Text::new(text),
             version: 0,
             saved_version: 0,
             undo_limit: DEFAULT_UNDO_LIMIT,
@@ -90,15 +90,15 @@ impl Buffer {
     }
 
     pub fn line_count(&self) -> usize {
-        self.rope.len_lines()
+        self.text.line_count()
     }
 
     pub fn len_chars(&self) -> usize {
-        self.rope.len_chars()
+        self.text.len_chars()
     }
 
     pub fn text(&self) -> String {
-        self.rope.to_string()
+        self.text.as_string()
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -114,65 +114,17 @@ impl Buffer {
     /// 行末を超える位置は失敗します。サロゲートペアの途中を指した場合は、
     /// その文字の先頭に切り下げます。
     pub fn position_to_char(&self, position: Position) -> Result<usize, EditError> {
-        let line_index = position.line as usize;
-        if line_index >= self.rope.len_lines() {
-            return Err(EditError::InvalidPosition(position));
-        }
-
-        let line = self.rope.line(line_index);
-        let mut units = 0u32;
-        let mut chars = 0usize;
-        let mut clamped = false;
-
-        for ch in line.chars() {
-            if ch == '\n' || ch == '\r' {
-                break;
-            }
-            if position.character <= units {
-                break;
-            }
-            let width = ch.len_utf16() as u32;
-            if position.character < units + width {
-                clamped = true;
-                break;
-            }
-            units += width;
-            chars += 1;
-        }
-
-        if position.character > units && !clamped {
-            return Err(EditError::InvalidPosition(position));
-        }
-
-        Ok(self.rope.line_to_char(line_index) + chars)
+        self.text.position_to_char(position)
     }
 
     /// char index を UTF-16 単位の位置に変換します。
     pub fn char_to_position(&self, char_index: usize) -> Result<Position, EditError> {
-        if char_index > self.rope.len_chars() {
-            return Err(EditError::InvalidOffset(char_index));
-        }
-
-        let line_index = self.rope.char_to_line(char_index);
-        let line_start = self.rope.line_to_char(line_index);
-        let character: u32 = self
-            .rope
-            .slice(line_start..char_index)
-            .chars()
-            .map(|ch| ch.len_utf16() as u32)
-            .sum();
-
-        Ok(Position::new(line_index as u32, character))
+        self.text.char_to_position(char_index)
     }
 
     /// 範囲の本文を取り出します。
     pub fn slice(&self, range: Range) -> Result<String, EditError> {
-        let start = self.position_to_char(range.start)?;
-        let end = self.position_to_char(range.end)?;
-        if start > end {
-            return Err(EditError::InvalidRange(range));
-        }
-        Ok(self.rope.slice(start..end).to_string())
+        self.text.slice(range)
     }
 
     /// 編集のトランザクションを適用します。
@@ -202,7 +154,7 @@ impl Buffer {
             });
         }
 
-        let inverse = self.apply_batch(&edits)?;
+        let inverse = self.text.apply(&edits)?;
         self.version += 1;
         self.redo.clear();
 
@@ -243,7 +195,7 @@ impl Buffer {
         };
 
         let inverse = entry.inverse.clone();
-        self.apply_batch(&inverse)?;
+        self.text.apply(&inverse)?;
         self.version += 1;
 
         let selection = entry.selection_before.clone();
@@ -263,7 +215,7 @@ impl Buffer {
         };
 
         let forward = entry.forward.clone();
-        self.apply_batch(&forward)?;
+        self.text.apply(&forward)?;
         self.version += 1;
 
         let selection = entry.selection_after.clone();
@@ -274,56 +226,6 @@ impl Buffer {
             edits: forward,
             selection,
         }))
-    }
-
-    /// 1 回分の変更を適用し、戻すための変更を返します。
-    ///
-    /// `edits` は同じ座標系（適用前の本文）で表されている必要があります。位置の
-    /// 昇順に並べ替え、前の変更でずれた分を足しながら適用します。
-    fn apply_batch(&mut self, edits: &[TextEdit]) -> Result<Vec<TextEdit>, EditError> {
-        let mut resolved = Vec::with_capacity(edits.len());
-
-        for edit in edits {
-            let start = self.position_to_char(edit.range.start)?;
-            let end = self.position_to_char(edit.range.end)?;
-            if start > end {
-                return Err(EditError::InvalidRange(edit.range));
-            }
-            resolved.push((start, end, edit.text.as_str()));
-        }
-
-        resolved.sort_by_key(|(start, _, _)| *start);
-        for pair in resolved.windows(2) {
-            if pair[0].1 > pair[1].0 {
-                return Err(EditError::OverlappingEdits);
-            }
-        }
-
-        let mut delta: isize = 0;
-        let mut inverse = Vec::with_capacity(resolved.len());
-
-        for (start, end, text) in resolved {
-            let start = (start as isize + delta) as usize;
-            let end = (end as isize + delta) as usize;
-
-            let removed = self.rope.slice(start..end).to_string();
-            let inserted = text.chars().count();
-
-            self.rope.remove(start..end);
-            self.rope.insert(start, text);
-
-            inverse.push(TextEdit {
-                range: Range::new(
-                    self.char_to_position(start)?,
-                    self.char_to_position(start + inserted)?,
-                ),
-                text: removed,
-            });
-
-            delta += inserted as isize - (end - start) as isize;
-        }
-
-        Ok(inverse)
     }
 }
 
