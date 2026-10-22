@@ -1,6 +1,9 @@
 # 全体アーキテクチャ設計
 
-Vy は、Vimのモーダル編集の軽快さと、VS Codeの拡張性・リッチUI体験を両立するため、**「GPUIフロントエンド」** と **「エディタコア/バックエンド」** を完全に物理分離するクライアント/サーバー構成を採用しています。
+Vy は、Vimのモーダル編集の軽快さと、VS
+Codeの拡張性・リッチUI体験を両立するため、**「GPUIフロントエンド」** と
+**「エディタコア/バックエンド」**
+を完全に物理分離するクライアント/サーバー構成を採用しています。
 
 ---
 
@@ -10,10 +13,12 @@ Vy は、Vimのモーダル編集の軽快さと、VS Codeの拡張性・リッ�
 flowchart TB
     subgraph Frontend["Local Client (手元のPC)"]
         direction TB
-        GPUI["GPUI Native Window (GPU 120fps Render)"]
-        Webview["Embedded Webview (gpui-kit/webview)\n(Notebook出力, Markdownプレビュー, リッチUI)"]
-        InputHandler["Keymap Engine (Helix風 Selection -> Action)\n(ローカル即時描画: 0ms)"]
-        QuickJS_Front["QuickJS Runtime (init.ts & UI Plugins)"]
+        GPUI["GPUI Native Window (wgpu / ネイティブ描画)"]
+        Webview["Embedded Webview (gpui-kit/webview)\n(Notebook出力, Markdownプレビュー, Web文書)"]
+        InputHandler["Keymap Engine (Helix風 Selection -> Action)\n(ローカル即時描画)"]
+        PluginHost["Plugin Host (QuickJS)\ninit.ts / frontend.ts"]
+        CapBroker["Capability Broker\n(宣言と承認の検査)"]
+        ConfigService["Config Service\n(4層の解決と配信)"]
     end
 
     subgraph Core["Editor Core / Server (Local or Remote)"]
@@ -23,39 +28,193 @@ flowchart TB
         TreeSitter["Tree-sitter Engine (構文解析, ASTハイライト)"]
         LSP["Language Server Client (プロセス管理, didChange)"]
         GitWatcher["Git Status Watcher (ガター変更検知)"]
-        QuickJS_Back["QuickJS Runtime (Heavy Backend Plugins)"]
+        UriModel["URI Model (file / vy / remote)"]
+        LayoutModel["Layout Model (ペインの木, フォーカス, 比率)"]
+        CoreConfig["Config Service (コア側)"]
+        PluginHostBack["Plugin Host (QuickJS)\nbackend.ts"]
     end
 
     InputHandler -->|即時入力・カーソル移動| GPUI
-    QuickJS_Front -->|DOM/Webview制御| Webview
-    QuickJS_Front <-->|UIイベント| GPUI
-    
-    GPUI <===>|MessagePack RPC (stdio / Socket)| RPC
+    PluginHost -->|スロットのデータ| GPUI
+    PluginHost -->|Webview制御| Webview
+
+    PluginHost --> CapBroker
+    CapBroker <===>|MessagePack RPC (stdio / Socket)| RPC
+    PluginHost <-->|設定の読み書き| ConfigService
+    ConfigService <--> CoreConfig
+
     RPC <--> Buffer
     RPC <--> TreeSitter
     RPC <--> LSP
     RPC <--> GitWatcher
-    RPC <--> QuickJS_Back
+    RPC <--> UriModel
+    RPC <--> LayoutModel
+    RPC <--> PluginHostBack
+    LayoutModel -->|確定したレイアウト| GPUI
+    ConfigService -->|UI 系のキー| GPUI
+    CoreConfig -->|言語系のキー| LSP
 ```
+
+### 1.1 プロセスの構成
+
+ローカル接続とリモート接続のどちらでも、クライアントとコアは別のプロセスです（[ADR 0002](./adr/0002-process-model.md)）。
+
+| 接続   | クライアント | コア                                         | 経路             |
+| :----- | :----------- | :------------------------------------------- | :--------------- |
+| local  | `vy-app`     | `vy-app` が起動した `vy-server` の子プロセス | 標準入出力       |
+| remote | `vy-app`     | SSH の先で起動した `vy-server`               | SSH の標準入出力 |
+
+`fs`、`process`、検索、文書の読み書きは常にコアが行います。ローカル接続でも、ファイルを開くのはコアのプロセスです。クライアントが行うのは、キー入力の照合、描画、Webview
+の表示、クライアント側の QuickJS の実行です。
+
+同一プロセスでコアを呼ぶ近道は作りません。近道を作ると、リモート接続でだけ壊れる経路が残るためです。
 
 ---
 
 ## 2. エディタ本体（Core）とプラグインの責務境界
 
-| 機能 | 担当 | 理由 |
-| :--- | :--- | :--- |
-| **LSPクライアント基盤** | **エディタ本体 (Rust)** | プロセス起動・JSON-RPC通信・ドキュメント同期・診断エラー集約をRustネイティブで堅牢に実行。 |
-| **Tree-sitter (構文解析)** | **エディタ本体 (Rust)** | ハイライト描画、インクリメンタルパース、ASTテキストオブジェクトをRustの描画ループと直結。 |
-| **Rope & アンドゥ履歴** | **エディタ本体 (Rust)** | `ropey` によるテキスト編集とツリー型Undo/Redo。 |
-| **Git状態の監視** | **エディタ本体 (Rust)** | ファイル変更監視と連動したガターのDiff表示。 |
-| **設定・キーバインド・UI拡張** | **プラグイン/設定 (TypeScript)** | `init.ts` で柔軟にキー割り当てや外観を制御。 |
+| 機能                             | 担当                             | 理由                                                                                       |
+| :------------------------------- | :------------------------------- | :----------------------------------------------------------------------------------------- |
+| **LSPクライアント基盤**          | **エディタ本体 (Rust)**          | プロセス起動・JSON-RPC通信・ドキュメント同期・診断エラー集約をRustネイティブで堅牢に実行。 |
+| **Tree-sitter (構文解析)**       | **エディタ本体 (Rust)**          | ハイライト描画、インクリメンタルパース、ASTテキストオブジェクトをRustの描画ループと直結。  |
+| **Rope、本文の版、アンドゥ履歴** | **エディタ本体 (Rust)**          | `ropey` による本文と version。アンドゥは、整形や複数ファイルの編集も含めて1か所で持つ。    |
+| **Git状態の監視**                | **エディタ本体 (Rust)**          | ファイル変更監視と連動したガターのDiff表示。                                               |
+| **ペインのレイアウト**           | **エディタ本体 (Rust)**          | 分割、比率、フォーカス、フローティングを1か所で持ち、保存と復元を同じ形で行う。            |
+| **ペインの中身（ビュー）**       | **プラグイン/設定 (TypeScript)** | ビューの登録とウィジェット木の提供。描画とキー入力はクライアントが行う。                   |
+| **設定・キーバインド・UI拡張**   | **プラグイン/設定 (TypeScript)** | `init.ts` で柔軟にキー割り当てや外観を制御。                                               |
 
 ---
 
 ## 3. UIレンダリング: GPUI + `gpui-kit/webview`
 
-- **メイン画面**: Zedが開発した **GPUI** を採用。WGPUベースのハードウェアアクセラレーションにより、120Hz/240Hzディスプレイでも遅延ゼロの描画を実現。
-- **リッチUI / Webview**: [`gpui-kit/crates/webview`](https://github.com/longbridge/gpui-kit/tree/main/crates/webview) を組み込み、OSネイティブのWebview（`wry`ベース）をGPUIのレイアウトツリー内にオーバーレイ配置。
-  - Jupyter Notebookのセル出力
-  - Markdown / HTMLプレビュー
-  - グラフ・画像のインライン表示
+採用の理由と比較は [ADR 0001](./adr/0001-ui-framework.md)
+に記録しました。要点だけを書きます。
+
+- **メイン画面**: GPUI を使います。macOS は Metal、Windows は Win32 と
+  DirectWrite、Linux は Wayland と X11
+  で動きます。バージョンは固定し、更新は独立した PR で行います。
+- **薄いレンダラ**:
+  文書、ペインの構成、フォーカスはコアが持ちます。カーソル、選択、モード、スクロールはクライアントが持ちます。クライアントは、その状態を描画する層にします。フレームワークの宣言的
+  API は周辺の UI に限定し、エディタ本体は低レベル API で描きます。
+- **リッチコンテンツ / Webview**:
+  [`gpui-kit/crates/webview`](https://github.com/longbridge/gpui-kit/tree/main/crates/webview)
+  を薄いラッパ越しに使います。OS ネイティブの Webview（`wry` ベース）を GPUI
+  のレイアウトツリーに重ねます。
+  - Jupyter Notebook のセル出力
+  - Markdown / HTML プレビュー
+  - 外部サービスの埋め込み（地図、グラフ）
+
+プラグインは固定のサイドバーやパネルを追加できません。ビューを登録し、ペインとして開きます。`ui`
+ビューではウィジェット木を渡し、描画、フォーカス、キー入力をクライアントに任せます。ビューの中の一部は、スロットにデータを渡して差し替えます。GPUI
+の要素を JS から作ることはできません。
+
+Webview は最終手段です。Web の文書そのものを表示するときだけ使い、操作を伴う UI
+には `ui` ビューを使います。Webview
+はキー入力とフォーカスを自分で持ち、キーマップ、モード、IME
+の前編集を共有できないためです。UI の作り方は [`ui.md`](./ui.md)、API の一覧は
+[`api.md`](./api.md) の「ペインとビュー」にあります。
+
+### 3.1 状態の所在
+
+編集の状態は、キー入力のたびに変わるものと、文書に属するものに分けます（[ADR 0003](./adr/0003-editor-state.md)）。
+
+| 状態                                                  | 持つ場所     | 理由                                                         |
+| :---------------------------------------------------- | :----------- | :----------------------------------------------------------- |
+| 本文、version、ファイル                               | コア         | 複数のペインと接続で共有する。ファイルはコアの環境にある     |
+| カーソル、選択、モード、スクロール、折りたたみ        | クライアント | キー入力のたびに変わる。ペインごとに違い、描画にしか使わない |
+| ペインの構成、ペイン間のフォーカス、ウィンドウ        | コア         | 接続とセッションの復元で同じ形にする                         |
+| `ui` ビューのウィジェット木とウィジェットのフォーカス | クライアント | 入力のたびに変わる。描画にしか使わない                       |
+| 診断、構文、Git の状態                                | コア         | 言語サーバーとファイル監視の結果である                       |
+| IME の前編集                                          | クライアント | OS の入力から直接届く。確定してから本文に入る                |
+
+カーソルと選択をコアに置くと、1文字動かすたびに往復が入ります。リモートでは、その往復がそのまま入力の遅延になります。
+
+コアに位置が要る操作（補完、ホバー、LSP、整形）は、呼び出しのたびに位置を渡します。常時は同期しません。
+
+アンドゥの履歴はコアが持ちます（[ADR 0004](./adr/0004-undo-in-core.md)）。言語サーバーの整形や、複数ファイルの置換も同じ履歴に入れるためです。
+
+カーソルと選択はクライアントが持つため、編集を送るときに前後の選択を一緒に渡します。コアは本文の逆編集と選択を1つの項目として積み、アンドゥのときは逆の編集と選択を返します。
+
+編集はクライアントが先に適用し、`base_version`
+を付けてコアへ送ります。コアが受け付けない場合は本文を送り直し、カーソルは再同期の結果に合わせます。このとき、その文書のアンドゥ履歴は捨てます。同じ文書を2つのペインで開いても、カーソル、選択、折りたたみ、スクロールはペインごとに独立です。
+
+---
+
+## 4. ペインとレイアウト
+
+固定のサイドバーやパネルは作らず、画面に出るものはすべてペインとします。ウィンドウ（タブ）がレイアウト木を持ち、ペインはその葉かフローティングです。レイアウトはコアが持ち、クライアントは確定した木を描画します。
+
+モデル、操作の意味論、API、メッセージ、保存の単位は [`panes.md`](./panes.md)
+にまとめました。ペインの中のフォーカスとキー入力は [`ui.md`](./ui.md)
+にまとめました。
+
+---
+
+## 5. URI とリモートのパス
+
+ファイルを指す値は、文字列のパスではなく URI で扱います。
+
+| スキーム | 用途                                                   |
+| :------- | :----------------------------------------------------- |
+| `file:`  | 実在するファイル。リモート接続では接続先のパスを指す   |
+| `vy:`    | 未保存の文書、差分、プレビューなど、実体を持たない文書 |
+
+リモート接続では、`file:` の URI
+をクライアントがそのまま解釈しません。パスの区切りと大文字小文字の扱いが OS
+で違うためです。変換はコアが行い、クライアントは URI
+を不透明な値として扱います。
+
+複数のルートを持つワークスペースに対応するため、`workspace.folders()`
+は配列を返します。設定の `.vy/settings.json`
+は各ルートの直下に置き、ルートごとに解決します。
+
+---
+
+## 6. 依存の境界
+
+```text
+vy-app  --->  vy-proto
+  |             ^
+  v             |
+vy-js  ---> vy-capabilities
+  |
+  v
+vy-proto
+
+vy-server ---> vy-core ---> vy-proto
+                   |
+                   v
+              vy-capabilities
+```
+
+- `vy-app` だけが GPUI に依存します。CI で `cargo tree` を検査し、他のクレートが
+  GPUI を引いたら失敗させます。
+- `vy-core`
+  は描画に依存しません。ヘッドレスのテストと、リモートのサーバーで同じコードを動かすためです。
+- `vy-js` はクライアントとサーバーの両方で使います。どちらも同じ API
+  の束縛を使い、実行する層だけを変えます。
+
+---
+
+## 7. 状態の流れ
+
+1. キー入力はクライアントのキーマップが照合します。
+2. コマンドはクライアントで開始します。UI
+   だけで完結するものは、そのまま反映します。
+3. 文書を変更するコマンドは、コアに編集を要求します。
+4. コアが編集を適用し、version を上げて通知します。
+5. クライアントは通知を受けて表示を確定します。手元で先に描いていた場合は、version
+   が合ったときだけ確定します。
+6. プラグインのイベントは、確定した変更に対して発火します。
+
+この順序により、コアが正であることと、入力時に画面が止まらないことを両立します。
+
+---
+
+## 8. 未決定事項
+
+- クライアントの先読み描画をどこまで許すか。入力のたびに確定を待つと、リモートで遅延が見えます。
+- `vy-server`
+  を1つのプロセスで複数のワークスペースに使うか、ワークスペースごとに分けるか。
+- SSH 接続のときに `vy-server`
+  をどう配備するか。バイナリを転送するか、接続先に導入済みのものを使うか。

@@ -1,61 +1,105 @@
-# 実装ロードマップ & 未決定事項
+# 実装ロードマップと未決定事項
 
-Vy は **「GPUIネイティブGUI最優先」** のアプローチをとるため、ロードマップをGUI中心に再構成しました。
+Vy
+は、クライアントとコアを最初から分けて実装します。ローカル接続でも別プロセスにするため（[ADR 0002](./adr/0002-process-model.md)）、Phase
+1 で RPC
+の骨格を通します。後から分離するのではなく、分離した状態で機能を足します。
 
 ---
 
-## 🗺️ 実装フェーズ
+## 実装フェーズ
 
 ```mermaid
 flowchart TD
-    P1["Phase 1: GPUI 画面描画 & コア編集基盤\n(GPUIウィンドウ, Ropeバッファ, Helix風Selection)"]
-    P2["Phase 2: TypeScript設定 & プラグイン実行基盤\n(QuickJS + Oxc, init.ts 読み込み, キーバインド)"]
-    P3["Phase 3: Webview統合 & リッチコンテンツ\n(gpui-kit/webview, Markdown/Notebookプレビュー)"]
-    P4["Phase 4: Client-Server 分離 & MessagePack RPC\n(Pure Rust rmp-serde, SSH透過リモート接続)"]
-    P5["Phase 5: 言語機能 (LSP & Tree-sitter)\n(エディタ本体でのLSPクライアント実装, ハイライト)"]
+    P1["Phase 1: 2プロセスの骨格と編集の最小経路\n(vy-app / vy-server / vy-proto, stdio RPC, rope, モーダル入力)"]
+    P2["Phase 2: TypeScript設定 & プラグイン実行基盤\n(QuickJS + Oxc, init.ts, keymap, capabilities)"]
+    P3["Phase 3: ペイン・ビュー・Webview\n(レイアウト木, panes/views API, gpui-kit/webview)"]
+    P4["Phase 4: リモート接続\n(SSH起動, 再接続と再同期, 配備)"]
+    P5["Phase 5: 言語機能 (LSP & Tree-sitter)\n(ハイライト, 非同期LSP, 補完)"]
 
     P1 --> P2 --> P3 --> P4 --> P5
 ```
 
-### Phase 1: GPUI 画面描画 & コア編集基盤
-- [ ] GPUI による基本ウィンドウとテキスト描画
-- [ ] `ropey` によるテキストバッファ管理
-- [ ] **Helix方式のモーダル入力エンジン**:
+### Phase 1: 2プロセスの骨格と編集の最小経路
+
+- [ ] `crates/vy-app`、`crates/vy-server`、`crates/vy-proto` の雛形を作る
+- [ ] クライアントが `vy-server`
+      を子プロセスで起動し、標準入出力でフレームを読み書きする
+- [ ] `initialize` と `initialized` のハンドシェイクを実装する
+- [ ] `pane/open` で文書を開き、`buffer/snapshot` で本文を受け取って描画する
+- [ ] `ropey` によるテキストバッファと、`buffer/did_change` の往復
+- [ ] Helix方式のモーダル入力エンジン:
   - `Selection -> Action`（文字・単語選択後に削除・変更）
   - Normal, Insert, Select モードの基本実装
+- [ ] Phase 1 の検証項目:
+  - Wayland、macOS、Windows の3つで起動する
+  - 日本語 IME の前編集が、カーソル位置に正しく出る
+  - 20万行のファイルを開き、スクロールと入力が引っかからない
+  - `vy-server` を終了したとき、クライアントが落ちずに通知を出す
+  - ローカル接続の往復が、入力の遅延として感じられない
 
 ### Phase 2: TypeScript設定 & プラグイン実行基盤
-- [ ] `rquickjs` + `oxc_transform` をフロントエンドに統合
-- [ ] `~/.config/vy/init.ts` の読み込みと反映
-- [ ] TypeScript型定義（`vy-api.d.ts`）の整備
-- [ ] キーバインド登録 API (`keymap.bind(...)`)
 
-### Phase 3: Webview統合 & リッチコンテンツ
+- [ ] `rquickjs` をクライアントに統合し、Promise を進めるジョブキューを回す
+- [ ] `~/.config/vy/init.ts` と `settings.json` の読み込みと反映
+- [ ] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
+- [ ] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
+- [ ] ケイパビリティの宣言と承認の記録（`trusted.json`）
+- [ ] 設定の4層の解決（既定値、ユーザー、プロジェクト、`init.ts`）
+
+### Phase 3: ペイン・ビュー・Webview
+
+- [ ] レイアウト木（分割、比率、フォーカス、フローティング）と `panes.*` の API
+- [ ] `views.register` と7種類のビュー（`ui` を含む）
+- [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
 - [ ] `gpui-kit/crates/webview` の組み込み
-- [ ] エディタ横のWebviewペイン分割表示（Markdownプレビュー等）
+- [ ] Webview を Web 文書の表示に限って開く（Markdown プレビュー等）
 - [ ] Jupyter Notebook形式のセル描画・Webview出力
+- [ ] スロット（ステータスライン、ピッカー、ホバー、ガター）
 
-### Phase 4: Client-Server 分離 & MessagePack RPC
-- [ ] `crates/vy-server` (ヘッドレスコア) の切り出し
-- [ ] `rmp-serde` によるバイナリRPC通信の実装
-- [ ] SSH経由でのリモートサーバー起動と透過プロキシAPI (`editor.remote.*`)
+### Phase 4: リモート接続
+
+- [ ] SSH 経由で `vy-server` を起動する
+- [ ] バイナリの配備方法を決めて実装する
+- [ ] 再接続と再同期（`resume_session`、`layout/get`、version の突き合わせ）
+- [ ] 遅延の計測と、先読み描画の範囲の調整
 
 ### Phase 5: 言語機能 (LSP & Tree-sitter)
+
 - [ ] `tree-sitter` によるシンタックスハイライト
 - [ ] エディタ本体での非同期LSPクライアント基盤（プロセス管理・ドキュメント同期）
 - [ ] 補完プロバイダー（`registerCompletionProvider`）とローカルファジー絞り込み
 
 ---
 
-## ❓ これから決めること (未決定事項リスト)
+## 決定済み
 
-開発を進める中で、段階的に検討・決定していく項目です。
+先に決めた項目です。詳細は各ドキュメントにあります。
 
-### 1. 多言語サポートとTree-sitterパーサーの管理
-- 主要言語（Rust, TS, Python, Go, C/C++等）のパーサーを最初からバイナリに組み込むか、必要に応じて動的ロード（ダウンロード）するか。
+| 決定                   | 内容                                                                             | 記録                                                                             |
+| :--------------------- | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
+| UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                              | [ADR 0001](./adr/0001-ui-framework.md)                                           |
+| プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ | [ADR 0002](./adr/0002-process-model.md)                                          |
+| 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                               | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md) |
+| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                       | [`panes.md`](./panes.md)                                                         |
+| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                             | [`plugin-system.md`](./plugin-system.md)                                         |
+| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                 | [`plugin-system.md`](./plugin-system.md)                                         |
+| API の形               | 名前空間の import と async ファースト                                            | [`api.md`](./api.md)                                                             |
+| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                           | [`layout.md`](./layout.md)                                                       |
+| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                       | [`protocol.md`](./protocol.md)                                                   |
+| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る            | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
 
-### 2. WebviewとGPUIの間のメッセージパッシング仕様
-- プラグインがWebview（JavaScript）を開いた際、フロントエンドのQuickJSとWebview内のブラウザJSをどのように通信させるか（VS Codeの `webview.postMessage` スタイルの設計）。
+## 残っている論点
 
-### 3. プラグインの配布・パッケージマネージャ
-- プラグインのバージョン管理、GitHubからのインストール機構（`vy plugin install <repo>`）。
+1. **多言語サポートとTree-sitterパーサーの管理**
+   - 主要言語のパーサーを最初からバイナリに組み込むか、必要に応じて取得するか。クエリの上書きをどこまで許すかも未定です。
+2. **補完プロバイダの実行場所**
+   - 入力の遅延を抑えるならクライアント、言語サーバーに近い方がよければリモートです。
+3. **プラグインの配布**
+   - レジストリを作るか、Git のリポジトリ指定だけで済ませるか。Phase 5
+     以降に決めます。
+4. **先読み描画の範囲**
+   - リモート接続で入力の遅延を隠すため、クライアントがどこまで先に描くか。
+5. **`vy-server` の多重化と配備**
+   - 1プロセスで複数のワークスペースを持つか。SSH
+     接続でバイナリをどう用意するか。
