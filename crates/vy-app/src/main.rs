@@ -5,7 +5,7 @@
 //! one pane. The modal input in `vy_app::editor` handles keys and sends
 //! `buffer/did_change` to the core. The layout tree lands in Phase 3.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -19,7 +19,8 @@ use rmpv::Value;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use vy_app::commands::{
-    BuiltinCommand, CommandArgs, CommandRegistry, PaneCommand, UiCommand, display_title,
+    BuiltinCommand, CommandDescriptor, CommandRegistry, Invocation, InvocationArgs, PaneCommand,
+    UiCommand,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::{Action, Editor, Key, Mode, Transaction, ViewState};
@@ -104,13 +105,6 @@ impl PaneState {
     }
 }
 
-/// One row of the command palette.
-struct PaletteItem {
-    id: String,
-    title: String,
-    source: &'static str,
-}
-
 #[derive(Debug, Default)]
 struct PaletteState {
     query: String,
@@ -144,6 +138,10 @@ struct EditorView {
     fallback: DocumentState,
     /// Open command palette, if any.
     palette: Option<PaletteState>,
+    /// Commands waiting to run. Only one command runs at a time.
+    command_queue: VecDeque<Invocation>,
+    /// The script command that is currently running, if any.
+    running_command: Option<String>,
     focus_handle: FocusHandle,
     status: SharedString,
     frame_log: bool,
@@ -204,6 +202,8 @@ impl EditorView {
             documents: HashMap::new(),
             fallback,
             palette: None,
+            command_queue: VecDeque::new(),
+            running_command: None,
             focus_handle: cx.focus_handle(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -434,6 +434,8 @@ impl EditorView {
     /// Starts a fresh runtime and evaluates `init.ts`. Registrations from the
     /// previous runtime are dropped first.
     fn reload_init(&mut self, cx: &mut Context<Self>) {
+        self.command_queue.clear();
+        self.running_command = None;
         self.commands
             .unregister_owner(&vy_app::commands::Owner::Init);
         self.keymap.unbind_owner(&vy_app::commands::Owner::Init);
@@ -477,14 +479,25 @@ impl EditorView {
                 if self.frame_log {
                     eprintln!("vy: command {id} finished");
                 }
+                if self.running_command.as_deref() == Some(id.as_str()) {
+                    self.running_command = None;
+                    self.drain_command_queue();
+                }
             }
             ScriptEvent::Error { message } => {
                 // The log file already has the message; the status line is the
                 // shortest path to the user.
                 eprintln!("vy: init.ts: {message}");
                 self.status = format!("init.ts: {message}").into();
+                // A failed command will not send CommandFinished. Do not leave the
+                // queue blocked.
+                if self.running_command.take().is_some() {
+                    self.drain_command_queue();
+                }
             }
             ScriptEvent::Stopped => {
+                self.running_command = None;
+                self.command_queue.clear();
                 self.status = "the script host stopped".into();
             }
         }
@@ -946,7 +959,9 @@ impl EditorView {
         };
 
         match self.keymap.feed(key, &context) {
-            KeymapOutcome::Command { id, args } => self.execute_command(&id, args),
+            KeymapOutcome::Command { id, args } => {
+                self.enqueue_command(Invocation::keymap(id, args));
+            }
             KeymapOutcome::Pending | KeymapOutcome::Ignored => {}
         }
 
@@ -1123,43 +1138,12 @@ impl EditorView {
         );
     }
 
-    fn palette_items(&self) -> Vec<PaletteItem> {
-        let mut items = Vec::new();
-
-        for command in BuiltinCommand::all() {
-            items.push(PaletteItem {
-                id: command.id().to_string(),
-                title: display_title(command.id()),
-                source: "built-in",
-            });
-        }
-        for command in PaneCommand::all() {
-            items.push(PaletteItem {
-                id: command.id().to_string(),
-                title: display_title(command.id()),
-                source: "pane",
-            });
-        }
-        for command in UiCommand::all() {
-            if *command == UiCommand::CommandPalette {
-                // The palette is already open; listing it again is noise.
-                continue;
-            }
-            items.push(PaletteItem {
-                id: command.id().to_string(),
-                title: command.title().to_string(),
-                source: "ui",
-            });
-        }
-        for id in self.commands.script_commands() {
-            items.push(PaletteItem {
-                title: display_title(&id),
-                id,
-                source: "script",
-            });
-        }
-
-        items
+    fn palette_items(&self) -> Vec<CommandDescriptor> {
+        self.commands
+            .descriptors()
+            .into_iter()
+            .filter(|command| !command.hidden)
+            .collect()
     }
 
     fn palette_filtered_len(&self) -> usize {
@@ -1194,7 +1178,7 @@ impl EditorView {
                     return true;
                 };
                 self.palette = None;
-                self.execute_command(&id, CommandArgs::default());
+                self.enqueue_command(Invocation::palette(id));
                 return true;
             }
             _ => {}
@@ -1225,18 +1209,37 @@ impl EditorView {
         true
     }
 
-    /// Executes any command, regardless of whether the keymap, the palette, or a
-    /// script asked for it.
-    fn execute_command(&mut self, id: &str, args: CommandArgs) {
-        if let Some(command) = UiCommand::parse(id) {
+    /// Queues a command and starts it when the previous command is done.
+    fn enqueue_command(&mut self, invocation: Invocation) {
+        self.command_queue.push_back(invocation);
+        self.drain_command_queue();
+    }
+
+    fn drain_command_queue(&mut self) {
+        while self.running_command.is_none() {
+            let Some(invocation) = self.command_queue.pop_front() else {
+                break;
+            };
+            if self.execute_invocation(invocation) {
+                break;
+            }
+        }
+    }
+
+    /// Runs one command. Returns true when it continues on the script thread.
+    fn execute_invocation(&mut self, invocation: Invocation) -> bool {
+        let id = invocation.id.clone();
+
+        if let Some(command) = UiCommand::parse(&id) {
             self.run_ui_command(command);
-            return;
+            return false;
         }
-        if let Some(command) = PaneCommand::parse(id) {
+        if let Some(command) = PaneCommand::parse(&id) {
             self.run_pane_command(command);
-            return;
+            return false;
         }
-        if let Some(command) = BuiltinCommand::parse(id) {
+        if let Some(command) = BuiltinCommand::parse(&id) {
+            let args = invocation.keymap_args();
             self.activate_active_view();
             let action = self.editor_mut().execute(command, args);
             self.store_active_view();
@@ -1248,27 +1251,32 @@ impl EditorView {
                 Action::Redo => self.send_history("buffer/redo", Pending::Redo),
             }
             self.ensure_cursor_visible();
-            return;
+            return false;
         }
-        if self.commands.is_registered(id) {
+        if self.commands.is_registered(&id) {
             // Script commands run on the script thread. Any edits they make come
             // back as host requests.
             if let Some(plugin) = self.plugin.as_ref() {
-                plugin.execute(
-                    id.to_string(),
-                    serde_json::json!({
+                let args = match &invocation.args {
+                    InvocationArgs::Script(value) => value.clone(),
+                    InvocationArgs::Keymap(args) => serde_json::json!({
                         "count": args.count,
                         "register": args.register.map(|register| register.to_string()),
                     }),
-                );
+                    InvocationArgs::Ex { raw } => serde_json::json!({ "raw": raw }),
+                    InvocationArgs::None => serde_json::json!({}),
+                };
+                self.running_command = Some(id.clone());
+                plugin.execute(id.clone(), args);
                 self.status = format!("running {id}").into();
             } else {
                 self.status = format!("{id}: the script host is not running").into();
             }
-            return;
+            return false;
         }
 
         self.status = format!("unknown command: {id}").into();
+        false
     }
 
     fn run_ui_command(&mut self, command: UiCommand) {
@@ -1907,7 +1915,12 @@ impl EditorView {
                             .child(item.id.clone()),
                     ),
                 )
-                .child(div().text_xs().text_color(rgb(0x8a8a8a)).child(item.source)),
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(0x8a8a8a))
+                        .child(item.source.label().to_string()),
+                ),
             );
         }
 
@@ -2149,7 +2162,7 @@ fn scroll_lines(top: usize, lines: isize, rows: usize, total: usize) -> usize {
 }
 
 /// Indices of palette rows matching every whitespace-separated word.
-fn filtered_palette_indices(items: &[PaletteItem], query: &str) -> Vec<usize> {
+fn filtered_palette_indices(items: &[CommandDescriptor], query: &str) -> Vec<usize> {
     let tokens: Vec<String> = query
         .split_whitespace()
         .map(|token| token.to_lowercase())
@@ -2520,11 +2533,16 @@ mod tests {
         assert_eq!(decode_value::<LayoutNode>(&value).expect("decode"), layout);
     }
 
-    fn palette_item(id: &str, title: &str) -> PaletteItem {
-        PaletteItem {
+    fn palette_item(id: &str, title: &str) -> CommandDescriptor {
+        CommandDescriptor {
             id: id.to_string(),
             title: title.to_string(),
-            source: "test",
+            source: vy_app::commands::CommandSource::Builtin,
+            aliases: Vec::new(),
+            hidden: false,
+            accepts_args: false,
+            accepts_range: false,
+            accepts_bang: false,
         }
     }
 

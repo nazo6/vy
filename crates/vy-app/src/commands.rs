@@ -5,6 +5,9 @@
 
 use std::collections::HashMap;
 
+use serde_json::Value as JsonValue;
+use vy_core::Range;
+
 /// Who registered a command. Registrations from `init.ts` are dropped on reload.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Owner {
@@ -20,6 +23,147 @@ pub struct CommandArgs {
     pub count: Option<u32>,
     /// Register chosen with `"`, as a lowercase letter.
     pub register: Option<char>,
+}
+
+/// Where a command came from. The palette shows this next to the title.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandSource {
+    Builtin,
+    Pane,
+    Ui,
+    Init,
+    Plugin(String),
+}
+
+impl CommandSource {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Builtin => "built-in",
+            Self::Pane => "pane",
+            Self::Ui => "ui",
+            Self::Init => "script",
+            Self::Plugin(_) => "plugin",
+        }
+    }
+}
+
+impl From<&Owner> for CommandSource {
+    fn from(owner: &Owner) -> Self {
+        match owner {
+            Owner::Builtin => Self::Builtin,
+            Owner::Init => Self::Init,
+            Owner::Plugin(id) => Self::Plugin(id.clone()),
+        }
+    }
+}
+
+/// Everything the palette and the Ex command line need to know about a command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandDescriptor {
+    pub id: String,
+    pub title: String,
+    pub source: CommandSource,
+    pub aliases: Vec<String>,
+    pub hidden: bool,
+    pub accepts_args: bool,
+    pub accepts_range: bool,
+    pub accepts_bang: bool,
+}
+
+impl CommandDescriptor {
+    fn new(id: impl Into<String>, title: impl Into<String>, source: CommandSource) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            source,
+            aliases: Vec::new(),
+            hidden: false,
+            accepts_args: false,
+            accepts_range: false,
+            accepts_bang: false,
+        }
+    }
+}
+
+/// Where an invocation came from. The execution path is the same for all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InvocationSource {
+    #[default]
+    Keymap,
+    Palette,
+    Ex,
+    Script,
+}
+
+/// Arguments in the shape each entry point can provide.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum InvocationArgs {
+    #[default]
+    None,
+    Keymap(CommandArgs),
+    Script(JsonValue),
+    Ex {
+        raw: String,
+    },
+}
+
+/// One command call, before it reaches the registry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Invocation {
+    pub id: String,
+    pub args: InvocationArgs,
+    pub range: Option<Range>,
+    pub bang: bool,
+    pub source: InvocationSource,
+}
+
+impl Invocation {
+    pub fn keymap(id: impl Into<String>, args: CommandArgs) -> Self {
+        Self {
+            id: id.into(),
+            args: InvocationArgs::Keymap(args),
+            range: None,
+            bang: false,
+            source: InvocationSource::Keymap,
+        }
+    }
+
+    pub fn palette(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            args: InvocationArgs::None,
+            range: None,
+            bang: false,
+            source: InvocationSource::Palette,
+        }
+    }
+
+    pub fn ex(id: impl Into<String>, raw: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            args: InvocationArgs::Ex { raw: raw.into() },
+            range: None,
+            bang: false,
+            source: InvocationSource::Ex,
+        }
+    }
+
+    pub fn script(id: impl Into<String>, args: JsonValue) -> Self {
+        Self {
+            id: id.into(),
+            args: InvocationArgs::Script(args),
+            range: None,
+            bang: false,
+            source: InvocationSource::Script,
+        }
+    }
+
+    pub fn keymap_args(&self) -> CommandArgs {
+        match self.args {
+            InvocationArgs::Keymap(args) => args,
+            _ => CommandArgs::default(),
+        }
+    }
 }
 
 /// A command handled by the client UI instead of the editor.
@@ -384,6 +528,45 @@ impl CommandRegistry {
         ids.sort();
         ids
     }
+
+    /// Builds the command list used by the palette and the Ex resolver.
+    pub fn descriptors(&self) -> Vec<CommandDescriptor> {
+        let mut descriptors = Vec::new();
+
+        for command in BuiltinCommand::all() {
+            descriptors.push(CommandDescriptor::new(
+                command.id(),
+                display_title(command.id()),
+                CommandSource::Builtin,
+            ));
+        }
+        for command in PaneCommand::all() {
+            descriptors.push(CommandDescriptor::new(
+                command.id(),
+                display_title(command.id()),
+                CommandSource::Pane,
+            ));
+        }
+        for command in UiCommand::all() {
+            let mut descriptor =
+                CommandDescriptor::new(command.id(), command.title(), CommandSource::Ui);
+            descriptor.hidden = *command == UiCommand::CommandPalette;
+            descriptors.push(descriptor);
+        }
+        for id in self.script_commands() {
+            let source = self
+                .owner_of(&id)
+                .map(CommandSource::from)
+                .unwrap_or(CommandSource::Init);
+            descriptors.push(CommandDescriptor::new(
+                id.clone(),
+                display_title(&id),
+                source,
+            ));
+        }
+
+        descriptors
+    }
 }
 
 #[cfg(test)]
@@ -411,6 +594,51 @@ mod tests {
             display_title("user.uppercase-document"),
             "User Uppercase-document"
         );
+    }
+
+    #[test]
+    fn builds_a_catalog_with_every_command_source() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register("user.hello", Owner::Init)
+            .expect("register");
+
+        let descriptors = registry.descriptors();
+        assert!(
+            descriptors
+                .iter()
+                .any(|command| command.id == "vy.motion.left"
+                    && command.source == CommandSource::Builtin)
+        );
+        assert!(
+            descriptors
+                .iter()
+                .any(|command| command.id == "vy.pane.split_right"
+                    && command.source == CommandSource::Pane)
+        );
+        assert!(descriptors.iter().any(|command| {
+            command.id == "vy.ui.command_palette"
+                && command.source == CommandSource::Ui
+                && command.hidden
+        }));
+        assert!(descriptors.iter().any(|command| {
+            command.id == "user.hello" && command.source == CommandSource::Init
+        }));
+    }
+
+    #[test]
+    fn invocations_keep_their_source_and_arguments() {
+        let args = CommandArgs {
+            count: Some(3),
+            register: Some('a'),
+        };
+        let invocation = Invocation::keymap("vy.motion.down", args);
+        assert_eq!(invocation.source, InvocationSource::Keymap);
+        assert_eq!(invocation.keymap_args(), args);
+
+        let invocation = Invocation::ex("vy.pane.close", "");
+        assert_eq!(invocation.source, InvocationSource::Ex);
+        assert_eq!(invocation.args, InvocationArgs::Ex { raw: String::new() });
     }
 
     #[test]
