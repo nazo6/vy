@@ -1,23 +1,26 @@
 //! Statusline rendering using GPUI.
 
-use gpui::{Div, div, prelude::*, px, rgb};
+use gpui::{Div, div, prelude::*, px};
 use vy_app::editor::{Mode, ViewState};
 use vy_app::statusline::{Statusline, StatuslineAlignment};
 
+use crate::theme::Theme;
+
 /// Maps a semantic color token or hex string to a GPUI RGBA color.
-pub fn color_for_token(token: Option<&str>) -> gpui::Rgba {
+pub fn color_for_token(theme: &Theme, token: Option<&str>) -> gpui::Rgba {
     match token {
-        Some("primary" | "info") => rgb(0x007acc),
-        Some("success") => rgb(0x4ec9b0),
-        Some("warning") => rgb(0xce9178),
-        Some("danger" | "error") => rgb(0xf44747),
-        Some("secondary" | "muted") => rgb(0x8a8a8a),
-        _ => rgb(0xd4d4d4),
+        Some("primary" | "info") => theme.statusline.info,
+        Some("success") => theme.statusline.success,
+        Some("warning") => theme.statusline.warning,
+        Some("danger" | "error") => theme.statusline.error,
+        Some("secondary" | "muted") => theme.foreground.muted,
+        _ => theme.foreground.default,
     }
 }
 
 /// Renders the bottom statusline bar.
 pub fn render_statusline(
+    theme: &Theme,
     statusline: &Statusline,
     active_view: Option<ViewState>,
     document_uri: Option<&str>,
@@ -36,9 +39,9 @@ pub fn render_statusline(
         };
 
         let mode_bg = match active_view.mode() {
-            Mode::Normal => rgb(0x007acc),
-            Mode::Insert => rgb(0x008000),
-            Mode::Select => rgb(0xaf00db),
+            Mode::Normal => theme.statusline.normal,
+            Mode::Insert => theme.statusline.insert,
+            Mode::Select => theme.statusline.select,
         };
 
         let uri = document_uri
@@ -53,14 +56,18 @@ pub fn render_statusline(
                 div()
                     .px_1()
                     .bg(mode_bg)
-                    .text_color(rgb(0xffffff))
+                    .text_color(theme.statusline.foreground)
                     .child(mode_label),
             )
-            .child(div().text_color(rgb(0xcccccc)).child(uri.to_string()))
+            .child(
+                div()
+                    .text_color(theme.statusline.uri)
+                    .child(uri.to_string()),
+            )
             .children(if !status_message.is_empty() {
                 Some(
                     div()
-                        .text_color(rgb(0x9cdcfe))
+                        .text_color(theme.statusline.position)
                         .child(format!(" | {status_message}")),
                 )
             } else {
@@ -81,7 +88,7 @@ pub fn render_statusline(
             .flex()
             .items_center()
             .gap_3()
-            .text_color(rgb(0x9a9a9a))
+            .text_color(theme.statusline.message)
             .child(format!("{}:{}", cursor.line + 1, cursor.character + 1))
             .child(progress);
 
@@ -91,7 +98,7 @@ pub fn render_statusline(
             .items_center()
             .h(px(height))
             .px_2()
-            .bg(rgb(0x181818))
+            .bg(theme.statusline.background)
             .text_xs()
             .child(left)
             .child(right)
@@ -101,7 +108,7 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(item.color.as_deref()))
+                    .text_color(color_for_token(theme, item.color.as_deref()))
                     .child(item.text.clone())
             })
             .collect();
@@ -111,7 +118,7 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(item.color.as_deref()))
+                    .text_color(color_for_token(theme, item.color.as_deref()))
                     .child(item.text.clone())
             })
             .collect();
@@ -121,7 +128,7 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(item.color.as_deref()))
+                    .text_color(color_for_token(theme, item.color.as_deref()))
                     .child(item.text.clone())
             })
             .collect();
@@ -132,7 +139,7 @@ pub fn render_statusline(
             .items_center()
             .h(px(height))
             .px_2()
-            .bg(rgb(0x181818))
+            .bg(theme.statusline.background)
             .text_xs()
             .child(div().flex().items_center().gap_2().children(left_items))
             .child(div().flex().items_center().gap_2().children(center_items))

@@ -1,15 +1,17 @@
 //! Command palette UI rendering.
 
-use gpui::{Div, div, prelude::*, px, rgb};
+use gpui::{Div, div, prelude::*, px};
 use vy_app::commands::CommandDescriptor;
 use vy_app::palette::{
     PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteState, filtered_palette_indices,
 };
 
 use super::ex::input_caret;
+use crate::theme::Theme;
 
 /// Renders the floating modal command palette.
 pub fn render_palette(
+    theme: &Theme,
     palette: Option<&PaletteState>,
     items: &[CommandDescriptor],
     font_size: f32,
@@ -39,7 +41,7 @@ pub fn render_palette(
         .px_2()
         .py_1()
         .border_b_1()
-        .border_color(rgb(0x3c3c3c))
+        .border_color(theme.border.subtle)
         .child(
             div()
                 .flex()
@@ -47,13 +49,13 @@ pub fn render_palette(
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .child(format!("> {}", palette.query))
-                .child(input_caret(font_size, caret_width)),
+                .child(input_caret(theme, font_size, caret_width)),
         )
         .child(
             div()
                 .flex_shrink_0()
                 .text_xs()
-                .text_color(rgb(0x8a8a8a))
+                .text_color(theme.foreground.muted)
                 .child(format!("{} commands", filtered.len())),
         );
 
@@ -69,9 +71,10 @@ pub fn render_palette(
             .w_full()
             .overflow_hidden();
         let row = if index == selected {
-            row.bg(rgb(0x094771))
+            row.bg(theme.list.active_background)
+                .text_color(theme.list.active_foreground)
         } else {
-            row
+            row.text_color(theme.foreground.default)
         };
         rows.push(
             row.child(
@@ -84,7 +87,7 @@ pub fn render_palette(
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(0x8a8a8a))
+                            .text_color(theme.foreground.muted)
                             .child(item.id.clone()),
                     ),
             )
@@ -92,7 +95,7 @@ pub fn render_palette(
                 div()
                     .flex_shrink_0()
                     .text_xs()
-                    .text_color(rgb(0x8a8a8a))
+                    .text_color(theme.foreground.muted)
                     .child(item.source.label().to_string()),
             ),
         );
@@ -103,7 +106,7 @@ pub fn render_palette(
             div()
                 .px_2()
                 .py_1()
-                .text_color(rgb(0x8a8a8a))
+                .text_color(theme.foreground.muted)
                 .child("no matching commands"),
         );
     }
@@ -112,7 +115,7 @@ pub fn render_palette(
         .px_2()
         .pt_1()
         .text_xs()
-        .text_color(rgb(0x8a8a8a))
+        .text_color(theme.foreground.muted)
         .whitespace_nowrap()
         .child("Enter run  ·  Esc close  ·  Up/Down move");
 
@@ -130,9 +133,9 @@ pub fn render_palette(
                 .max_w(px(PALETTE_MAX_WIDTH))
                 .max_h(px(PALETTE_MAX_HEIGHT))
                 .overflow_hidden()
-                .bg(rgb(0x252526))
+                .bg(theme.background.overlay)
                 .border_1()
-                .border_color(rgb(0x3c3c3c))
+                .border_color(theme.border.subtle)
                 .flex()
                 .flex_col()
                 .child(query)

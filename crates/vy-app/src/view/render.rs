@@ -4,13 +4,14 @@ use std::time::Instant;
 
 use gpui::{
     Context, DefiniteLength, Div, ElementInputHandler, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Window, canvas, div, px, rgb,
+    ParentElement, Render, Styled, Window, canvas, div, px,
 };
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::text_layout::{clamp_scroll_top, scroll_to_show};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
 use super::EditorView;
+use crate::theme::{ActiveTheme, Theme};
 use crate::ui;
 
 /// Height of the global statusline.
@@ -22,11 +23,12 @@ impl EditorView {
     /// Collects the lines visible in one pane.
     pub(super) fn visible_lines(
         &self,
+        theme: &Theme,
         pane: &PaneState,
         document: &DocumentState,
         window: &mut Window,
     ) -> Vec<Div> {
-        ui::pane::visible_lines(&self.config, pane, document, window)
+        ui::pane::visible_lines(&self.config, theme, pane, document, window)
     }
 
     /// Height of one text row from the settings.
@@ -103,6 +105,8 @@ impl Render for EditorView {
         }
         self.clamp_scroll();
 
+        let theme = cx.theme().clone();
+
         let content = match self.layout.clone() {
             Some(layout) => self.render_node(&layout, cx, window),
             None => div()
@@ -110,7 +114,7 @@ impl Render for EditorView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_color(rgb(0x6a6a6a))
+                .text_color(theme.foreground.subtle)
                 .child("waiting for vy-server"),
         };
 
@@ -122,8 +126,8 @@ impl Render for EditorView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xd4d4d4))
+            .bg(theme.editor.background)
+            .text_color(theme.editor.text)
             .font_family(self.config.font_family())
             .text_size(px(self.config.font_size()))
             .child(
@@ -132,10 +136,10 @@ impl Render for EditorView {
                     .flex_1()
                     .overflow_hidden()
                     .child(content)
-                    .children(self.palette.as_ref().map(|_| self.render_palette())),
+                    .children(self.palette.as_ref().map(|_| self.render_palette(&theme))),
             )
-            .child(self.render_statusline())
-            .children(self.ex.as_ref().map(|_| self.render_ex()));
+            .child(self.render_statusline(&theme))
+            .children(self.ex.as_ref().map(|_| self.render_ex(&theme)));
 
         self.log_frame(started);
         element
@@ -183,8 +187,9 @@ impl EditorView {
         }
     }
 
-    fn render_statusline(&self) -> Div {
+    fn render_statusline(&self, theme: &Theme) -> Div {
         ui::statusline::render_statusline(
+            theme,
             &self.statusline,
             self.active_view(),
             self.active_document().map(|d| d.uri.as_str()),
@@ -196,12 +201,18 @@ impl EditorView {
         )
     }
 
-    fn render_ex(&self) -> Div {
-        ui::ex::render_ex(self.ex.as_ref(), self.config.font_size(), CARET_WIDTH)
+    fn render_ex(&self, theme: &Theme) -> Div {
+        ui::ex::render_ex(
+            theme,
+            self.ex.as_ref(),
+            self.config.font_size(),
+            CARET_WIDTH,
+        )
     }
 
-    fn render_palette(&self) -> Div {
+    fn render_palette(&self, theme: &Theme) -> Div {
         ui::palette::render_palette(
+            theme,
             self.palette.as_ref(),
             &self.palette_items(),
             self.config.font_size(),
@@ -210,6 +221,7 @@ impl EditorView {
     }
 
     fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, window: &mut Window) -> Div {
+        let theme = cx.theme().clone();
         let pane = self.panes.get(&pane_id);
         let document = pane
             .and_then(|pane| pane.document_id)
@@ -217,7 +229,7 @@ impl EditorView {
         let active = self.active_pane == Some(pane_id);
 
         let lines = match (pane, document) {
-            (Some(pane), Some(document)) => self.visible_lines(pane, document, window),
+            (Some(pane), Some(document)) => self.visible_lines(&theme, pane, document, window),
             _ => Vec::new(),
         };
 
@@ -261,11 +273,11 @@ impl EditorView {
         }
 
         let border = if active && self.panes.len() > 1 {
-            rgb(0x2b5e8c)
+            theme.background.split_active
         } else if self.panes.len() > 1 {
-            rgb(0x2d2d2d)
+            theme.background.split_inactive
         } else {
-            rgb(0x1e1e1e)
+            theme.editor.background
         };
 
         div()

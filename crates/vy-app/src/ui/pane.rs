@@ -2,12 +2,13 @@
 
 use gpui::{
     Div, HighlightStyle, Pixels, SharedString, StyledText, TextRun, Window, div, prelude::*, px,
-    rgb,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::text_layout::{selection_on_line, utf16_to_byte};
+
+use crate::theme::Theme;
 
 /// Width of one character at default font size. Used to scale the gutter.
 pub const CHARACTER_WIDTH: f32 = 10.0;
@@ -15,9 +16,9 @@ pub const CHARACTER_WIDTH: f32 = 10.0;
 pub const CARET_WIDTH: f32 = 2.0;
 
 /// The background style used for the selection and for active IME composition text.
-pub fn cursor_highlight() -> HighlightStyle {
+pub fn cursor_highlight(theme: &Theme) -> HighlightStyle {
     HighlightStyle {
-        background_color: Some(rgb(0x264f78).into()),
+        background_color: Some(theme.editor.selection.into()),
         ..Default::default()
     }
 }
@@ -66,7 +67,13 @@ pub fn insert_marker(
 }
 
 /// Measures the pixel width from the start of a shaped line up to byte offset `index`.
-pub fn text_width(config: &Config, text: &str, index: usize, window: &mut Window) -> Pixels {
+pub fn text_width(
+    config: &Config,
+    theme: &Theme,
+    text: &str,
+    index: usize,
+    window: &mut Window,
+) -> Pixels {
     if index == 0 {
         return px(0.);
     }
@@ -74,7 +81,7 @@ pub fn text_width(config: &Config, text: &str, index: usize, window: &mut Window
     let run = TextRun {
         len: text.len(),
         font: gpui::font(config.font_family()),
-        color: rgb(0xd4d4d4).into(),
+        color: theme.editor.text.into(),
         background_color: None,
         underline: None,
         strikethrough: None,
@@ -119,6 +126,7 @@ pub fn cursor_marker(pane: &PaneState, text: &str) -> (String, std::ops::Range<u
 /// Renders a single row of text in an editor pane.
 pub fn render_line(
     config: &Config,
+    theme: &Theme,
     pane: &PaneState,
     document: &DocumentState,
     line_number: usize,
@@ -136,7 +144,7 @@ pub fn render_line(
             div()
                 .w(px(gutter_width(config, document.editor.line_count())))
                 .flex_shrink_0()
-                .text_color(rgb(0x5a5a5a))
+                .text_color(theme.editor.gutter)
                 .child(format!(
                     "{label:>width$} ",
                     width = line_number_width(document.editor.line_count())
@@ -153,12 +161,12 @@ pub fn render_line(
 
     if pane.view.mode() == Mode::Insert {
         let (display, caret, preedit) = insert_marker(pane, &text);
-        let width = text_width(config, &display, caret, window);
+        let width = text_width(config, theme, &display, caret, window);
         let gutter = gutter_width(config, document.editor.line_count());
 
         let mut line = StyledText::new(display);
         if let Some(range) = preedit {
-            line = line.with_highlights(vec![(range, cursor_highlight())]);
+            line = line.with_highlights(vec![(range, cursor_highlight(theme))]);
         }
 
         return row.child(line).child(
@@ -168,17 +176,18 @@ pub fn render_line(
                 .left(px(gutter + f32::from(width)))
                 .w(px(CARET_WIDTH))
                 .h(px(line_height(config)))
-                .bg(rgb(0xd4d4d4)),
+                .bg(theme.editor.caret),
         );
     }
 
     let (display, highlight) = cursor_marker(pane, &text);
-    row.child(StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight())]))
+    row.child(StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight(theme))]))
 }
 
 /// Collects all visible lines in one pane.
 pub fn visible_lines(
     config: &Config,
+    theme: &Theme,
     pane: &PaneState,
     document: &DocumentState,
     window: &mut Window,
@@ -187,6 +196,6 @@ pub fn visible_lines(
     let end = (start + pane.viewport_rows.max(1)).min(document.editor.line_count());
 
     (start..end)
-        .map(|line| render_line(config, pane, document, line, window))
+        .map(|line| render_line(config, theme, pane, document, line, window))
         .collect()
 }

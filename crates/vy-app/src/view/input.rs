@@ -2,12 +2,13 @@
 
 use gpui::{
     App, Bounds, Context, EntityInputHandler, FocusHandle, Focusable, Pixels, SharedString,
-    TextRun, UTF16Selection, Window, point, px, rgb, size,
+    TextRun, UTF16Selection, Window, point, px, size,
 };
 use vy_app::editor::{Action, Mode};
 use vy_app::text_layout::utf16_to_byte;
 
 use super::EditorView;
+use crate::theme::ActiveTheme;
 
 impl EditorView {
     /// Length of the preedit text in UTF-16 code units.
@@ -229,7 +230,7 @@ impl EntityInputHandler for EditorView {
         range_utf16: std::ops::Range<usize>,
         element_bounds: Bounds<Pixels>,
         window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         if self.palette.is_some() {
             return None;
@@ -246,7 +247,7 @@ impl EntityInputHandler for EditorView {
             let run = TextRun {
                 len: prefix.len(),
                 font: gpui::font(self.config.font_family()),
-                color: rgb(0xd4d4d4).into(),
+                color: cx.theme().editor.text.into(),
                 background_color: None,
                 underline: None,
                 strikethrough: None,
