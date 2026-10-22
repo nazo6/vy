@@ -32,11 +32,14 @@ flowchart TD
   - `Selection -> Action`（文字・単語選択後に削除・変更）
   - Normal, Insert, Select モードの基本実装
 - [ ] Phase 1 の検証項目:
-  - Wayland、macOS、Windows の3つで起動する
+  - Linux (Wayland) と macOS で起動する。Windows は Phase 1 の対象外とする
   - 日本語 IME の前編集が、カーソル位置に正しく出る
   - 20万行のファイルを開き、スクロールと入力が引っかからない
-  - `vy-server` を終了したとき、クライアントが落ちずに通知を出す
+  - `vy-server` を終了したとき、クライアントが落ちずに通知を出す。再起動は手動で行う
   - ローカル接続の往復が、入力の遅延として感じられない
+- [ ] ヘッドレスの `cargo test`:
+  - `vy-core` のバッファとアンドゥ
+  - `vy-server` の RPC の往復と、プロトコルの版が合わないときに接続を閉じること
 
 ### Phase 2: TypeScript設定 & プラグイン実行基盤
 
@@ -88,6 +91,13 @@ flowchart TD
 | ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                           | [`layout.md`](./layout.md)                                                       |
 | 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                       | [`protocol.md`](./protocol.md)                                                   |
 | プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る            | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                 |
+| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す   | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)         |
+| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う               | [`architecture.md`](./architecture.md)                                           |
+| フレームの形式         | 長さはリトルエンディアンの u32。上限 4 MiB。読み書きは各1本のスレッドに固定      | [`protocol.md`](./protocol.md)                                                   |
+| 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う | [`architecture.md`](./architecture.md)                                           |
+| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する             | [`architecture.md`](./architecture.md)                                           |
+| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                         | [`protocol.md`](./protocol.md)                                                   |
+| Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                      | [`roadmap.md`](./roadmap.md)                                                     |
 
 ## 残っている論点
 

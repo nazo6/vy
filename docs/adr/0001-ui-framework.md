@@ -107,7 +107,7 @@ GPUI に依存してよいのは `crates/vy-app`
 
 ## 関連する未決定事項
 
-- Windows の扱いをどうするか。Phase 1 は Linux と macOS で開発し、Windows は CI
-  のビルドだけを通す運用を候補にしています。
+- Windows の扱い: Phase 1 は対象外としました。Linux と macOS
+  で開発し、Windows は Phase 2 以降で扱います（[`roadmap.md`](../roadmap.md)）。
 - gpui の固定バージョンをどの頻度で更新するか。
 - Webview のフォーカスとキー入力の受け渡しを、どこで切り替えるか。
