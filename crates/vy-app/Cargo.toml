@@ -10,7 +10,6 @@ async-channel.workspace = true
 dirs.workspace = true
 gpui.workspace = true
 gpui-base.workspace = true
-gpui-platform.workspace = true
 rmp-serde.workspace = true
 rmpv.workspace = true
 serde.workspace = true
@@ -19,3 +18,9 @@ vy-capabilities.workspace = true
 vy-core.workspace = true
 vy-js.workspace = true
 vy-proto.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+gpui-platform = { workspace = true, features = ["wayland", "x11"] }
+
+[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
+gpui-platform = { workspace = true }
