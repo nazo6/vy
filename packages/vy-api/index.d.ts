@@ -101,74 +101,111 @@ export type {
   ViewOptions,
 } from "./overrides";
 
-// Augment this interface to type the arguments of your own commands.
+/** Augment this interface to type the arguments of your own commands. */
 export interface CommandMap {}
 
+/** Registers command handlers and runs commands by id. */
 export interface CommandsApi extends CommandsSugar {
+  /** Lists the ids of every registered command. */
   getCommands(): Promise<string[]>;
 }
+/** Registers command handlers and runs commands by id. */
 export const commands: CommandsApi;
 
+/** Binds keys and updates keymap context values. */
 export interface KeymapApi extends KeymapSugar {
+  /** Sets a keymap context value used by `when` clauses. */
   setContext(params: KeymapSetContextParams): Promise<void>;
+  /** Removes a key binding and returns the number removed. */
   unbind(params: KeymapUnbindParams): Promise<number>;
 }
+/** Binds keys and updates keymap context values. */
 export const keymap: KeymapApi;
 
+/** Reads and writes settings. */
 export interface ConfigApi extends ConfigSugar {
+  /** Returns every layer's value for a setting key, plus the effective value. */
   inspect(params: ConfigInspectParams): Promise<ConfigInspectReply>;
 }
+/** Reads and writes settings. */
 export const config: ConfigApi;
 
+/** Reads and edits the active document. */
 export interface EditorApi extends EditorSugar {
+  /** Returns the editor mode of the focused pane. */
   mode(): Promise<Mode>;
+  /** Redoes the last undone transaction. */
   redo(): Promise<void>;
+  /** Returns the selections of the focused pane. */
   selections(): Promise<Selection[]>;
+  /** Switches the focused pane to a mode. */
   setMode(params: EditorSetModeParams): Promise<void>;
+  /** Replaces the selections of the focused pane. */
   setSelections(params: EditorSetSelectionsParams): Promise<void>;
+  /** Undoes the last transaction. */
   undo(): Promise<void>;
 }
+/** Reads and edits the active document. */
 export const editor: EditorApi;
 
+/** Describes the workspace and its open documents. */
 export interface WorkspaceApi extends WorkspaceSugar {
 }
+/** Describes the workspace and its open documents. */
 export const workspace: WorkspaceApi;
 
+/** Shows notifications to the user. */
 export interface NotificationsApi extends NotificationsSugar {
 }
+/** Shows notifications to the user. */
 export const notifications: NotificationsApi;
 
+/** Writes to plugin log channels. */
 export interface LogApi extends LogSugar {
+  /** Writes one entry to a log channel. */
   write(params: LogWriteParams): Promise<void>;
 }
+/** Writes to plugin log channels. */
 export const log: LogApi;
 
+/** Creates and removes gutter items. */
 export interface UiGutterApi extends UiGutterSugar {
+  /** Removes every gutter item. */
   clear(): Promise<void>;
+  /** Removes one gutter item. */
   disposeItem(params: GutterDisposeParams): Promise<void>;
 }
 
+/** Shows and hides hover popups. */
 export interface UiHoverApi {
+  /** Hides the hover popup. */
   hide(): Promise<void>;
+  /** Shows a hover popup at a position. */
   show(params: HoverShowParams): Promise<void>;
 }
 
+/** Shows a picker and returns the chosen item. */
 export interface UiPickerApi extends UiPickerSugar {
 }
 
+/** Creates and updates status line items. */
 export interface UiStatuslineApi extends UiStatuslineSugar {
 }
 
+/** Builds native widget trees and updates UI slots. */
 export interface UiApi extends UiSugar {
   readonly gutter: UiGutterApi;
   readonly hover: UiHoverApi;
   readonly picker: UiPickerApi;
   readonly statusline: UiStatuslineApi;
 }
+/** Builds native widget trees and updates UI slots. */
 export const ui: UiApi;
 
+/** Registers and looks up pane views. */
 export interface ViewsApi extends ViewsSugar {
 }
+/** Registers and looks up pane views. */
 export const views: ViewsApi;
 
 export { context, remote } from "./overrides";

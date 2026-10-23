@@ -132,6 +132,8 @@ pub struct MethodSpec {
     pub result: &'static str,
     /// Whether the shim needs a hand-written wrapper for this method.
     pub manual: bool,
+    /// One-line description emitted as JSDoc in the generated declarations.
+    pub doc: &'static str,
 }
 
 impl MethodSpec {
@@ -144,221 +146,273 @@ impl MethodSpec {
     }
 }
 
+/// Builds a table entry without repeating the field names.
+const fn spec(
+    method: &'static str,
+    params: &'static str,
+    result: &'static str,
+    manual: bool,
+    doc: &'static str,
+) -> MethodSpec {
+    MethodSpec {
+        method,
+        params,
+        result,
+        manual,
+        doc,
+    }
+}
+
 /// TypeScript type the table uses for methods without parameters.
 pub const EMPTY_PARAMS: &str = "Record<string, never>";
 
 /// Every host method. `HostCall` and this table must agree (see the tests).
 pub const HOST_METHODS: &[MethodSpec] = &[
-    MethodSpec {
-        method: "config.get",
-        params: "ConfigGetParams",
-        result: "unknown",
-        manual: true,
-    },
-    MethodSpec {
-        method: "config.set",
-        params: "ConfigSetParams",
-        result: "ConfigSetReply",
-        manual: true,
-    },
-    MethodSpec {
-        method: "config.inspect",
-        params: "ConfigInspectParams",
-        result: "ConfigInspectReply",
-        manual: false,
-    },
-    MethodSpec {
-        method: "commands.registerCommand",
-        params: "CommandsRegisterParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "commands.execute",
-        params: "CommandsExecuteParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "commands.getCommands",
-        params: "Record<string, never>",
-        result: "string[]",
-        manual: false,
-    },
-    MethodSpec {
-        method: "keymap.bind",
-        params: "KeymapBindParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "keymap.unbind",
-        params: "KeymapUnbindParams",
-        result: "number",
-        manual: false,
-    },
-    MethodSpec {
-        method: "keymap.setContext",
-        params: "KeymapSetContextParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.activeDocument",
-        params: "Record<string, never>",
-        result: "DocumentInfoReply | null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "editor.documents",
-        params: "Record<string, never>",
-        result: "DocumentInfoReply[]",
-        manual: true,
-    },
-    MethodSpec {
-        method: "editor.mode",
-        params: "Record<string, never>",
-        result: "Mode",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.setMode",
-        params: "EditorSetModeParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.selections",
-        params: "Record<string, never>",
-        result: "Selection[]",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.setSelections",
-        params: "EditorSetSelectionsParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.edit",
-        params: "EditorEditParams",
-        result: "EditorEditReply",
-        manual: true,
-    },
-    MethodSpec {
-        method: "editor.undo",
-        params: "Record<string, never>",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "editor.redo",
-        params: "Record<string, never>",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "workspace.textDocuments",
-        params: "Record<string, never>",
-        result: "DocumentInfoReply[]",
-        manual: true,
-    },
-    MethodSpec {
-        method: "document.getText",
-        params: "DocumentGetTextParams",
-        result: "string",
-        manual: true,
-    },
-    MethodSpec {
-        method: "document.lineAt",
-        params: "DocumentLineAtParams",
-        result: "string | null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "document.positionAt",
-        params: "DocumentPositionAtParams",
-        result: "Position",
-        manual: true,
-    },
-    MethodSpec {
-        method: "document.offsetAt",
-        params: "DocumentOffsetAtParams",
-        result: "number",
-        manual: true,
-    },
-    MethodSpec {
-        method: "notifications.show",
-        params: "NotificationsShowParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "log.write",
-        params: "LogWriteParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "ui.statusline.createItem",
-        params: "StatuslineCreateParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "ui.statusline.updateItem",
-        params: "StatuslineUpdateParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "ui.statusline.disposeItem",
-        params: "StatuslineDisposeParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "views.render",
-        params: "ViewsRenderParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "ui.picker.show",
-        params: "PickerShowParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "ui.gutter.createItem",
-        params: "GutterCreateParams",
-        result: "null",
-        manual: true,
-    },
-    MethodSpec {
-        method: "ui.gutter.disposeItem",
-        params: "GutterDisposeParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "ui.gutter.clear",
-        params: "Record<string, never>",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "ui.hover.show",
-        params: "HoverShowParams",
-        result: "null",
-        manual: false,
-    },
-    MethodSpec {
-        method: "ui.hover.hide",
-        params: "Record<string, never>",
-        result: "null",
-        manual: false,
-    },
+    spec(
+        "config.get",
+        "ConfigGetParams",
+        "unknown",
+        true,
+        "Returns the effective value of a setting key.",
+    ),
+    spec(
+        "config.set",
+        "ConfigSetParams",
+        "ConfigSetReply",
+        true,
+        "Sets one or more setting values in memory and returns the keys that changed.",
+    ),
+    spec(
+        "config.inspect",
+        "ConfigInspectParams",
+        "ConfigInspectReply",
+        false,
+        "Returns every layer's value for a setting key, plus the effective value.",
+    ),
+    spec(
+        "commands.registerCommand",
+        "CommandsRegisterParams",
+        "null",
+        true,
+        "Registers a command handler and returns a disposable registration.",
+    ),
+    spec(
+        "commands.execute",
+        "CommandsExecuteParams",
+        "null",
+        true,
+        "Runs a command by id with optional arguments.",
+    ),
+    spec(
+        "commands.getCommands",
+        EMPTY_PARAMS,
+        "string[]",
+        false,
+        "Lists the ids of every registered command.",
+    ),
+    spec(
+        "keymap.bind",
+        "KeymapBindParams",
+        "null",
+        true,
+        "Binds a key sequence to a command.",
+    ),
+    spec(
+        "keymap.unbind",
+        "KeymapUnbindParams",
+        "number",
+        false,
+        "Removes a key binding and returns the number removed.",
+    ),
+    spec(
+        "keymap.setContext",
+        "KeymapSetContextParams",
+        "null",
+        false,
+        "Sets a keymap context value used by `when` clauses.",
+    ),
+    spec(
+        "editor.activeDocument",
+        EMPTY_PARAMS,
+        "DocumentInfoReply | null",
+        true,
+        "Returns the document in the focused pane, or null when none is open.",
+    ),
+    spec(
+        "editor.documents",
+        EMPTY_PARAMS,
+        "DocumentInfoReply[]",
+        true,
+        "Returns every open document.",
+    ),
+    spec(
+        "editor.mode",
+        EMPTY_PARAMS,
+        "Mode",
+        false,
+        "Returns the editor mode of the focused pane.",
+    ),
+    spec(
+        "editor.setMode",
+        "EditorSetModeParams",
+        "null",
+        false,
+        "Switches the focused pane to a mode.",
+    ),
+    spec(
+        "editor.selections",
+        EMPTY_PARAMS,
+        "Selection[]",
+        false,
+        "Returns the selections of the focused pane.",
+    ),
+    spec(
+        "editor.setSelections",
+        "EditorSetSelectionsParams",
+        "null",
+        false,
+        "Replaces the selections of the focused pane.",
+    ),
+    spec(
+        "editor.edit",
+        "EditorEditParams",
+        "EditorEditReply",
+        true,
+        "Applies edits to the active document in one transaction.",
+    ),
+    spec(
+        "editor.undo",
+        EMPTY_PARAMS,
+        "null",
+        false,
+        "Undoes the last transaction.",
+    ),
+    spec(
+        "editor.redo",
+        EMPTY_PARAMS,
+        "null",
+        false,
+        "Redoes the last undone transaction.",
+    ),
+    spec(
+        "workspace.textDocuments",
+        EMPTY_PARAMS,
+        "DocumentInfoReply[]",
+        true,
+        "Returns the text documents open in the workspace.",
+    ),
+    spec(
+        "document.getText",
+        "DocumentGetTextParams",
+        "string",
+        true,
+        "Returns the document text, optionally limited to a range.",
+    ),
+    spec(
+        "document.lineAt",
+        "DocumentLineAtParams",
+        "string | null",
+        true,
+        "Returns the text of a line, or null when the line is out of range.",
+    ),
+    spec(
+        "document.positionAt",
+        "DocumentPositionAtParams",
+        "Position",
+        true,
+        "Converts a UTF-16 offset to a position.",
+    ),
+    spec(
+        "document.offsetAt",
+        "DocumentOffsetAtParams",
+        "number",
+        true,
+        "Converts a position to a UTF-16 offset.",
+    ),
+    spec(
+        "notifications.show",
+        "NotificationsShowParams",
+        "null",
+        true,
+        "Shows a notification to the user.",
+    ),
+    spec(
+        "log.write",
+        "LogWriteParams",
+        "null",
+        false,
+        "Writes one entry to a log channel.",
+    ),
+    spec(
+        "ui.statusline.createItem",
+        "StatuslineCreateParams",
+        "null",
+        true,
+        "Creates a status line item and returns its id.",
+    ),
+    spec(
+        "ui.statusline.updateItem",
+        "StatuslineUpdateParams",
+        "null",
+        true,
+        "Updates the fields of a status line item.",
+    ),
+    spec(
+        "ui.statusline.disposeItem",
+        "StatuslineDisposeParams",
+        "null",
+        true,
+        "Removes a status line item.",
+    ),
+    spec(
+        "views.render",
+        "ViewsRenderParams",
+        "null",
+        true,
+        "Renders a registered view into a widget tree.",
+    ),
+    spec(
+        "ui.picker.show",
+        "PickerShowParams",
+        "null",
+        true,
+        "Shows a picker and resolves with the chosen item.",
+    ),
+    spec(
+        "ui.gutter.createItem",
+        "GutterCreateParams",
+        "null",
+        true,
+        "Creates a gutter item and returns its id.",
+    ),
+    spec(
+        "ui.gutter.disposeItem",
+        "GutterDisposeParams",
+        "null",
+        false,
+        "Removes one gutter item.",
+    ),
+    spec(
+        "ui.gutter.clear",
+        EMPTY_PARAMS,
+        "null",
+        false,
+        "Removes every gutter item.",
+    ),
+    spec(
+        "ui.hover.show",
+        "HoverShowParams",
+        "null",
+        false,
+        "Shows a hover popup at a position.",
+    ),
+    spec(
+        "ui.hover.hide",
+        EMPTY_PARAMS,
+        "null",
+        false,
+        "Hides the hover popup.",
+    ),
 ];
 
 // Configuration.
@@ -393,6 +447,9 @@ pub struct ConfigInspectParams {
 }
 
 /// `config.inspect` reply: every layer's value plus the effective one.
+///
+/// Layers are listed from lowest to highest precedence: `default`, `user`,
+/// `project`, `memory`. A layer that does not define the key is `null`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ConfigInspectReply {
@@ -447,6 +504,8 @@ pub struct KeymapUnbindParams {
 }
 
 /// A value visible to a `when` expression, set by `keymap.setContext`.
+///
+/// A context value is a boolean, a string, or a number.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
@@ -498,6 +557,9 @@ pub struct EditorEditReply {
 // Documents.
 
 /// A document as the script sees it.
+///
+/// `end` is the position just after the last character. `version` increases
+/// after every applied edit and can be used to detect a stale snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -513,6 +575,9 @@ pub struct DocumentInfoReply {
 }
 
 /// `document.getText` parameters.
+///
+/// `documentId` defaults to the active document. `range` defaults to the whole
+/// document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -602,6 +667,10 @@ pub struct LogWriteParams {
 // Slots: statusline, gutter, hover, picker, views.
 
 /// `ui.statusline.createItem` parameters.
+///
+/// `alignment` places the item on the left or right. `priority` orders items
+/// within the same side; higher values are shown first. `command` runs when the
+/// item is clicked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct StatuslineCreateParams {
@@ -643,6 +712,8 @@ pub struct StatuslineDisposeParams {
 }
 
 /// `ui.gutter.createItem` parameters.
+///
+/// `line` is zero-based. The item is drawn in the gutter of that line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GutterCreateParams {
@@ -670,6 +741,9 @@ pub struct HoverShowParams {
 }
 
 /// `ui.picker.show` parameters.
+///
+/// When `items` is omitted the picker lists commands. `placeholder` is shown
+/// in the filter input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PickerShowParams {
@@ -682,6 +756,8 @@ pub struct PickerShowParams {
 }
 
 /// `views.render` parameters.
+///
+/// `tree` is the widget tree returned by the view's render callback.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ViewsRenderParams {
@@ -718,6 +794,17 @@ mod tests {
         methods.sort_unstable();
         methods.dedup();
         assert_eq!(methods.len(), HOST_METHODS.len());
+    }
+
+    #[test]
+    fn every_host_method_has_a_description() {
+        for spec in HOST_METHODS {
+            assert!(
+                !spec.doc.trim().is_empty(),
+                "{} has no description",
+                spec.method
+            );
+        }
     }
 
     /// Writes `HostMethods.ts` and `packages/vy-api/index.d.ts`.

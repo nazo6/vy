@@ -3,5 +3,7 @@ import type { WidgetNode } from "./WidgetNode";
 
 /**
  * `views.render` parameters.
+ *
+ * `tree` is the widget tree returned by the view's render callback.
  */
 export type ViewsRenderParams = { id: string, tree: WidgetNode, };

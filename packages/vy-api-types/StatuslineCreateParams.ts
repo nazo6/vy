@@ -4,5 +4,9 @@ import type { ThemeColor } from "./ThemeColor";
 
 /**
  * `ui.statusline.createItem` parameters.
+ *
+ * `alignment` places the item on the left or right. `priority` orders items
+ * within the same side; higher values are shown first. `command` runs when the
+ * item is clicked.
  */
 export type StatuslineCreateParams = { id: string, alignment: StatuslineAlignment, priority?: number, text: string, color?: ThemeColor | null, command?: string | null, };

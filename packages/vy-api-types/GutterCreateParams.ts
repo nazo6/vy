@@ -3,5 +3,7 @@ import type { ThemeColor } from "./ThemeColor";
 
 /**
  * `ui.gutter.createItem` parameters.
+ *
+ * `line` is zero-based. The item is drawn in the gutter of that line.
  */
 export type GutterCreateParams = { id: string, line: number, text: string, color?: ThemeColor | null, };

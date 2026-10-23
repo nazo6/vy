@@ -2,5 +2,8 @@
 
 /**
  * `config.inspect` reply: every layer's value plus the effective one.
+ *
+ * Layers are listed from lowest to highest precedence: `default`, `user`,
+ * `project`, `memory`. A layer that does not define the key is `null`.
  */
 export type ConfigInspectReply = { default: unknown, user: unknown, project: unknown, memory: unknown, effective: unknown, };

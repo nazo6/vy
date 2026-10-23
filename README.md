@@ -78,25 +78,28 @@ cargo run -p vy-app -- README.md
 - `VY_FRAME_LOG=1`
   で起動すると、フレームの間隔と要素の組み立て時間を標準エラーに
   出します。キー入力の重さを測るときに使います。
+- JS API のリファレンスは `pnpm docs:api` で `target/docs/vy-api`
+  に生成します。手順は [`docs/development.md`](./docs/development.md)
+  にあります。
 - GPUI と wgpu は最適化なしだと 1 フレームに数十 ms かかります。`Cargo.toml` の
   `[profile.dev.package."*"]` で依存だけ最適化しています。依存を変えた直後は
   ビルドが長くなります。
 
 ### 操作（Phase 1–3）
 
-| モード | キー                                                                           |
-| :----- | :----------------------------------------------------------------------------- |
-| Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾         |
-| Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク         |
+| モード | キー                                                                                             |
+| :----- | :----------------------------------------------------------------------------------------------- |
+| Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾                           |
+| Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク                           |
 | Normal | `v` 選択モード、`V` 行選択、`Ctrl-v` 矩形選択、`i` `a` `I` `A` `o` `O` 挿入、`u` / `Ctrl-r` 履歴 |
-| Normal | `Ctrl-d` / `Ctrl-u` 半ページ送り、`zz` / `zt` / `zb` カーソル行位置合わせ       |
-| Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置 |
-| Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                         |
-| Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる   |
-| Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                 |
-| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` 閉じる） |
-| Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                   |
-| Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ |
+| Normal | `Ctrl-d` / `Ctrl-u` 半ページ送り、`zz` / `zt` / `zb` カーソル行位置合わせ                        |
+| Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置                   |
+| Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                                           |
+| Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる                     |
+| Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                                   |
+| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` 閉じる）                  |
+| Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                                     |
+| Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ            |
 
 テキストオブジェクトは `iw` / `aw` / `ip` / `ap`、`i"` / `a"`、`i(` / `a(`
 などに対応しています。

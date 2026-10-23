@@ -3,5 +3,8 @@ import type { PickerItem } from "./PickerItem";
 
 /**
  * `ui.picker.show` parameters.
+ *
+ * When `items` is omitted the picker lists commands. `placeholder` is shown
+ * in the filter input.
  */
 export type PickerShowParams = { id: string, items?: Array<PickerItem>, placeholder?: string | null, };

@@ -23,8 +23,23 @@ not edit it. The declarations that need JavaScript state in the shim (command
 handlers, the edit builder, `Document`, slot handles, pickers, views, and the
 widget builders) live in `overrides.d.ts` and are composed into the generated
 file. Types shared with the Rust protocol live in
-[`packages/vy-api-types`](../vy-api-types). Both are refreshed by
+[`packages/vy-api-types`](../vy-api-types/README.md). Both are refreshed by
 `cargo test --workspace export_bindings`.
+
+## API reference
+
+The declarations are rendered as a searchable HTML reference with TypeDoc:
+
+```sh
+pnpm install --frozen-lockfile
+cargo test --workspace export_bindings
+pnpm docs:api
+```
+
+Open `target/docs/vy-api/index.html`. `pnpm docs:api:serve` builds the site and
+serves it at <http://localhost:8000>. The output is generated into `target/` and
+is not committed. `docs.d.ts` is the TypeDoc entry point; it only re-exports the
+hand-written sugar interfaces so their methods appear in the reference.
 
 To type the arguments of your own commands, augment `CommandMap`:
 

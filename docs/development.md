@@ -79,9 +79,39 @@ cargo fmt --all --check
   `TS_RS_EXPORT_DIR` です。プラグイン API の型とメソッド表は
   `crates/vy-api-schema` が持ち、`HostMethods.ts` と
   `packages/vy-api/index.d.ts` も同じテストで生成します。手で書くのは糖衣の
-  `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と
-  `SettingsKey.ts` は `vy-app` のテストが生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
+  `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と `SettingsKey.ts`
+  は `vy-app`
+  のテストが生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
   で変更可）と状態行で確認します。
+
+## 6. JS API ドキュメント
+
+`packages/vy-api` の宣言から、TypeDoc で検索付きの HTML
+リファレンスを生成できます。
+
+```sh
+pnpm install --frozen-lockfile
+cargo test --workspace export_bindings
+pnpm docs:api
+```
+
+出力は `target/docs/vy-api/index.html` です。`pnpm docs:api:serve`
+を使うと生成後に <http://localhost:8000> で表示できます。HTML は `target/`
+配下に生成し、コミットしません。
+
+- 入口は `packages/vy-api/docs.d.ts` です。`index.d.ts`
+  を再エクスポートし、糖衣の interface も TypeDoc に見せます。公開パッケージの
+  export 面は変えません。
+- メソッドの説明は `crates/vy-api-schema/src/calls.rs` の `MethodSpec.doc`
+  が正です。`cargo test --workspace export_bindings` で `index.d.ts` に JSDoc
+  として出ます。
+- 糖衣（`Document`、`editor.edit`、statusline、picker、views、widget builder）の
+  説明は `packages/vy-api/overrides.d.ts` に書きます。
+- 型の説明は Rust の doc コメントから `ts-rs` が JSDoc として出します。params
+  型のフィールドは型レベルの説明に書きます（`ts-rs` はフィールド単位の JSDoc
+  を出しません）。
+- コメントは英語で書きます（§1）。生成 HTML の確認は `pnpm docs:api`
+  が警告なしで終わることと、主要な API ページに説明と例が出ることです。

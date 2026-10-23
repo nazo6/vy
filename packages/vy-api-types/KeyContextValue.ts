@@ -2,5 +2,7 @@
 
 /**
  * A value visible to a `when` expression, set by `keymap.setContext`.
+ *
+ * A context value is a boolean, a string, or a number.
  */
 export type KeyContextValue = boolean | string | number;

@@ -4,5 +4,8 @@ import type { Uri } from "./Uri";
 
 /**
  * A document as the script sees it.
+ *
+ * `end` is the position just after the last character. `version` increases
+ * after every applied edit and can be used to detect a stale snapshot.
  */
 export type DocumentInfoReply = { id: number, uri: Uri, languageId: string, version: number, lineCount: number, end: Position, };

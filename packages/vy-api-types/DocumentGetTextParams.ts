@@ -3,5 +3,8 @@ import type { Range } from "./Range";
 
 /**
  * `document.getText` parameters.
+ *
+ * `documentId` defaults to the active document. `range` defaults to the whole
+ * document.
  */
 export type DocumentGetTextParams = { documentId?: number, range?: Range | null, };

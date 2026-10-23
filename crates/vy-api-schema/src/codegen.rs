@@ -13,17 +13,37 @@ use std::path::PathBuf;
 use crate::HOST_METHODS;
 use crate::MethodSpec;
 
-/// Namespaces the shim exports as constants.
-const TOP_LEVEL: &[&str] = &[
-    "commands",
-    "keymap",
-    "config",
-    "editor",
-    "workspace",
-    "notifications",
-    "log",
-    "ui",
-    "views",
+/// Namespaces the shim exports as constants, with their JSDoc descriptions.
+const TOP_LEVEL: &[(&str, &str)] = &[
+    (
+        "commands",
+        "Registers command handlers and runs commands by id.",
+    ),
+    ("keymap", "Binds keys and updates keymap context values."),
+    ("config", "Reads and writes settings."),
+    ("editor", "Reads and edits the active document."),
+    (
+        "workspace",
+        "Describes the workspace and its open documents.",
+    ),
+    ("notifications", "Shows notifications to the user."),
+    ("log", "Writes to plugin log channels."),
+    ("ui", "Builds native widget trees and updates UI slots."),
+    ("views", "Registers and looks up pane views."),
+];
+
+/// Nested namespaces that need a description in the generated declarations.
+const NAMESPACE_DOCS: &[(&[&str], &str)] = &[
+    (&["ui", "gutter"], "Creates and removes gutter items."),
+    (&["ui", "hover"], "Shows and hides hover popups."),
+    (
+        &["ui", "picker"],
+        "Shows a picker and returns the chosen item.",
+    ),
+    (
+        &["ui", "statusline"],
+        "Creates and updates status line items.",
+    ),
 ];
 
 /// Tokens that are types in the emitted signature rather than imported names.
@@ -147,6 +167,7 @@ fn write_host_methods(directory: &Path) {
     output.push_str("// Parameters and reply of every host call, keyed by method name.\n");
     output.push_str("export interface HostMethods {\n");
     for spec in HOST_METHODS {
+        push_doc(&mut output, "  ", spec.doc);
         output.push_str(&format!(
             "  \"{}\": {{ params: {}; result: {} }};\n",
             spec.method, spec.params, spec.result
@@ -202,11 +223,11 @@ fn render_api() -> String {
     }
     output.push_str("} from \"./overrides\";\n\n");
 
-    output.push_str("// Augment this interface to type the arguments of your own commands.\n");
+    output.push_str("/** Augment this interface to type the arguments of your own commands. */\n");
     output.push_str("export interface CommandMap {}\n\n");
 
     let tree = build_tree();
-    for &name in TOP_LEVEL {
+    for &(name, _) in TOP_LEVEL {
         if let Some(namespace) = tree.children.get(name) {
             render_namespace(&mut output, &[name], namespace);
         }
@@ -236,7 +257,25 @@ fn build_tree<'a>() -> Namespace<'a> {
 }
 
 fn declares_namespace(path: &[&str]) -> bool {
-    TOP_LEVEL.contains(&path[0])
+    TOP_LEVEL.iter().any(|(name, _)| *name == path[0])
+}
+
+/// The JSDoc description for a namespace path, if one is declared.
+fn namespace_doc(path: &[&str]) -> Option<&'static str> {
+    NAMESPACE_DOCS
+        .iter()
+        .find(|(candidate, _)| *candidate == path)
+        .map(|(_, doc)| *doc)
+        .or_else(|| {
+            TOP_LEVEL
+                .iter()
+                .find(|(name, _)| *name == path[0])
+                .map(|(_, doc)| *doc)
+        })
+}
+
+fn push_doc(output: &mut String, indent: &str, doc: &str) {
+    output.push_str(&format!("{indent}/** {doc} */\n"));
 }
 
 fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_>) {
@@ -251,6 +290,9 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
         .find(|(candidate, _)| *candidate == path)
         .map(|(_, sugar)| format!(" extends {sugar}"))
         .unwrap_or_default();
+    if let Some(doc) = namespace_doc(path) {
+        push_doc(output, "", doc);
+    }
     output.push_str(&format!("export interface {name}{extends} {{\n"));
 
     for child in namespace.children.keys() {
@@ -261,11 +303,15 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
     let mut methods = namespace.methods.clone();
     methods.sort_by_key(|spec| spec.method);
     for spec in methods {
+        push_doc(output, "  ", spec.doc);
         output.push_str(&format!("  {}\n", signature(spec)));
     }
     output.push_str("}\n");
 
     if path.len() == 1 {
+        if let Some(doc) = namespace_doc(path) {
+            push_doc(output, "", doc);
+        }
         output.push_str(&format!("export const {}: {name};\n", path[0]));
     }
     output.push('\n');
@@ -337,6 +383,8 @@ mod tests {
         }
         assert!(output.contains("export interface CommandMap"));
         assert!(output.contains("export const ui: UiApi;"));
+        assert!(output.contains("/** Lists the ids of every registered command. */"));
+        assert!(output.contains("/** Builds native widget trees and updates UI slots. */"));
     }
 
     #[test]
@@ -345,6 +393,18 @@ mod tests {
         for name in used_types(false) {
             let path = directory.join(format!("{name}.ts"));
             assert!(path.exists(), "{} is not exported", name);
+        }
+    }
+
+    #[test]
+    fn typedoc_entry_exports_every_sugar_interface() {
+        let path = export_dir()
+            .parent()
+            .expect("packages directory")
+            .join("vy-api/docs.d.ts");
+        let text = std::fs::read_to_string(&path).expect("read docs.d.ts");
+        for (_, sugar) in SUGAR {
+            assert!(text.contains(sugar), "{sugar} is missing from docs.d.ts");
         }
     }
 }
