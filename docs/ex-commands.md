@@ -163,6 +163,8 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | `:q`     | `vy.pane.close`             | 実装済み | 最後のペインでの意味は未決定  |
 | `:e`     | `vy.editor.open`            | 実装済み | 引数に URI またはパスを取る   |
 | `:w`     | `vy.document.save`          | 実装済み | 引数のパスは未対応            |
+| `:b` / `:buffer` | `vy.editor.switch_document` | 実装済み | 文書の切り替え                |
+| `:ts`    | `vy.script.eval`            | 実装済み | TypeScript コードを直接評価   |
 | `:wq`    | `vy.document.write_quit`    | 未実装   | 保存と終了を 1 コマンドにする |
 | `:bn`    | `vy.document.next`          | 未実装   | 文書一覧ができてから          |
 | `:bp`    | `vy.document.previous`      | 未実装   | 文書一覧ができてから          |

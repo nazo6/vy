@@ -500,7 +500,7 @@ impl EditorView {
         let id = invocation.id.clone();
 
         if let Some(command) = UiCommand::parse(&id) {
-            self.run_ui_command(command);
+            self.run_ui_command(command, &invocation);
             return false;
         }
         if let Some(command) = PaneCommand::parse(&id) {
@@ -556,10 +556,26 @@ impl EditorView {
         false
     }
 
-    pub(super) fn run_ui_command(&mut self, command: UiCommand) {
+    pub(super) fn run_ui_command(&mut self, command: UiCommand, invocation: &Invocation) {
         match command {
             UiCommand::CommandPalette => self.open_palette(),
             UiCommand::ExCommandLine => self.open_ex(),
+            UiCommand::ScriptEval => {
+                let Some(raw) = invocation.ex_raw() else {
+                    self.status = "script.eval requires an expression".into();
+                    return;
+                };
+                let raw = raw.trim();
+                if raw.is_empty() {
+                    self.status = "script.eval requires an expression".into();
+                    return;
+                }
+                if let Some(plugin) = self.plugin.as_ref() {
+                    plugin.eval(raw);
+                } else {
+                    self.status = "the script host is not running".into();
+                }
+            }
         }
     }
 }

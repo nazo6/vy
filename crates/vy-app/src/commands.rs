@@ -237,6 +237,7 @@ define_command_enum! {
     pub enum UiCommand {
         CommandPalette => ("vy.ui.command_palette", "Command Palette"),
         ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
+        ScriptEval => ("vy.script.eval", "Script Evaluate"),
     }
 }
 
@@ -335,6 +336,10 @@ pub const EX_ALIASES: &[ExAlias] = &[
     ExAlias {
         name: "buffer",
         id: "vy.editor.switch_document",
+    },
+    ExAlias {
+        name: "ts",
+        id: "vy.script.eval",
     },
 ];
 
@@ -680,8 +685,9 @@ impl CommandRegistry {
                 CommandDescriptor::new(command.id(), command.title(), CommandSource::Ui);
             descriptor.hidden = matches!(
                 command,
-                UiCommand::CommandPalette | UiCommand::ExCommandLine
+                UiCommand::CommandPalette | UiCommand::ExCommandLine | UiCommand::ScriptEval
             );
+            descriptor.accepts_args = *command == UiCommand::ScriptEval;
             descriptors.push(descriptor);
         }
         for command in ViewCommand::all() {
@@ -842,6 +848,7 @@ mod tests {
         assert_eq!(resolve_ex_name("w"), Ok("vy.document.save"));
         assert_eq!(resolve_ex_name("b"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve_ex_name("buffer"), Ok("vy.editor.switch_document"));
+        assert_eq!(resolve_ex_name("ts"), Ok("vy.script.eval"));
         assert_eq!(
             resolve_ex_name("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
@@ -859,6 +866,7 @@ mod tests {
                     "w".to_string(),
                     "b".to_string(),
                     "buffer".to_string(),
+                    "ts".to_string(),
                 ],
             })
         );

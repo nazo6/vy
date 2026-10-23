@@ -74,6 +74,10 @@ pub enum ScriptTask {
     EmitConfigChange {
         keys: Vec<String>,
     },
+    /// Evaluates a JavaScript/TypeScript expression or script in the global context.
+    Eval {
+        source: String,
+    },
     Shutdown,
 }
 
@@ -89,6 +93,8 @@ pub enum ScriptEvent {
     },
     /// The module or a handler failed. The message is in English.
     Error { message: String },
+    /// An evaluated expression produced a formatted string result.
+    EvalFinished { result: String },
     /// The thread exited.
     Stopped,
 }
@@ -216,6 +222,13 @@ impl ScriptHost {
             .send_blocking(ScriptTask::EmitConfigChange { keys });
     }
 
+    /// Evaluates a JavaScript/TypeScript code snippet in the script context.
+    pub fn eval(&self, source: impl Into<String>) {
+        let _ = self.tasks.send_blocking(ScriptTask::Eval {
+            source: source.into(),
+        });
+    }
+
     /// Whether the thread is still running.
     pub fn is_running(&self) -> bool {
         self.thread
@@ -284,6 +297,16 @@ fn run(
                   -> rquickjs::Result<String> { bridge.call(&ctx, method, params) },
         )?;
         ctx.globals().set("__vy_host_call", call)?;
+
+        // Expose `vy` on globalThis so interactive evaluations can use the API directly.
+        let promise = Module::evaluate(
+            ctx.clone(),
+            "<vy-global>",
+            "import * as vy from 'vy-api'; globalThis.vy = vy;\n",
+        )?;
+        promise.finish::<()>()?;
+        drain_jobs(&ctx);
+
         Ok(())
     });
 
@@ -393,6 +416,46 @@ fn run_task(
                 });
             }
         }
+        ScriptTask::Eval { source } => {
+            let code = match strip_types(&PathBuf::from("<eval>.ts"), &source) {
+                Ok(code) => code,
+                Err(error) => {
+                    let _ = events.send_blocking(ScriptEvent::Error {
+                        message: format!("{error}"),
+                    });
+                    return;
+                }
+            };
+
+            let result: rquickjs::Result<String> = with_deadline(deadline, COMMAND_TIMEOUT, || {
+                let promise = ctx.eval_promise(code)?;
+                let resolved: JsValue = promise.finish()?;
+                drain_jobs(&ctx);
+                let final_val = if let Some(inner_promise) = resolved.as_promise() {
+                    inner_promise.finish()?
+                } else if let Some(obj) = resolved.as_object() {
+                    if let Ok(val) = obj.get::<_, JsValue>("value") {
+                        val
+                    } else {
+                        resolved
+                    }
+                } else {
+                    resolved
+                };
+                format_js_value(&ctx, final_val)
+            });
+
+            match result {
+                Ok(result) => {
+                    let _ = events.send_blocking(ScriptEvent::EvalFinished { result });
+                }
+                Err(error) => {
+                    let _ = events.send_blocking(ScriptEvent::Error {
+                        message: describe_error(&ctx, error),
+                    });
+                }
+            }
+        }
     });
 }
 
@@ -426,6 +489,29 @@ fn describe_error(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
             .unwrap_or_else(|| "JavaScript exception".to_string()),
         CaughtError::Value(_) => "a script threw a value that is not an Error".to_string(),
     }
+}
+
+fn format_js_value<'js>(ctx: &Ctx<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
+    if value.is_undefined() {
+        return Ok("undefined".to_string());
+    }
+    if value.is_null() {
+        return Ok("null".to_string());
+    }
+    if let Some(s) = value.as_string() {
+        return s.to_string();
+    }
+    if let Ok(Some(json_str)) = ctx.json_stringify(value.clone())
+        && let Ok(s) = json_str.to_string()
+    {
+        return Ok(s);
+    }
+    if let Some(s) = value.into_string()
+        && let Ok(res) = s.to_string()
+    {
+        return Ok(res);
+    }
+    Ok("[object]".to_string())
 }
 
 /// The bridge used by the native `__vy_host_call` function.
@@ -812,5 +898,71 @@ ui.hover.hide();
         assert!(gutter_disposed);
         assert!(hover_shown);
         assert!(hover_hidden);
+    }
+
+    #[test]
+    fn evals_typescript_expression_and_returns_result() {
+        let host = ScriptHost::spawn(test_env());
+        host.eval("const x: number = 20; x * 2");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut eval_result = None;
+
+        while std::time::Instant::now() < deadline {
+            match host.events.try_recv() {
+                Ok(ScriptEvent::EvalFinished { result }) => {
+                    eval_result = Some(result);
+                    break;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                _ => std::thread::yield_now(),
+            }
+        }
+
+        assert_eq!(eval_result, Some("40".to_string()));
+    }
+
+    #[test]
+    fn evals_top_level_await_expression() {
+        let host = ScriptHost::spawn(test_env());
+        host.eval("await Promise.resolve('hello world')");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut eval_result = None;
+
+        while std::time::Instant::now() < deadline {
+            match host.events.try_recv() {
+                Ok(ScriptEvent::EvalFinished { result }) => {
+                    eval_result = Some(result);
+                    break;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                _ => std::thread::yield_now(),
+            }
+        }
+
+        assert_eq!(eval_result, Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn evals_import_vy_api() {
+        let host = ScriptHost::spawn(test_env());
+        host.eval("vy.commands.registerCommand ? 'has_register' : 'no'");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut eval_result = None;
+
+        while std::time::Instant::now() < deadline {
+            match host.events.try_recv() {
+                Ok(ScriptEvent::EvalFinished { result }) => {
+                    eval_result = Some(result);
+                    break;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                _ => std::thread::yield_now(),
+            }
+        }
+
+        assert_eq!(eval_result, Some("has_register".to_string()));
     }
 }

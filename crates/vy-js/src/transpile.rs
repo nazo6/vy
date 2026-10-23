@@ -183,4 +183,11 @@ export const picked = first<number>([1, 2, 3]);
         let source = "export const answer = 42;\n";
         assert_eq!(strip(source).expect("transpile"), source);
     }
+
+    #[test]
+    fn transpiles_expression() {
+        let source = "1 + 2 as number";
+        let out = strip(source).expect("transpile");
+        assert_eq!(out.trim(), "1 + 2;");
+    }
 }

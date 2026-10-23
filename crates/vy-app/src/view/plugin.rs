@@ -94,6 +94,9 @@ impl EditorView {
             ScriptEvent::Evaluated => {
                 self.status = "init.ts loaded".into();
             }
+            ScriptEvent::EvalFinished { result } => {
+                self.status = result.into();
+            }
             ScriptEvent::CommandFinished { id, .. } => {
                 if self.frame_log {
                     eprintln!("vy: command {id} finished");
@@ -180,7 +183,9 @@ impl EditorView {
             HostAction::Document(command) => {
                 self.run_document_command(command, &Invocation::palette(command.id()));
             }
-            HostAction::Ui(command) => self.run_ui_command(command),
+            HostAction::Ui(command) => {
+                self.run_ui_command(command, &Invocation::palette(command.id()));
+            }
             HostAction::RenderWidgetTree { view_id: _, tree } => {
                 if let Some(pane_id) = self.active_pane
                     && let Some(pane) = self.panes.get_mut(&pane_id)

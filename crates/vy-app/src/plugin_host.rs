@@ -117,6 +117,11 @@ impl PluginHost {
         self.script.execute(id, args);
     }
 
+    /// Evaluates a JavaScript/TypeScript code snippet in the script context.
+    pub fn eval(&self, source: impl Into<String>) {
+        self.script.eval(source);
+    }
+
     /// Tells the script which settings keys changed.
     pub fn emit_config_change(&self, keys: Vec<String>) {
         self.script.emit_config_change(keys);
