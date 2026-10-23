@@ -234,8 +234,11 @@ export const remote = {
 };
 
 let nextStatuslineItemId = 1;
+let nextGutterItemId = 1;
 let nextPickerId = 1;
 const pickerSources = new Map();
+const hoverProviders = new Map();
+const gutterProviders = new Map();
 
 export const ui = {
   picker: {
@@ -331,6 +334,65 @@ export const ui = {
         },
         dispose() {
           call("ui.statusline.disposeItem", { id });
+        },
+      };
+    },
+  },
+
+  gutter: {
+    createItem(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("ui.gutter.createItem needs options object");
+      }
+      const id = options.id || `gutter_item_${nextGutterItemId++}`;
+      const line = typeof options.line === "number" ? options.line : 0;
+      const text = options.text || " ";
+      const color = options.color || null;
+
+      call("ui.gutter.createItem", { id, line, text, color });
+      return {
+        id,
+        dispose() {
+          call("ui.gutter.disposeItem", { id });
+        },
+      };
+    },
+
+    clear() {
+      call("ui.gutter.clear", {});
+    },
+
+    registerProvider(languageId, provider) {
+      gutterProviders.set(languageId, provider);
+      return {
+        dispose() {
+          gutterProviders.delete(languageId);
+        },
+      };
+    },
+  },
+
+  hover: {
+    show(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("ui.hover.show needs options object");
+      }
+      const line = typeof options.line === "number" ? options.line : 0;
+      const character = typeof options.character === "number" ? options.character : 0;
+      const text = options.text || "";
+
+      call("ui.hover.show", { line, character, text });
+    },
+
+    hide() {
+      call("ui.hover.hide", {});
+    },
+
+    registerProvider(languageId, provider) {
+      hoverProviders.set(languageId, provider);
+      return {
+        dispose() {
+          hoverProviders.delete(languageId);
         },
       };
     },

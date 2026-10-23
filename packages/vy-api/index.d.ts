@@ -176,6 +176,44 @@ export interface StatuslineApi {
   createItem(options: StatuslineItemOptions): StatuslineItem;
 }
 
+export interface GutterItemOptions {
+  id?: string;
+  line: number;
+  text: string;
+  color?: string;
+}
+
+export interface GutterItem extends Disposable {
+  readonly id: string;
+  dispose(): void;
+}
+
+export interface GutterProvider {
+  provideGutterItems?(document: Document, line: number): GutterItemOptions[] | Promise<GutterItemOptions[]>;
+}
+
+export interface GutterApi {
+  createItem(options: GutterItemOptions): GutterItem;
+  clear(): void;
+  registerProvider(languageId: string, provider: GutterProvider): Disposable;
+}
+
+export interface HoverOptions {
+  line: number;
+  character: number;
+  text: string;
+}
+
+export interface HoverProvider {
+  provideHover?(document: Document, position: Position): HoverOptions | undefined | Promise<HoverOptions | undefined>;
+}
+
+export interface HoverApi {
+  show(options: HoverOptions): void;
+  hide(): void;
+  registerProvider(languageId: string, provider: HoverProvider): Disposable;
+}
+
 export interface WidgetNode {
   type: string;
   [key: string]: unknown;
@@ -209,6 +247,8 @@ export interface UiTextInputOptions {
 export interface UiApi {
   readonly picker: PickerApi;
   readonly statusline: StatuslineApi;
+  readonly gutter: GutterApi;
+  readonly hover: HoverApi;
   column(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
   row(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
   stack(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;

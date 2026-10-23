@@ -5,6 +5,7 @@ use gpui::{
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
+use vy_app::slots::GutterRegistry;
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::text_layout::{selection_on_line, utf16_to_byte};
 
@@ -40,12 +41,15 @@ pub fn character_width(config: &Config) -> f32 {
 
 /// Width of the line number gutter in pixels, or 0 when line numbers are off.
 pub fn gutter_width(config: &Config, line_count: usize) -> f32 {
-    if config.line_numbers() == LineNumbers::Off {
-        return 0.0;
-    }
-    let width = character_width(config);
-    let digits = line_number_width(line_count);
-    digits as f32 * width + width * 1.2
+    let base = if config.line_numbers() == LineNumbers::Off {
+        0.0
+    } else {
+        let width = character_width(config);
+        let digits = line_number_width(line_count);
+        digits as f32 * width + width * 1.2
+    };
+    // Reserve an extra 1.5 characters width for gutter marks (git diff, breakpoints, diagnostics)
+    base + character_width(config) * 1.5
 }
 
 /// Returns the text to draw on the Insert cursor line, the caret's byte offset,
@@ -129,6 +133,7 @@ pub fn render_line(
     theme: &Theme,
     pane: &PaneState,
     document: &DocumentState,
+    gutter_registry: &GutterRegistry,
     line_number: usize,
     window: &mut Window,
 ) -> Div {
@@ -142,20 +147,51 @@ pub fn render_line(
         .line_height(px(lh))
         .items_center();
 
-    if let Some(label) = config.line_numbers().label(line_number, cursor_line) {
-        row = row.child(
-            div()
-                .h(px(lh))
-                .line_height(px(lh))
-                .w(px(gutter_width(config, document.editor.line_count())))
-                .flex_shrink_0()
-                .text_color(theme.editor.gutter)
-                .child(format!(
-                    "{label:>width$} ",
-                    width = line_number_width(document.editor.line_count())
-                )),
-        );
-    }
+    let marks = gutter_registry.items_for_line(line_number);
+    let mark_text = if let Some(first) = marks.first() {
+        first.text.clone()
+    } else {
+        " ".to_string()
+    };
+
+    let mark_color = if let Some(first) = marks.first() {
+        match first.color.as_deref() {
+            Some("error" | "danger") => theme.statusline.error,
+            Some("warning") => theme.statusline.warning,
+            Some("info" | "primary") => theme.statusline.info,
+            Some("success") => theme.statusline.success,
+            _ => theme.editor.gutter,
+        }
+    } else {
+        theme.editor.gutter
+    };
+
+    let line_count = document.editor.line_count();
+    let digits = line_number_width(line_count);
+    let num_label = config.line_numbers().label(line_number, cursor_line);
+
+    row = row.child(
+        div()
+            .flex()
+            .items_center()
+            .h(px(lh))
+            .line_height(px(lh))
+            .w(px(gutter_width(config, line_count)))
+            .flex_shrink_0()
+            .child(
+                div()
+                    .w(px(character_width(config) * 1.2))
+                    .text_color(mark_color)
+                    .child(mark_text),
+            )
+            .child(div().flex_1().text_color(theme.editor.gutter).child(
+                if let Some(label) = num_label {
+                    format!("{label:>digits$} ")
+                } else {
+                    "".to_string()
+                },
+            )),
+    );
 
     let text = document.editor.line(line_number).unwrap_or_default();
     let cursor = pane.view.cursor();
@@ -251,12 +287,13 @@ pub fn visible_lines(
     theme: &Theme,
     pane: &PaneState,
     document: &DocumentState,
+    gutter_registry: &GutterRegistry,
     window: &mut Window,
 ) -> Vec<Div> {
     let start = pane.scroll_top;
     let end = (start + pane.viewport_rows.max(1)).min(document.editor.line_count());
 
     (start..end)
-        .map(|line| render_line(config, theme, pane, document, line, window))
+        .map(|line| render_line(config, theme, pane, document, gutter_registry, line, window))
         .collect()
 }

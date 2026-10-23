@@ -13,6 +13,7 @@ pub mod palette;
 pub mod paths;
 pub mod plugin_host;
 pub mod rpc;
+pub mod slots;
 pub mod state;
 pub mod statusline;
 pub mod text_layout;

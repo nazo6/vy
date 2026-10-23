@@ -768,4 +768,49 @@ commands.registerCommand("user.pick", async () => {
         assert!(finished, "user.pick did not finish");
         assert_eq!(command_result, json!({ "id": "foo", "title": "Foo Title" }));
     }
+
+    #[test]
+    fn ui_gutter_and_hover_apis() {
+        let host = ScriptHost::spawn(test_env());
+        host.evaluate(
+            PathBuf::from("init.ts"),
+            r#"
+import { ui } from "vy-api";
+
+const item = ui.gutter.createItem({ line: 15, text: "+", color: "success" });
+ui.hover.show({ line: 15, character: 3, text: "type Info = string" });
+item.dispose();
+ui.hover.hide();
+"#,
+        );
+
+        let mut gutter_created = false;
+        let mut gutter_disposed = false;
+        let mut hover_shown = false;
+        let mut hover_hidden = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+
+        while std::time::Instant::now() < deadline {
+            if let Ok(request) = host.requests.try_recv() {
+                match request.method.as_str() {
+                    "ui.gutter.createItem" => gutter_created = true,
+                    "ui.gutter.disposeItem" => gutter_disposed = true,
+                    "ui.hover.show" => hover_shown = true,
+                    "ui.hover.hide" => hover_hidden = true,
+                    _ => {}
+                }
+                request.respond_value(json!(null));
+                continue;
+            }
+            if let Ok(ScriptEvent::Evaluated) = host.events.try_recv() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+
+        assert!(gutter_created);
+        assert!(gutter_disposed);
+        assert!(hover_shown);
+        assert!(hover_hidden);
+    }
 }

@@ -24,6 +24,7 @@ use vy_app::palette::PaletteState;
 use vy_app::paths::Paths;
 use vy_app::plugin_host::{self, PluginHost};
 use vy_app::rpc::Client;
+use vy_app::slots::{GutterRegistry, HoverState};
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::statusline::Statusline;
 use vy_app::text_layout::scroll_lines;
@@ -89,6 +90,10 @@ pub struct EditorView {
     last_frame: Option<Instant>,
     /// Statusline slots registered by scripts or default.
     statusline: Statusline,
+    /// Gutter marks registered by scripts/plugins.
+    gutter: GutterRegistry,
+    /// Hover popup currently displayed, if any.
+    hover: Option<HoverState>,
 }
 
 impl EditorView {
@@ -156,6 +161,8 @@ impl EditorView {
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
             statusline: Statusline::new(),
+            gutter: GutterRegistry::new(),
+            hover: None,
         };
 
         match Client::spawn() {

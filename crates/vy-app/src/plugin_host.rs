@@ -24,6 +24,7 @@ use crate::editor::{Action, Editor, Mode, Transaction};
 use crate::keymap::Keymap;
 use crate::palette::PickerItem;
 use crate::paths::Paths;
+use crate::slots::{GutterItem, GutterRegistry, HoverState};
 use crate::statusline::{Statusline, StatuslineAlignment, StatuslineItem};
 use crate::when;
 use crate::widget::WidgetNode;
@@ -199,6 +200,8 @@ pub struct RequestContext<'a> {
     pub paths: &'a Paths,
     pub script: Option<&'a ScriptHost>,
     pub statusline: Option<&'a mut Statusline>,
+    pub gutter: Option<&'a mut GutterRegistry>,
+    pub hover: Option<&'a mut Option<HoverState>>,
 }
 
 /// The effect of one request on the client.
@@ -537,6 +540,48 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 request,
             };
         }
+        "ui.gutter.createItem" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            let line = params.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let text = text_param(&params, "text").unwrap_or_default();
+            let color = text_param(&params, "color");
+
+            if let Some(gutter) = context.gutter {
+                let mut item = GutterItem::new(id, line, text);
+                item.color = color;
+                gutter.set_item(item);
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.gutter.disposeItem" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            if let Some(gutter) = context.gutter {
+                gutter.dispose_item(&id);
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.gutter.clear" => {
+            if let Some(gutter) = context.gutter {
+                gutter.clear();
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.hover.show" => {
+            let line = params.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let character = params.get("character").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let text = text_param(&params, "text").unwrap_or_default();
+
+            if let Some(hover) = context.hover {
+                *hover = Some(HoverState::new(line, character, text));
+            }
+            request.respond_value(Value::Null);
+        }
+        "ui.hover.hide" => {
+            if let Some(hover) = context.hover {
+                *hover = None;
+            }
+            request.respond_value(Value::Null);
+        }
         other => {
             request.respond_error("InvalidState", format!("unknown host method: {other}"));
         }
@@ -640,6 +685,8 @@ mod tests {
             paths,
             script: None,
             statusline: None,
+            gutter: None,
+            hover: None,
         }
     }
 
@@ -826,6 +873,8 @@ commands.registerCommand("user.hello", async () => {
                     paths: &paths,
                     script: Some(host.script()),
                     statusline: None,
+                    gutter: None,
+                    hover: None,
                 };
                 let outcome = handle_request(context, request);
                 assert!(outcome.action == HostAction::None);
@@ -1055,5 +1104,61 @@ commands.registerCommand("user.hello", async () => {
         }
         let reply = rec.recv().expect("reply");
         assert!(matches!(reply, vy_js::HostReply::Ok(_)));
+    }
+
+    #[test]
+    fn ui_gutter_and_hover_requests() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+        let mut gutter = GutterRegistry::new();
+        let mut hover = None;
+
+        let (req1, rec1) = HostRequest::new(
+            "ui.gutter.createItem",
+            json!({
+                "id": "git_add",
+                "line": 42,
+                "text": "+"
+            }),
+        );
+        let mut ctx1 = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        ctx1.gutter = Some(&mut gutter);
+        handle_request(ctx1, req1);
+        let reply1 = rec1.recv().expect("reply");
+        assert!(matches!(reply1, vy_js::HostReply::Ok(_)));
+        assert_eq!(gutter.items_for_line(42).len(), 1);
+
+        let (req2, rec2) = HostRequest::new(
+            "ui.hover.show",
+            json!({
+                "line": 42,
+                "character": 5,
+                "text": "type Foo = number"
+            }),
+        );
+        let mut ctx2 = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        ctx2.hover = Some(&mut hover);
+        handle_request(ctx2, req2);
+        let reply2 = rec2.recv().expect("reply");
+        assert!(matches!(reply2, vy_js::HostReply::Ok(_)));
+        assert_eq!(hover, Some(HoverState::new(42, 5, "type Foo = number")));
     }
 }

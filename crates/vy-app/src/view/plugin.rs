@@ -149,6 +149,8 @@ impl EditorView {
             paths: &self.paths,
             script: Some(plugin.script()),
             statusline: Some(&mut self.statusline),
+            gutter: Some(&mut self.gutter),
+            hover: Some(&mut self.hover),
         };
         let outcome = plugin_host::handle_request(context, request);
 

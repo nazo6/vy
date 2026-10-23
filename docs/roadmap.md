@@ -114,12 +114,12 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
   - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row, stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 7
 - [x] `ui` ビューのウィジェット木と、キーマップからのアクション解決
   - GPUI によるネイティブウィジェット描画とコマンドバインド対応
-- [ ] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
+- [x] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
   - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
   - [x] ピッカー（`ui.picker`、`ui.picker.show`、`ui.picker.registerSource`）
-  - [ ] ガター（`ui.gutter`）
-  - [ ] ホバー（`ui.hover`）
+  - [x] ガター（`ui.gutter`、行横のマークやサイン表示スロット）
+  - [x] ホバー（`ui.hover`、カーソル行桁へのポップアップ表示スロット）
 - [x] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する

@@ -28,7 +28,7 @@ impl EditorView {
         document: &DocumentState,
         window: &mut Window,
     ) -> Vec<Div> {
-        ui::pane::visible_lines(&self.config, theme, pane, document, window)
+        ui::pane::visible_lines(&self.config, theme, pane, document, &self.gutter, window)
     }
 
     /// Height of one text row from the settings.
@@ -300,6 +300,39 @@ impl EditorView {
                 .left_0()
                 .size_full(),
             );
+
+            // Render hover popup if active
+            if let Some(hover) = &self.hover
+                && let Some(pane) = pane
+            {
+                let lh = self.line_height();
+                let ch_w = ui::pane::character_width(&self.config);
+                let gutter =
+                    self.gutter_width(document.map(|d| d.editor.line_count()).unwrap_or(1));
+                if hover.line >= pane.scroll_top
+                    && hover.line < pane.scroll_top + pane.viewport_rows
+                {
+                    let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
+                    let left = gutter + hover.character as f32 * ch_w;
+                    area = area.child(
+                        div()
+                            .absolute()
+                            .top(px(top))
+                            .left(px(left))
+                            .max_w(px(400.0))
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .bg(theme.background.surface)
+                            .border_1()
+                            .border_color(theme.border.subtle)
+                            .shadow_md()
+                            .text_xs()
+                            .text_color(theme.foreground.default)
+                            .child(hover.text.clone()),
+                    );
+                }
+            }
         }
 
         let border = if active && self.panes.len() > 1 {
