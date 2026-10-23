@@ -13,6 +13,8 @@ pub struct DocumentState {
     pub id: u64,
     pub uri: String,
     pub editor: Editor,
+    /// Version when this document was last saved or opened from disk.
+    pub saved_version: u64,
     /// Whether a snapshot has filled this document.
     pub loaded: bool,
 }
@@ -25,8 +27,14 @@ impl DocumentState {
             id,
             uri,
             editor,
+            saved_version: version,
             loaded: false,
         }
+    }
+
+    /// Whether the document has unsaved edits.
+    pub fn is_dirty(&self) -> bool {
+        self.editor.version() != self.saved_version
     }
 }
 

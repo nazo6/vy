@@ -7,7 +7,9 @@ pub mod theme;
 mod ui;
 mod view;
 
-use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{
+    App, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, prelude::*, px, size,
+};
 use gpui_platform::application;
 use theme::Theme;
 use view::EditorView;
@@ -23,6 +25,11 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Vy".into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(9.0), px(8.0))),
+                    }),
                     ..Default::default()
                 },
                 |_window, cx| cx.new(EditorView::new),

@@ -9,6 +9,7 @@ pub struct Theme {
     pub foreground: ForegroundTokens,
     pub border: BorderTokens,
     pub editor: EditorTokens,
+    pub titlebar: TitlebarTokens,
     pub statusline: StatuslineTokens,
     pub list: ListTokens,
 }
@@ -44,6 +45,15 @@ pub struct EditorTokens {
     pub gutter: Rgba,
     pub selection: Rgba,
     pub caret: Rgba,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TitlebarTokens {
+    pub background: Rgba,
+    pub border: Rgba,
+    pub foreground: Rgba,
+    pub muted: Rgba,
+    pub dirty: Rgba,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +116,13 @@ impl Theme {
                 selection: rgb(0x264f78),
                 caret: rgb(0xd4d4d4),
             },
+            titlebar: TitlebarTokens {
+                background: rgb(0x181818),
+                border: rgb(0x2b2b2b),
+                foreground: rgb(0xcccccc),
+                muted: rgb(0x8a8a8a),
+                dirty: rgb(0x9cdcfe),
+            },
             statusline: StatuslineTokens {
                 background: rgb(0x181818),
                 foreground: rgb(0xffffff),
@@ -155,6 +172,13 @@ impl Theme {
                 gutter: rgb(0x6e6e6e),
                 selection: rgb(0xadd6ff),
                 caret: rgb(0x000000),
+            },
+            titlebar: TitlebarTokens {
+                background: rgb(0xf3f3f3),
+                border: rgb(0xe5e5e5),
+                foreground: rgb(0x333333),
+                muted: rgb(0x717171),
+                dirty: rgb(0x005fb8),
             },
             statusline: StatuslineTokens {
                 background: rgb(0xf3f3f3),

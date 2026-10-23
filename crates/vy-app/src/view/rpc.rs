@@ -252,10 +252,14 @@ impl EditorView {
     }
 
     fn saved(&mut self, value: &Value) {
-        let path = decode_value::<DocumentSavedResult>(value)
-            .map(|saved| saved.path)
-            .unwrap_or_else(|| "-".into());
-        self.status = format!("saved {path}").into();
+        if let Some(saved) = decode_value::<DocumentSavedResult>(value) {
+            if let Some(document) = self.documents.get_mut(&saved.document_id) {
+                document.saved_version = saved.version;
+            }
+            self.status = format!("saved {}", saved.path).into();
+        } else {
+            self.status = "saved -".into();
+        }
     }
 
     fn received_snapshot(&mut self, value: &Value) {
@@ -274,6 +278,7 @@ impl EditorView {
             // per-pane cursor when the copy is already at that version.
             if !document.loaded || document.editor.version() != version {
                 document.editor.reset(&text, version);
+                document.saved_version = version;
                 reset = true;
             }
             document.loaded = true;

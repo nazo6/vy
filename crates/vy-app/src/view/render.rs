@@ -92,7 +92,8 @@ impl Render for EditorView {
         let started = Instant::now();
 
         // Fit the viewport to the window before choosing which lines to draw.
-        let chrome_height = STATUSLINE_HEIGHT
+        let chrome_height = ui::titlebar::TITLEBAR_HEIGHT
+            + STATUSLINE_HEIGHT
             + if self.ex.is_some() {
                 STATUSLINE_HEIGHT
             } else {
@@ -132,6 +133,7 @@ impl Render for EditorView {
             .font_family(self.config.font_family())
             .text_size(px(self.config.font_size()))
             .line_height(px(self.line_height()))
+            .child(self.render_titlebar(&theme, window))
             .child(
                 div()
                     .relative()
@@ -286,6 +288,39 @@ impl EditorView {
             .border_1()
             .border_color(border)
             .child(area)
+    }
+
+    fn render_titlebar(&self, theme: &Theme, window: &mut Window) -> impl IntoElement {
+        let (title, is_dirty) = if let Some(doc) = self.active_document() {
+            let name = doc.uri.strip_prefix("file://").unwrap_or(&doc.uri);
+            let display_name = if name == "vy:empty" || name == "vy:untitled" {
+                "[No Name]"
+            } else {
+                std::path::Path::new(name)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(name)
+            };
+            (format!("vy — {display_name}"), doc.is_dirty())
+        } else {
+            ("vy".to_string(), false)
+        };
+
+        ui::titlebar::render_titlebar(
+            theme,
+            title,
+            is_dirty,
+            window,
+            |_event, window| {
+                window.start_window_move();
+            },
+            |_event, window| {
+                #[cfg(target_os = "macos")]
+                window.titlebar_double_click();
+                #[cfg(not(target_os = "macos"))]
+                window.zoom_window();
+            },
+        )
     }
 }
 
