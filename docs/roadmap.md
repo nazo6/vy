@@ -98,21 +98,23 @@ Phase 3 で仕上げます。
 
 - [x] レイアウト木（分割、フォーカス）と `pane/open` / `pane/focus` /
       `pane/close` / `layout/get`
-  - `layout/did_change` で確定した木を送る。フローティング、比率の変更、
-    `pane/split` はまだ無い
+  - `layout/did_change` で確定した木を送る。比率の固定分割に対応。フローティング、比率の動的変更はまだ無い
 - [x] 同じバッファを複数のペインで開く（マルチバッファ）と、ペインごとのカーソル・選択・スクロール
   - モードと IME の前編集もペインごと。最後の選択範囲は文書ごとに `g v`
     で復元できる
 - [x] `editor.open`（`:e`）
 - [x] `document.save`（`:w`）
+- [x] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する
+  - `vy.pane.split_right` (`:vsp`)、`vy.pane.split_down` (`:sp`)、`vy.pane.close` (`:q`)、
+    `vy.pane.focus_*`、`vy.pane.next`
 - [ ] 開いている文書の一覧・切り替え
 - [ ] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
   - `webview` は Phase 6
 - [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
 - [ ] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
-  - [ ] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
-  - [ ] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
+  - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
+  - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
   - [ ] ピッカー（`ui.picker`）、ホバー（`ui.hover`）、ガター（`ui.gutter`）
 - [ ] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
@@ -124,7 +126,6 @@ Phase 3 で仕上げます。
         の共通化（キーマップ、パレット、Ex、スクリプト）
   - [x] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
   - [ ] ピッカー API（`ui.picker.registerSource`）と、パレットからの引数入力
-  - [ ] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する（`panes.open`、`panes.split` など。`editor.open` / `document.save` は実装済み）
 
 ### Phase 4: リモート接続
 

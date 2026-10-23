@@ -281,7 +281,8 @@ await panes.open({
 実装済み:
 
 - レイアウト木（`vy-core` の `Layout`）。分割は `pane/open` の `placement`
-  で行い、 比率は 0.5 で固定です。
+  で行い、 比率は 0.5 で固定です。組み込みコマンド（`vy.pane.split_right` / `vy.pane.split_down`）
+  および Ex コマンド（`:vsp` / `:sp`）から分割できます。
 - `pane/open`、`pane/focus`、`pane/close`、`layout/get` と
   `layout/did_change`。フォーカスは `Ctrl-w h/j/k/l` と `Ctrl-w w` で移せます。
 - 同じ URI を開くと、既存の文書を新しいペインで共有します。カーソル、選択、
@@ -291,7 +292,7 @@ await panes.open({
 
 未実装:
 
-- フローティング、比率の変更（`pane/resize`）、`pane/split`、`layout/set`、
+- フローティング、比率の変更（`pane/resize`）、`layout/set`、
   保存と復元。
 - `views.register` と `editor` 以外のビュー。`pane/open` は `view: "editor"`
   だけを 受け付けます。
