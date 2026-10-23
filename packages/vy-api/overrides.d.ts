@@ -10,13 +10,15 @@ import type {
   CommandId,
   Font,
   Gap,
+  GutterCreateParams,
   Mode,
   PickerItem,
+  PickerShowParams,
   Position,
   Range,
   SettingsKey,
   SettingsMap,
-  StatuslineAlignment,
+  StatuslineCreateParams,
   TextEdit,
   ThemeColor,
   Uri,
@@ -42,12 +44,6 @@ export interface Document {
   positionAt(offset: number): Promise<Position>;
   offsetAt(position: Position): Promise<number>;
   fullRange(): Range;
-}
-
-/** Arguments the keymap passes to a command. */
-export interface CommandArgs {
-  count?: number;
-  register?: string;
 }
 
 /** Collects edits for one `editor.edit` call. */
@@ -113,14 +109,8 @@ export interface LogSugar {
   createChannel(name: string): LogChannel;
 }
 
-export interface StatuslineItemOptions {
-  id?: string;
-  alignment: StatuslineAlignment;
-  priority?: number;
-  text: string;
-  color?: ThemeColor;
-  command?: string;
-}
+/** Options for `ui.statusline.createItem`; the shim generates the id. */
+export type StatuslineItemOptions = Omit<StatuslineCreateParams, "id"> & { id?: string };
 
 export interface StatuslineItem extends Disposable {
   readonly id: string;
@@ -135,12 +125,8 @@ export interface UiStatuslineSugar {
   createItem(options: StatuslineItemOptions): StatuslineItem;
 }
 
-export interface GutterItemOptions {
-  id?: string;
-  line: number;
-  text: string;
-  color?: ThemeColor;
-}
+/** Options for `ui.gutter.createItem`; the shim generates the id. */
+export type GutterItemOptions = Omit<GutterCreateParams, "id"> & { id?: string };
 
 export interface GutterItem extends Disposable {
   readonly id: string;
@@ -150,10 +136,8 @@ export interface UiGutterSugar {
   createItem(options: GutterItemOptions): GutterItem;
 }
 
-export interface ShowPickerOptions {
-  items: PickerItem[];
-  placeholder?: string;
-}
+/** Options for `ui.picker.show`; the shim generates the request id. */
+export type ShowPickerOptions = Omit<PickerShowParams, "id">;
 
 export interface UiPickerSugar {
   show(options: ShowPickerOptions): Promise<PickerItem | undefined>;

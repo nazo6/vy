@@ -4,4 +4,4 @@ import type { PickerItem } from "./PickerItem";
 /**
  * `ui.picker.show` parameters.
  */
-export type PickerShowParams = { id: string, items: Array<PickerItem>, placeholder?: string | null, };
+export type PickerShowParams = { id: string, items?: Array<PickerItem>, placeholder?: string | null, };

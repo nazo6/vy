@@ -5,4 +5,4 @@ import type { ThemeColor } from "./ThemeColor";
 /**
  * `ui.statusline.createItem` parameters.
  */
-export type StatuslineCreateParams = { id: string, alignment: StatuslineAlignment, priority: number, text: string, color?: ThemeColor | null, command?: string | null, };
+export type StatuslineCreateParams = { id: string, alignment: StatuslineAlignment, priority?: number, text: string, color?: ThemeColor | null, command?: string | null, };

@@ -549,8 +549,12 @@ fn dispatch(
         HostCall::UiStatuslineCreateItem => {
             let params: StatuslineCreateParams = parse_params(params)?;
             if let Some(statusline) = context.statusline.as_deref_mut() {
-                let mut item =
-                    StatuslineItem::new(params.id, params.alignment, params.priority, params.text);
+                let mut item = StatuslineItem::new(
+                    params.id,
+                    params.alignment,
+                    params.priority.unwrap_or(0),
+                    params.text,
+                );
                 item.color = params.color;
                 item.command = params.command;
                 statusline.set_item(item);
@@ -585,7 +589,7 @@ fn dispatch(
             let params: PickerShowParams = parse_params(params)?;
             outcome.action = HostAction::ShowPicker {
                 id: params.id,
-                items: params.items,
+                items: params.items.unwrap_or_default(),
                 placeholder: params.placeholder,
                 request: request.clone(),
             };

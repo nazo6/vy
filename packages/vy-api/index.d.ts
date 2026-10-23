@@ -82,7 +82,6 @@ export type {
 } from "../vy-api-types";
 
 export type {
-  CommandArgs,
   Disposable,
   Document,
   EditorEditBuilder,

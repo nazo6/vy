@@ -57,7 +57,6 @@ const EXTRA_TYPES: &[&str] = &[
 
 /// Types the hand-written declarations export.
 const OVERRIDE_TYPES: &[&str] = &[
-    "CommandArgs",
     "Disposable",
     "Document",
     "EditorEditBuilder",

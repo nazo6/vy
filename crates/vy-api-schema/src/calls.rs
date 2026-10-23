@@ -608,7 +608,8 @@ pub struct StatuslineCreateParams {
     pub id: String,
     pub alignment: StatuslineAlignment,
     #[serde(default)]
-    pub priority: i32,
+    #[ts(optional)]
+    pub priority: Option<i32>,
     pub text: String,
     #[ts(optional = nullable)]
     pub color: Option<ThemeColor>,
@@ -674,7 +675,8 @@ pub struct HoverShowParams {
 pub struct PickerShowParams {
     pub id: String,
     #[serde(default)]
-    pub items: Vec<PickerItem>,
+    #[ts(optional)]
+    pub items: Option<Vec<PickerItem>>,
     #[ts(optional = nullable)]
     pub placeholder: Option<String>,
 }
