@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/vy-api-schema",
   "crates/vy-app",
   "crates/vy-capabilities",
   "crates/vy-core",
@@ -51,9 +52,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Client
 # Pin the version exactly, per ADR 0001.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
-gpui-platform = { package = "gpui-pre-platform", version = "=0.3.9" }
 gpui-base = "0.8.0"
+gpui-platform = { package = "gpui-pre-platform", version = "=0.3.9" }
 
+vy-api-schema = { path = "crates/vy-api-schema" }
 vy-capabilities = { path = "crates/vy-capabilities" }
 vy-core = { path = "crates/vy-core" }
 vy-js = { path = "crates/vy-js" }

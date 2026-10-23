@@ -11,21 +11,33 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use vy_api_schema::{
+    CommandsExecuteParams, CommandsRegisterParams, ConfigGetParams, ConfigInspectParams,
+    ConfigInspectReply, ConfigSetParams, ConfigSetReply, DocumentGetTextParams, DocumentInfoReply,
+    DocumentLineAtParams, DocumentOffsetAtParams, DocumentPositionAtParams, EditorEditParams,
+    EditorEditReply, EditorSetModeParams, EditorSetSelectionsParams, GutterCreateParams,
+    GutterDisposeParams, HostCall, HoverShowParams, KeyContextValue, KeymapBindParams,
+    KeymapSetContextParams, KeymapUnbindParams, LogWriteParams, NotificationsShowParams,
+    PickerShowParams, StatuslineCreateParams, StatuslineDisposeParams, StatuslineUpdateParams,
+    ViewsRenderParams,
+};
 use vy_capabilities::TrustedStore;
-use vy_core::{Position, Range, Selection, TextEdit};
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
+use vy_proto::ErrorCode;
 
 use crate::commands::{
     BuiltinCommand, CommandArgs, CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand,
 };
 use crate::config::Config;
-use crate::editor::{Action, Editor, Mode, Transaction};
+use crate::editor::{Action, Editor, Transaction};
 use crate::keymap::Keymap;
 use crate::palette::PickerItem;
 use crate::paths::Paths;
 use crate::slots::{GutterItem, GutterRegistry, HoverState};
-use crate::statusline::{Statusline, StatuslineAlignment, StatuslineItem};
+use crate::statusline::{Statusline, StatuslineItem};
 use crate::when;
 use crate::widget::WidgetNode;
 
@@ -217,68 +229,158 @@ pub struct HostOutcome {
     pub config_changed: Vec<String>,
 }
 
+/// A reply the shim receives now, or a request the view answers later.
+enum Reply {
+    Value(Value),
+    Deferred,
+}
+
+impl Reply {
+    fn value(value: impl Serialize) -> Result<Self, CallError> {
+        Ok(Self::Value(serde_json::to_value(value)?))
+    }
+
+    fn null() -> Self {
+        Self::Value(Value::Null)
+    }
+}
+
+/// A failure that the shim receives as an exception with a stable code.
+struct CallError {
+    code: ErrorCode,
+    message: String,
+}
+
+impl CallError {
+    fn invalid_params(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::InvalidParams,
+            message: message.into(),
+        }
+    }
+
+    fn invalid_state(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::InvalidState,
+            message: message.into(),
+        }
+    }
+}
+
+impl From<serde_json::Error> for CallError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::invalid_params(error.to_string())
+    }
+}
+
+/// Deserializes the parameters of one method.
+///
+/// Missing parameters arrive as `null`; treating that as an empty object keeps
+/// methods without parameters from needing a special case.
+fn parse_params<T: DeserializeOwned>(params: &Value) -> Result<T, CallError> {
+    let empty = Value::Object(serde_json::Map::new());
+    let value = if params.is_null() { &empty } else { params };
+    Ok(serde_json::from_value(value.clone())?)
+}
+
+/// Reads a field that distinguishes an absent value from `null`.
+fn optional_text(value: Value) -> Result<Option<String>, CallError> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(text) => Ok(Some(text)),
+        other => Err(CallError::invalid_params(format!(
+            "expected a string or null, found {other}"
+        ))),
+    }
+}
+
 /// Answers one call from the shim. The request is always answered so the script
 /// thread never waits for the full reply timeout.
 pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> HostOutcome {
     let mut outcome = HostOutcome::default();
-    let method = request.method.clone();
-    let params = request.params.clone();
 
-    match method.as_str() {
-        "config.get" => {
-            let key = text_param(&params, "key").unwrap_or_default();
-            let value = context.config.get(&key).cloned().unwrap_or(Value::Null);
-            request.respond_value(value);
-        }
-        "config.set" => {
-            let values = params
-                .get("values")
-                .and_then(Value::as_object)
+    let Some(call) = HostCall::parse(&request.method) else {
+        let code = ErrorCode::InvalidRequest.to_string();
+        let message = format!("unknown host method: {}", request.method);
+        request.respond_error(&code, message);
+        return outcome;
+    };
+
+    let mut context = context;
+    let result = dispatch(&mut context, call, &request.params, &mut outcome, &request);
+    match result {
+        Ok(Reply::Value(value)) => request.respond_value(value),
+        Ok(Reply::Deferred) => {}
+        Err(error) => request.respond_error(&error.code.to_string(), error.message),
+    }
+
+    outcome
+}
+
+fn dispatch(
+    context: &mut RequestContext<'_>,
+    call: HostCall,
+    params: &Value,
+    outcome: &mut HostOutcome,
+    request: &HostRequest,
+) -> Result<Reply, CallError> {
+    match call {
+        HostCall::ConfigGet => {
+            let params: ConfigGetParams = parse_params(params)?;
+            let value = context
+                .config
+                .get(&params.key)
                 .cloned()
-                .unwrap_or_default();
-            outcome.config_changed = context.config.apply(&values);
-            request.respond_value(json!({ "changed": outcome.config_changed }));
+                .unwrap_or(Value::Null);
+            Reply::value(value)
         }
-        "config.inspect" => {
-            let key = text_param(&params, "key").unwrap_or_default();
-            let inspect = serde_json::to_value(context.config.inspect(&key)).unwrap_or(Value::Null);
-            request.respond_value(inspect);
+        HostCall::ConfigSet => {
+            let params: ConfigSetParams = parse_params(params)?;
+            let changed = context.config.apply(&params.values);
+            outcome.config_changed = changed.clone();
+            Reply::value(ConfigSetReply { changed })
         }
-        "commands.registerCommand" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            match context.commands.register(id, Owner::Init) {
-                Ok(()) => request.respond_value(Value::Null),
-                Err(error) => request.respond_error("InvalidState", error.to_string()),
-            }
+        HostCall::ConfigInspect => {
+            let params: ConfigInspectParams = parse_params(params)?;
+            let inspect = context.config.inspect(&params.key);
+            Reply::value(ConfigInspectReply {
+                default: inspect.default,
+                user: inspect.user,
+                project: inspect.project,
+                memory: inspect.memory,
+                effective: inspect.effective,
+            })
         }
-        "commands.execute" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            let args = command_args(&params);
+        HostCall::CommandsRegisterCommand => {
+            let params: CommandsRegisterParams = parse_params(params)?;
+            context
+                .commands
+                .register(params.id, Owner::Init)
+                .map_err(|error| CallError::invalid_state(error.to_string()))?;
+            Ok(Reply::null())
+        }
+        HostCall::CommandsExecute => {
+            let params: CommandsExecuteParams = parse_params(params)?;
+            let id = params.id;
             if let Some(command) = UiCommand::parse(&id) {
                 outcome.action = HostAction::Ui(command);
-                request.respond_value(Value::Null);
             } else if let Some(command) = PaneCommand::parse(&id) {
                 outcome.action = HostAction::Pane(command);
-                request.respond_value(Value::Null);
             } else if let Some(command) = DocumentCommand::parse(&id) {
                 outcome.action = HostAction::Document(command);
-                request.respond_value(Value::Null);
             } else if let Some(command) = BuiltinCommand::parse(&id) {
+                let args = command_args(&params.args);
                 outcome.action = context.editor.execute(command, args).into();
-                request.respond_value(Value::Null);
             } else if context.commands.is_registered(&id) {
                 if let Some(script) = context.script {
-                    script.execute(
-                        id.clone(),
-                        params.get("args").cloned().unwrap_or(Value::Null),
-                    );
+                    script.execute(id.clone(), params.args);
                 }
-                request.respond_value(Value::Null);
             } else {
-                request.respond_error("InvalidState", format!("unknown command: {id}"));
+                return Err(CallError::invalid_state(format!("unknown command: {id}")));
             }
+            Ok(Reply::null())
         }
-        "commands.getCommands" => {
+        HostCall::CommandsGetCommands => {
             let mut ids: Vec<String> = BuiltinCommand::all()
                 .iter()
                 .map(|command| command.id().to_string())
@@ -300,130 +402,89 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 .chain(context.commands.script_commands())
                 .collect();
             ids.sort();
-            request.respond_value(json!(ids));
+            Reply::value(ids)
         }
-        "keymap.bind" => {
-            let keys = text_param(&params, "keys").unwrap_or_default();
-            let command = text_param(&params, "command").unwrap_or_default();
-            let when = text_param(&params, "when");
-            match context
+        HostCall::KeymapBind => {
+            let params: KeymapBindParams = parse_params(params)?;
+            context
                 .keymap
-                .bind(&keys, command, when.as_deref(), Owner::Init)
-            {
-                Ok(()) => request.respond_value(Value::Null),
-                Err(error) => request.respond_error("InvalidState", error.to_string()),
-            }
+                .bind(
+                    &params.keys,
+                    params.command,
+                    params.when.as_deref(),
+                    Owner::Init,
+                )
+                .map_err(|error| CallError::invalid_state(error.to_string()))?;
+            Ok(Reply::null())
         }
-        "keymap.unbind" => {
-            let keys = text_param(&params, "keys").unwrap_or_default();
-            match context.keymap.unbind(&keys) {
-                Ok(count) => request.respond_value(json!(count)),
-                Err(error) => request.respond_error("InvalidState", error.to_string()),
-            }
+        HostCall::KeymapUnbind => {
+            let params: KeymapUnbindParams = parse_params(params)?;
+            let count = context
+                .keymap
+                .unbind(&params.keys)
+                .map_err(|error| CallError::invalid_state(error.to_string()))?;
+            Reply::value(count)
         }
-        "keymap.setContext" => {
-            let key = text_param(&params, "key").unwrap_or_default();
-            match context_value(params.get("value")) {
-                Some(value) => {
-                    context.keymap.set_context(key, value);
-                    request.respond_value(Value::Null);
-                }
-                None => request.respond_error(
-                    "InvalidState",
-                    "keymap.setContext accepts a boolean, string, or number",
-                ),
-            }
+        HostCall::KeymapSetContext => {
+            let params: KeymapSetContextParams = parse_params(params)?;
+            context
+                .keymap
+                .set_context(params.key, context_value(params.value));
+            Ok(Reply::null())
         }
-        "editor.activeDocument" => {
-            let value = context
+        HostCall::EditorActiveDocument => match context.document.as_ref() {
+            Some(document) => Reply::value(document_info(context.editor, document)),
+            None => Ok(Reply::null()),
+        },
+        HostCall::EditorDocuments | HostCall::WorkspaceTextDocuments => {
+            let documents: Vec<DocumentInfoReply> = context
                 .document
-                .as_ref()
-                .map(|document| document_json(context.editor, document))
-                .unwrap_or(Value::Null);
-            request.respond_value(value);
+                .iter()
+                .map(|document| document_info(context.editor, document))
+                .collect();
+            Reply::value(documents)
         }
-        "editor.documents" => {
-            let value = context
-                .document
-                .as_ref()
-                .map(|document| json!([document_json(context.editor, document)]))
-                .unwrap_or_else(|| json!([]));
-            request.respond_value(value);
+        HostCall::EditorMode => Reply::value(context.editor.mode()),
+        HostCall::EditorSetMode => {
+            let params: EditorSetModeParams = parse_params(params)?;
+            context.editor.set_mode(params.mode);
+            Ok(Reply::null())
         }
-        "editor.mode" => {
-            request.respond_value(json!(context.editor.mode().name()));
+        HostCall::EditorSelections => Reply::value(context.editor.selections()),
+        HostCall::EditorSetSelections => {
+            let params: EditorSetSelectionsParams = parse_params(params)?;
+            context.editor.set_selections(&params.selections);
+            Ok(Reply::null())
         }
-        "editor.setMode" => {
-            let name = text_param(&params, "mode").unwrap_or_default();
-            match Mode::parse(&name) {
-                Some(mode) => {
-                    context.editor.set_mode(mode);
-                    request.respond_value(Value::Null);
-                }
-                None => request.respond_error("InvalidState", format!("unknown mode: {name}")),
-            }
-        }
-        "editor.selections" => {
-            request.respond_value(json!(context.editor.selections()));
-        }
-        "editor.setSelections" => {
-            let selections: Vec<Selection> = params
-                .get("selections")
-                .and_then(|value| serde_json::from_value(value.clone()).ok())
-                .unwrap_or_default();
-            context.editor.set_selections(&selections);
-            request.respond_value(Value::Null);
-        }
-        "editor.edit" => {
-            let edits: Vec<TextEdit> = match params
-                .get("edits")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()
-            {
-                Ok(edits) => edits.unwrap_or_default(),
-                Err(error) => {
-                    request.respond_error("InvalidState", format!("invalid edits: {error}"));
-                    return outcome;
-                }
-            };
-
-            if edits.is_empty() {
+        HostCall::EditorEdit => {
+            let params: EditorEditParams = parse_params(params)?;
+            if params.edits.is_empty() {
                 // Nothing to apply, but the caller still expects the version.
-                request.respond_value(json!({ "version": context.editor.version() }));
-                return outcome;
+                return Reply::value(EditorEditReply {
+                    version: context.editor.version(),
+                });
             }
 
-            match context.editor.apply_edits(edits) {
+            match context.editor.apply_edits(params.edits) {
                 Ok(transaction) => {
                     let version = context.editor.version();
                     outcome.action = HostAction::Edit(transaction);
-                    request.respond_value(json!({ "version": version }));
+                    Reply::value(EditorEditReply { version })
                 }
-                Err(error) => request.respond_error("InvalidState", error.to_string()),
+                Err(error) => Err(CallError::invalid_state(error.to_string())),
             }
         }
-        "editor.undo" => {
+        HostCall::EditorUndo => {
             outcome.action = HostAction::Undo;
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "editor.redo" => {
+        HostCall::EditorRedo => {
             outcome.action = HostAction::Redo;
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "workspace.textDocuments" => {
-            let value = context
-                .document
-                .as_ref()
-                .map(|document| json!([document_json(context.editor, document)]))
-                .unwrap_or_else(|| json!([]));
-            request.respond_value(value);
-        }
-        "document.getText" => {
-            let range: Option<Range> = params
-                .get("range")
-                .and_then(|value| serde_json::from_value(value.clone()).ok());
-            let text = match range {
+        HostCall::DocumentGetText => {
+            let params: DocumentGetTextParams = parse_params(params)?;
+            let text = match params.range {
                 Some(range) => {
                     let start = context.editor.utf16_offset(range.start);
                     let end = context.editor.utf16_offset(range.end).max(start);
@@ -431,176 +492,123 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 }
                 None => context.editor.text(),
             };
-            request.respond_value(json!(text));
+            Reply::value(text)
         }
-        "document.lineAt" => {
-            let line = params.get("line").and_then(Value::as_u64).unwrap_or(0);
-            let value = context
-                .editor
-                .line(line as usize)
-                .map(|line| json!(line))
-                .unwrap_or(Value::Null);
-            request.respond_value(value);
+        HostCall::DocumentLineAt => {
+            let params: DocumentLineAtParams = parse_params(params)?;
+            match context.editor.line(params.line) {
+                Some(line) => Reply::value(line),
+                None => Ok(Reply::null()),
+            }
         }
-        "document.positionAt" => {
-            let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0);
-            let position = context.editor.position_at_utf16(offset as usize);
-            request.respond_value(json!(position));
+        HostCall::DocumentPositionAt => {
+            let params: DocumentPositionAtParams = parse_params(params)?;
+            Reply::value(context.editor.position_at_utf16(params.offset))
         }
-        "document.offsetAt" => {
-            let position: Position = params
-                .get("position")
-                .and_then(|value| serde_json::from_value(value.clone()).ok())
-                .unwrap_or(Position::new(0, 0));
-            request.respond_value(json!(context.editor.utf16_offset(position)));
+        HostCall::DocumentOffsetAt => {
+            let params: DocumentOffsetAtParams = parse_params(params)?;
+            Reply::value(context.editor.utf16_offset(params.position))
         }
-        "notifications.show" => {
-            let message = text_param(&params, "message").unwrap_or_default();
-            outcome.status = Some(message);
-            request.respond_value(Value::Null);
+        HostCall::NotificationsShow => {
+            let params: NotificationsShowParams = parse_params(params)?;
+            outcome.status = Some(params.message);
+            Ok(Reply::null())
         }
-        "log.write" => {
-            let channel = text_param(&params, "channel").unwrap_or_else(|| "init".to_string());
-            let level = text_param(&params, "level").unwrap_or_else(|| "info".to_string());
-            let message = text_param(&params, "message").unwrap_or_default();
-            let data = params.get("data").cloned().unwrap_or(Value::Null);
+        HostCall::LogWrite => {
+            let params: LogWriteParams = parse_params(params)?;
             append_log(
                 &context.paths.logs_dir().join("init.log"),
-                &level,
-                &channel,
-                &message,
-                &data,
+                params.level.as_str(),
+                &params.channel,
+                &params.message,
+                &params.data,
             );
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.statusline.createItem" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            let alignment_str =
-                text_param(&params, "alignment").unwrap_or_else(|| "left".to_string());
-            let alignment =
-                StatuslineAlignment::parse(&alignment_str).unwrap_or(StatuslineAlignment::Left);
-            let priority = params.get("priority").and_then(Value::as_i64).unwrap_or(0) as i32;
-            let text = text_param(&params, "text").unwrap_or_default();
-            let color = text_param(&params, "color");
-            let command = text_param(&params, "command");
-
-            if let Some(statusline) = context.statusline {
-                let mut item = StatuslineItem::new(id, alignment, priority, text);
-                item.color = color;
-                item.command = command;
+        HostCall::UiStatuslineCreateItem => {
+            let params: StatuslineCreateParams = parse_params(params)?;
+            if let Some(statusline) = context.statusline.as_deref_mut() {
+                let mut item =
+                    StatuslineItem::new(params.id, params.alignment, params.priority, params.text);
+                item.color = params.color;
+                item.command = params.command;
                 statusline.set_item(item);
             }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.statusline.updateItem" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            let text = text_param(&params, "text");
-            let color = if params.get("color").is_some() {
-                Some(text_param(&params, "color"))
-            } else {
-                None
+        HostCall::UiStatuslineUpdateItem => {
+            let params: StatuslineUpdateParams = parse_params(params)?;
+            let color = params.color.map(optional_text).transpose()?;
+            let command = params.command.map(optional_text).transpose()?;
+            if let Some(statusline) = context.statusline.as_deref_mut() {
+                statusline.update_item(&params.id, params.text, color, command, params.visible);
+            }
+            Ok(Reply::null())
+        }
+        HostCall::UiStatuslineDisposeItem => {
+            let params: StatuslineDisposeParams = parse_params(params)?;
+            if let Some(statusline) = context.statusline.as_deref_mut() {
+                statusline.dispose_item(&params.id);
+            }
+            Ok(Reply::null())
+        }
+        HostCall::ViewsRender => {
+            let params: ViewsRenderParams = parse_params(params)?;
+            outcome.action = HostAction::RenderWidgetTree {
+                view_id: params.id,
+                tree: params.tree,
             };
-            let command = if params.get("command").is_some() {
-                Some(text_param(&params, "command"))
-            } else {
-                None
-            };
-            let visible = params.get("visible").and_then(Value::as_bool);
-
-            if let Some(statusline) = context.statusline {
-                statusline.update_item(&id, text, color, command, visible);
-            }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.statusline.disposeItem" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            if let Some(statusline) = context.statusline {
-                statusline.dispose_item(&id);
-            }
-            request.respond_value(Value::Null);
-        }
-        "views.render" => {
-            let view_id = text_param(&params, "id").unwrap_or_default();
-            if let Some(tree_value) = params.get("tree")
-                && let Ok(tree) = serde_json::from_value::<WidgetNode>(tree_value.clone())
-            {
-                outcome.action = HostAction::RenderWidgetTree { view_id, tree };
-                request.respond_value(Value::Null);
-            } else {
-                request.respond_error("InvalidParams", "invalid widget tree structure");
-            }
-        }
-        "ui.picker.show" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            let placeholder = text_param(&params, "placeholder");
-            let items: Vec<PickerItem> = params
-                .get("items")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-
+        HostCall::UiPickerShow => {
+            let params: PickerShowParams = parse_params(params)?;
             outcome.action = HostAction::ShowPicker {
-                id,
-                items,
-                placeholder,
-                request,
+                id: params.id,
+                items: params.items,
+                placeholder: params.placeholder,
+                request: request.clone(),
             };
+            Ok(Reply::Deferred)
         }
-        "ui.gutter.createItem" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            let line = params.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let text = text_param(&params, "text").unwrap_or_default();
-            let color = text_param(&params, "color");
-
-            if let Some(gutter) = context.gutter {
-                let mut item = GutterItem::new(id, line, text);
-                item.color = color;
+        HostCall::UiGutterCreateItem => {
+            let params: GutterCreateParams = parse_params(params)?;
+            if let Some(gutter) = context.gutter.as_deref_mut() {
+                let mut item = GutterItem::new(params.id, params.line, params.text);
+                item.color = params.color;
                 gutter.set_item(item);
             }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.gutter.disposeItem" => {
-            let id = text_param(&params, "id").unwrap_or_default();
-            if let Some(gutter) = context.gutter {
-                gutter.dispose_item(&id);
+        HostCall::UiGutterDisposeItem => {
+            let params: GutterDisposeParams = parse_params(params)?;
+            if let Some(gutter) = context.gutter.as_deref_mut() {
+                gutter.dispose_item(&params.id);
             }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.gutter.clear" => {
-            if let Some(gutter) = context.gutter {
+        HostCall::UiGutterClear => {
+            if let Some(gutter) = context.gutter.as_deref_mut() {
                 gutter.clear();
             }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.hover.show" => {
-            let line = params.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let character = params.get("character").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let text = text_param(&params, "text").unwrap_or_default();
-
-            if let Some(hover) = context.hover {
-                *hover = Some(HoverState::new(line, character, text));
+        HostCall::UiHoverShow => {
+            let params: HoverShowParams = parse_params(params)?;
+            if let Some(hover) = context.hover.as_deref_mut() {
+                *hover = Some(HoverState::new(params.line, params.character, params.text));
             }
-            request.respond_value(Value::Null);
+            Ok(Reply::null())
         }
-        "ui.hover.hide" => {
-            if let Some(hover) = context.hover {
+        HostCall::UiHoverHide => {
+            if let Some(hover) = context.hover.as_deref_mut() {
                 *hover = None;
             }
-            request.respond_value(Value::Null);
-        }
-        other => {
-            request.respond_error("InvalidState", format!("unknown host method: {other}"));
+            Ok(Reply::null())
         }
     }
-
-    outcome
 }
 
-fn text_param(params: &Value, key: &str) -> Option<String> {
-    params.get(key).and_then(Value::as_str).map(str::to_string)
-}
-
-fn command_args(params: &Value) -> CommandArgs {
-    let args = params.get("args").unwrap_or(&Value::Null);
+fn command_args(args: &Value) -> CommandArgs {
     CommandArgs {
         count: args
             .get("count")
@@ -613,25 +621,23 @@ fn command_args(params: &Value) -> CommandArgs {
     }
 }
 
-fn context_value(value: Option<&Value>) -> Option<when::Value> {
-    match value? {
-        Value::Bool(value) => Some(when::Value::Bool(*value)),
-        Value::String(value) => Some(when::Value::Text(value.clone())),
-        Value::Number(value) => value.as_f64().map(when::Value::Number),
-        _ => None,
+fn context_value(value: KeyContextValue) -> when::Value {
+    match value {
+        KeyContextValue::Bool(value) => when::Value::Bool(value),
+        KeyContextValue::Text(value) => when::Value::Text(value),
+        KeyContextValue::Number(value) => when::Value::Number(value),
     }
 }
 
-fn document_json(editor: &Editor, document: &DocumentInfo) -> Value {
-    let end = editor.position_at_utf16(editor.len_utf16());
-    json!({
-        "id": document.id,
-        "uri": document.uri,
-        "languageId": document.language_id,
-        "version": editor.version(),
-        "lineCount": editor.line_count(),
-        "end": end,
-    })
+fn document_info(editor: &Editor, document: &DocumentInfo) -> DocumentInfoReply {
+    DocumentInfoReply {
+        id: document.id,
+        uri: document.uri.clone(),
+        language_id: document.language_id.clone(),
+        version: editor.version(),
+        line_count: editor.line_count(),
+        end: editor.position_at_utf16(editor.len_utf16()),
+    }
 }
 
 fn append_log(path: &Path, level: &str, channel: &str, message: &str, data: &Value) {
@@ -667,6 +673,8 @@ fn file_stamp(path: &Path) -> Option<SystemTime> {
 mod tests {
     use super::*;
     use crate::keymap::KeyContext;
+    use crate::statusline::StatuslineAlignment;
+    use serde_json::json;
 
     fn context<'a>(
         editor: &'a mut Editor,
@@ -950,7 +958,68 @@ commands.registerCommand("user.hello", async () => {
         );
 
         let reply = receiver.recv().expect("reply");
-        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidState"));
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidRequest"));
+    }
+
+    #[test]
+    fn rejects_parameters_of_the_wrong_type() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        // An unknown mode is rejected instead of falling back to a default.
+        let (request, receiver) = HostRequest::new("editor.setMode", json!({ "mode": "bogus" }));
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidParams"));
+
+        // A missing required field is an error, not an empty string.
+        let (request, receiver) = HostRequest::new("config.get", json!({}));
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidParams"));
+
+        // An unknown alignment is an error, not `Left`.
+        let (request, receiver) = HostRequest::new(
+            "ui.statusline.createItem",
+            json!({ "id": "x", "alignment": "top", "text": "x" }),
+        );
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidParams"));
     }
 
     #[test]

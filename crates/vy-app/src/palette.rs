@@ -1,40 +1,10 @@
 //! State and item filtering for the command palette.
 
-use serde::{Deserialize, Serialize};
-
 use crate::commands::CommandDescriptor;
 
-/// A generic item displayed in a picker / palette list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PickerItem {
-    pub id: String,
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-impl PickerItem {
-    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            title: title.into(),
-            description: None,
-            detail: None,
-        }
-    }
-
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
-        self.detail = Some(detail.into());
-        self
-    }
-}
+/// An item shown by the picker. Defined in `vy-api-schema` because scripts
+/// provide the list.
+pub use vy_api_schema::PickerItem;
 
 impl From<&CommandDescriptor> for PickerItem {
     fn from(command: &CommandDescriptor) -> Self {

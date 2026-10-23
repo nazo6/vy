@@ -7,6 +7,7 @@ use ts_rs::TS;
 #[ts(export)]
 pub enum ErrorCode {
     InvalidRequest,
+    InvalidParams,
     CapabilityDenied,
     NotFound,
     InvalidState,
@@ -22,6 +23,7 @@ impl std::fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             Self::InvalidRequest => "InvalidRequest",
+            Self::InvalidParams => "InvalidParams",
             Self::CapabilityDenied => "CapabilityDenied",
             Self::NotFound => "NotFound",
             Self::InvalidState => "InvalidState",

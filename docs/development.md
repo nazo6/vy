@@ -72,10 +72,14 @@ cargo fmt --all --check
 - クライアントの GPUI に依存しない部分は `cargo test -p vy-app --lib`
   で確かめます。キーマップ、設定、コマンド、`init.ts`
   のホストは画面なしで動きます。
-- プロトコル境界の型を変えたら、`cargo test -p vy-core -p vy-proto export_bindings`
-  を実行し、`packages/vy-api-types` を一緒にコミットします。CI では生成後に
-  `git diff --exit-code packages/vy-api-types` で差分がないことを
-  確かめます。生成先は `.cargo/config.toml` の `TS_RS_EXPORT_DIR` です。
+- プロトコル境界とプラグイン境界の型を変えたら、
+  `cargo test --workspace export_bindings` を実行し、`packages/vy-api-types` を
+  一緒にコミットします。CI では生成後に `git diff --exit-code packages`
+  で差分がないことを確かめます。生成先は `.cargo/config.toml` の
+  `TS_RS_EXPORT_DIR` です。プラグイン API の型とメソッド表は
+  `crates/vy-api-schema` が持ち、`HostMethods.ts`
+  も同じテストで生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。`packages/vy-api/index.d.ts`
+  は生成に移行するまで手で更新します。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`

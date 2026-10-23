@@ -3,4 +3,4 @@
 /**
  * Protocol error codes. Values and meanings are in "Errors" in `docs/protocol.md`.
  */
-export type ErrorCode = "InvalidRequest" | "CapabilityDenied" | "NotFound" | "InvalidState" | "Cancelled" | "Timeout" | "UnsupportedProtocolVersion" | "UnsupportedFeature" | "ResourceLimit" | "Internal";
+export type ErrorCode = "InvalidRequest" | "InvalidParams" | "CapabilityDenied" | "NotFound" | "InvalidState" | "Cancelled" | "Timeout" | "UnsupportedProtocolVersion" | "UnsupportedFeature" | "ResourceLimit" | "Internal";

@@ -171,7 +171,8 @@ Notification {
 
 | 値                           | 意味                                   |
 | :--------------------------- | :------------------------------------- |
-| `InvalidRequest`             | メソッド名か引数が不正                 |
+| `InvalidRequest`             | メソッド名が不正                       |
+| `InvalidParams`              | 引数の形か型が不正                     |
 | `CapabilityDenied`           | 宣言のないケイパビリティを使おうとした |
 | `NotFound`                   | 対象の文書、ペイン、プラグインがない   |
 | `InvalidState`               | 現在の状態では実行できない             |
