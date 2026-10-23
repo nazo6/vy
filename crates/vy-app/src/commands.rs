@@ -227,6 +227,7 @@ define_command_enum! {
     pub enum DocumentCommand {
         Open => ("vy.editor.open", "Editor Open"),
         Save => ("vy.document.save", "Document Save"),
+        Switch => ("vy.editor.switch_document", "Switch Document"),
     }
 }
 
@@ -326,6 +327,14 @@ pub const EX_ALIASES: &[ExAlias] = &[
     ExAlias {
         name: "w",
         id: "vy.document.save",
+    },
+    ExAlias {
+        name: "b",
+        id: "vy.editor.switch_document",
+    },
+    ExAlias {
+        name: "buffer",
+        id: "vy.editor.switch_document",
     },
 ];
 
@@ -662,7 +671,8 @@ impl CommandRegistry {
             let mut descriptor =
                 CommandDescriptor::new(command.id(), command.title(), CommandSource::Builtin);
             descriptor.hidden = *command == DocumentCommand::Open;
-            descriptor.accepts_args = *command == DocumentCommand::Open;
+            descriptor.accepts_args =
+                matches!(command, DocumentCommand::Open | DocumentCommand::Switch);
             descriptors.push(descriptor);
         }
         for command in UiCommand::all() {
@@ -830,6 +840,8 @@ mod tests {
         assert_eq!(resolve_ex_name("q"), Ok("vy.pane.close"));
         assert_eq!(resolve_ex_name("e"), Ok("vy.editor.open"));
         assert_eq!(resolve_ex_name("w"), Ok("vy.document.save"));
+        assert_eq!(resolve_ex_name("b"), Ok("vy.editor.switch_document"));
+        assert_eq!(resolve_ex_name("buffer"), Ok("vy.editor.switch_document"));
         assert_eq!(
             resolve_ex_name("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
@@ -844,7 +856,9 @@ mod tests {
                     "close".to_string(),
                     "q".to_string(),
                     "e".to_string(),
-                    "w".to_string()
+                    "w".to_string(),
+                    "b".to_string(),
+                    "buffer".to_string(),
                 ],
             })
         );

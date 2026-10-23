@@ -2,13 +2,16 @@
 
 use gpui::ScrollStrategy;
 use vy_app::commands::{
-    BuiltinCommand, CommandDescriptor, DocumentCommand, Invocation, InvocationArgs, PaneCommand,
-    UiCommand, ViewCommand, parse_ex_line, resolve_ex_name,
+    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, PaneCommand, UiCommand,
+    ViewCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
-use vy_app::palette::{PaletteState, filtered_palette_indices, move_palette_selection};
+use vy_app::palette::{
+    PaletteMode, PaletteState, PickerItem, filtered_picker_indices, move_palette_selection,
+};
+use vy_app::state::DocumentState;
 use vy_app::text_layout::{
     half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
 };
@@ -74,6 +77,36 @@ impl EditorView {
                     to_value(&DocumentIdParams { document_id }),
                     Pending::Save,
                 );
+            }
+            DocumentCommand::Switch => {
+                if let Some(raw) = invocation.ex_raw() {
+                    let raw = raw.trim();
+                    if !raw.is_empty() {
+                        // Switch directly to matching document if argument provided.
+                        let matched_uri = self.documents.values().find_map(|doc| {
+                            if doc.id.to_string() == raw
+                                || doc.uri.ends_with(raw)
+                                || doc.uri.contains(raw)
+                            {
+                                Some(doc.uri.clone())
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(uri) = matched_uri {
+                            self.request(
+                                "editor/open",
+                                to_value(&EditorOpenParams { uri, pane_id: None }),
+                                Pending::EditorOpen,
+                            );
+                            return;
+                        } else {
+                            self.status = format!("no buffer matches: {raw}").into();
+                            return;
+                        }
+                    }
+                }
+                self.open_document_picker();
             }
         }
     }
@@ -202,25 +235,51 @@ impl EditorView {
         );
     }
 
-    pub(super) fn palette_items(&self) -> Vec<CommandDescriptor> {
-        self.commands
-            .descriptors()
-            .into_iter()
-            .filter(|command| !command.hidden)
-            .collect()
+    pub(super) fn palette_items(&self) -> Vec<PickerItem> {
+        let Some(palette) = self.palette.as_ref() else {
+            return Vec::new();
+        };
+
+        match palette.mode {
+            PaletteMode::Commands => self
+                .commands
+                .descriptors()
+                .into_iter()
+                .filter(|command| !command.hidden)
+                .map(|cmd| PickerItem::from(&cmd))
+                .collect(),
+            PaletteMode::Documents => {
+                let mut docs: Vec<&DocumentState> = self.documents.values().collect();
+                docs.sort_by_key(|doc| doc.id);
+                docs.into_iter()
+                    .map(|doc| {
+                        let dirty = if doc.is_dirty() { " [+]" } else { "" };
+                        let display_name = doc
+                            .uri
+                            .rsplit_once('/')
+                            .map(|(_, name)| name)
+                            .unwrap_or(&doc.uri);
+                        let title = format!("{}{dirty}", display_name);
+                        PickerItem::new(doc.uri.clone(), title)
+                            .with_description(doc.uri.clone())
+                            .with_detail(format!("#{}", doc.id))
+                    })
+                    .collect()
+            }
+        }
     }
 
     pub(super) fn palette_filtered_len(&self) -> usize {
         let Some(palette) = self.palette.as_ref() else {
             return 0;
         };
-        filtered_palette_indices(&self.palette_items(), &palette.query).len()
+        filtered_picker_indices(&self.palette_items(), &palette.query).len()
     }
 
     pub(super) fn palette_selected_id(&self) -> Option<String> {
         let palette = self.palette.as_ref()?;
         let items = self.palette_items();
-        let filtered = filtered_palette_indices(&items, &palette.query);
+        let filtered = filtered_picker_indices(&items, &palette.query);
         let index = palette.selected.min(filtered.len().saturating_sub(1));
         filtered.get(index).map(|index| items[*index].id.clone())
     }
@@ -228,10 +287,19 @@ impl EditorView {
     pub(super) fn open_palette(&mut self) {
         self.clear_preedit();
         self.ex = None;
-        self.palette = Some(PaletteState::default());
+        self.palette = Some(PaletteState::with_mode(PaletteMode::Commands));
         self.palette_scroll_handle
             .scroll_to_item(0, ScrollStrategy::Top);
         self.status = "command palette".into();
+    }
+
+    pub(super) fn open_document_picker(&mut self) {
+        self.clear_preedit();
+        self.ex = None;
+        self.palette = Some(PaletteState::with_mode(PaletteMode::Documents));
+        self.palette_scroll_handle
+            .scroll_to_item(0, ScrollStrategy::Top);
+        self.status = "switch document".into();
     }
 
     pub(super) fn open_ex(&mut self) {
@@ -319,8 +387,27 @@ impl EditorView {
                 let Some(id) = self.palette_selected_id() else {
                     return true;
                 };
+                let mode = self
+                    .palette
+                    .as_ref()
+                    .map(|p| p.mode.clone())
+                    .unwrap_or_default();
                 self.palette = None;
-                self.enqueue_command(Invocation::palette(id));
+                match mode {
+                    PaletteMode::Commands => {
+                        self.enqueue_command(Invocation::palette(id));
+                    }
+                    PaletteMode::Documents => {
+                        self.request(
+                            "editor/open",
+                            to_value(&EditorOpenParams {
+                                uri: id,
+                                pane_id: None,
+                            }),
+                            Pending::EditorOpen,
+                        );
+                    }
+                }
                 return true;
             }
             _ => {}

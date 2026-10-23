@@ -4,18 +4,19 @@ use std::rc::Rc;
 
 use gpui::{AnyElement, Entity, IntoElement, div, prelude::*, px, size};
 use gpui_base::{FocusTrapElement, v_virtual_list};
-use vy_app::commands::CommandDescriptor;
-use vy_app::palette::{PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, filtered_palette_indices};
+use vy_app::palette::{
+    PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteMode, PickerItem, filtered_picker_indices,
+};
 
 use super::ex::input_caret;
 use crate::theme::Theme;
 use crate::view::EditorView;
 
-/// Height of one command row in the palette list.
+/// Height of one row in the picker list.
 pub const PALETTE_ROW_HEIGHT: f32 = 28.0;
 
-/// Renders a single row in the command palette.
-pub fn render_palette_row(theme: &Theme, item: &CommandDescriptor, is_selected: bool) -> gpui::Div {
+/// Renders a single row in the picker / palette.
+pub fn render_picker_row(theme: &Theme, item: &PickerItem, is_selected: bool) -> gpui::Div {
     let row = div()
         .flex()
         .justify_between()
@@ -31,35 +32,46 @@ pub fn render_palette_row(theme: &Theme, item: &CommandDescriptor, is_selected: 
     } else {
         row.text_color(theme.foreground.default)
     };
-    row.child(
-        div()
-            .flex()
-            .gap_2()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .child(item.title.clone())
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.foreground.muted)
-                    .child(item.id.clone()),
-            ),
-    )
-    .child(
-        div()
-            .flex_shrink_0()
-            .text_xs()
-            .text_color(theme.foreground.muted)
-            .child(item.source.label().to_string()),
-    )
+
+    let title_section = div()
+        .flex()
+        .gap_2()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .child(item.title.clone());
+
+    let title_section = if let Some(description) = &item.description {
+        title_section.child(
+            div()
+                .text_xs()
+                .text_color(theme.foreground.muted)
+                .child(description.clone()),
+        )
+    } else {
+        title_section
+    };
+
+    let row = row.child(title_section);
+
+    if let Some(detail) = &item.detail {
+        row.child(
+            div()
+                .flex_shrink_0()
+                .text_xs()
+                .text_color(theme.foreground.muted)
+                .child(detail.clone()),
+        )
+    } else {
+        row
+    }
 }
 
-/// Renders the floating modal command palette with virtual scrolling.
+/// Renders the floating modal picker / command palette with virtual scrolling.
 pub fn render_palette(
     theme: &Theme,
     view: &EditorView,
     entity: Entity<EditorView>,
-    items: &[CommandDescriptor],
+    items: &[PickerItem],
     font_size: f32,
     caret_width: f32,
 ) -> gpui::Div {
@@ -70,8 +82,13 @@ pub fn render_palette(
     let focus_handle = &view.palette_focus_handle;
     let scroll_handle = &view.palette_scroll_handle;
 
-    let filtered = filtered_palette_indices(items, &palette.query);
+    let filtered = filtered_picker_indices(items, &palette.query);
     let filtered_count = filtered.len();
+
+    let count_label = match palette.mode {
+        PaletteMode::Commands => format!("{filtered_count} commands"),
+        PaletteMode::Documents => format!("{filtered_count} documents"),
+    };
 
     let query = div()
         .flex()
@@ -95,15 +112,20 @@ pub fn render_palette(
                 .flex_shrink_0()
                 .text_xs()
                 .text_color(theme.foreground.muted)
-                .child(format!("{} commands", filtered_count)),
+                .child(count_label),
         );
+
+    let empty_label = match palette.mode {
+        PaletteMode::Commands => "no matching commands",
+        PaletteMode::Documents => "no matching documents",
+    };
 
     let rows_element: AnyElement = if filtered.is_empty() {
         div()
             .px_2()
             .py_2()
             .text_color(theme.foreground.muted)
-            .child("no matching commands")
+            .child(empty_label)
             .into_any_element()
     } else {
         let item_sizes = Rc::new(vec![
@@ -124,7 +146,7 @@ pub fn render_palette(
                     .map(|ix| {
                         let item_idx = filtered_clone[ix];
                         let item = &items_clone[item_idx];
-                        render_palette_row(&theme_clone, item, ix == selected)
+                        render_picker_row(&theme_clone, item, ix == selected)
                     })
                     .collect()
             },
@@ -136,13 +158,18 @@ pub fn render_palette(
         .into_any_element()
     };
 
+    let hint_label = match palette.mode {
+        PaletteMode::Commands => "Enter run  ·  Esc close  ·  Up/Down move",
+        PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
+    };
+
     let hint = div()
         .px_2()
         .pt_1()
         .text_xs()
         .text_color(theme.foreground.muted)
         .whitespace_nowrap()
-        .child("Enter run  ·  Esc close  ·  Up/Down move");
+        .child(hint_label);
 
     div()
         .absolute()

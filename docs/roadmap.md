@@ -107,7 +107,8 @@ Phase 3 で仕上げます。
 - [x] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する
   - `vy.pane.split_right` (`:vsp`)、`vy.pane.split_down` (`:sp`)、`vy.pane.close` (`:q`)、
     `vy.pane.focus_*`、`vy.pane.next`
-- [ ] 開いている文書の一覧・切り替え
+- [x] 開いている文書の一覧・切り替え
+  - `vy.editor.switch_document`、Ex コマンド（`:b` / `:buffer`）、ドキュメントピッカーモーダルによるファジー検索と切り替え
 - [ ] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
   - `webview` は Phase 6

@@ -2,6 +2,57 @@
 
 use crate::commands::CommandDescriptor;
 
+/// A generic item displayed in a picker / palette list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickerItem {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub detail: Option<String>,
+}
+
+impl PickerItem {
+    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            description: None,
+            detail: None,
+        }
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+}
+
+impl From<&CommandDescriptor> for PickerItem {
+    fn from(command: &CommandDescriptor) -> Self {
+        Self {
+            id: command.id.clone(),
+            title: command.title.clone(),
+            description: Some(command.id.clone()),
+            detail: Some(command.source.label().to_string()),
+        }
+    }
+}
+
+/// The mode/kind of picker currently active.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum PaletteMode {
+    /// Command palette for searching and executing commands.
+    #[default]
+    Commands,
+    /// Document / buffer picker for switching open documents.
+    Documents,
+}
+
 /// Maximum width the command palette grows before it stops filling the window.
 pub const PALETTE_MAX_WIDTH: f32 = 560.0;
 /// Maximum height the command palette grows before the row list is clipped.
@@ -10,6 +61,7 @@ pub const PALETTE_MAX_HEIGHT: f32 = 420.0;
 /// State of an active command palette modal.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PaletteState {
+    pub mode: PaletteMode,
     pub query: String,
     pub selected: usize,
 }
@@ -17,6 +69,14 @@ pub struct PaletteState {
 impl PaletteState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_mode(mode: PaletteMode) -> Self {
+        Self {
+            mode,
+            query: String::new(),
+            selected: 0,
+        }
     }
 
     /// Moves the selection index by `delta`, wrapping around if out of bounds.
@@ -44,6 +104,12 @@ impl PaletteState {
 
 /// Indices of palette rows matching every whitespace-separated word in `query`.
 pub fn filtered_palette_indices(items: &[CommandDescriptor], query: &str) -> Vec<usize> {
+    let picker_items: Vec<PickerItem> = items.iter().map(PickerItem::from).collect();
+    filtered_picker_indices(&picker_items, query)
+}
+
+/// Indices of generic picker items matching every whitespace-separated word in `query`.
+pub fn filtered_picker_indices(items: &[PickerItem], query: &str) -> Vec<usize> {
     let tokens: Vec<String> = query
         .split_whitespace()
         .map(|token| token.to_lowercase())
@@ -56,7 +122,16 @@ pub fn filtered_palette_indices(items: &[CommandDescriptor], query: &str) -> Vec
         .iter()
         .enumerate()
         .filter(|(_, item)| {
-            let haystack = format!("{} {}", item.title, item.id).to_lowercase();
+            let mut haystack = format!("{} {}", item.title, item.id);
+            if let Some(desc) = &item.description {
+                haystack.push(' ');
+                haystack.push_str(desc);
+            }
+            if let Some(detail) = &item.detail {
+                haystack.push(' ');
+                haystack.push_str(detail);
+            }
+            let haystack = haystack.to_lowercase();
             tokens.iter().all(|token| haystack.contains(token))
         })
         .map(|(index, _)| index)
