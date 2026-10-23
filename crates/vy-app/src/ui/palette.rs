@@ -89,6 +89,7 @@ pub fn render_palette(
         PaletteMode::Commands => format!("{filtered_count} commands"),
         PaletteMode::Documents => format!("{filtered_count} documents"),
         PaletteMode::Custom { .. } => format!("{filtered_count} items"),
+        PaletteMode::Approval { missing, .. } => format!("{} permission(s)", missing.len()),
     };
 
     let prefix = match &palette.mode {
@@ -96,6 +97,7 @@ pub fn render_palette(
             placeholder: Some(p),
             ..
         } => format!("{p} > "),
+        PaletteMode::Approval { plugin_name, .. } => format!("Approve {plugin_name}? > "),
         _ => "> ".to_string(),
     };
 
@@ -128,6 +130,7 @@ pub fn render_palette(
         PaletteMode::Commands => "no matching commands",
         PaletteMode::Documents => "no matching documents",
         PaletteMode::Custom { .. } => "no matching items",
+        PaletteMode::Approval { .. } => "no matching options",
     };
 
     let rows_element: AnyElement = if filtered.is_empty() {
@@ -172,6 +175,7 @@ pub fn render_palette(
         PaletteMode::Commands => "Enter run  ·  Esc close  ·  Up/Down move",
         PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
         PaletteMode::Custom { .. } => "Enter select  ·  Esc close  ·  Up/Down move",
+        PaletteMode::Approval { .. } => "Enter choose  ·  Esc deny  ·  Up/Down move",
     };
 
     let hint = div()

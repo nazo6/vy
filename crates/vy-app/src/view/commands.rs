@@ -9,7 +9,8 @@ use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::palette::{
-    PaletteMode, PaletteState, PickerItem, filtered_picker_indices, move_palette_selection,
+    PaletteMode, PaletteState, PickerItem, approval_picker_items, filtered_picker_indices,
+    move_palette_selection,
 };
 use vy_app::state::DocumentState;
 use vy_app::text_layout::{
@@ -267,6 +268,12 @@ impl EditorView {
                     .collect()
             }
             PaletteMode::Custom { ref items, .. } => items.clone(),
+            PaletteMode::Approval {
+                ref plugin_id,
+                ref plugin_name,
+                ref missing,
+                ..
+            } => approval_picker_items(plugin_id, plugin_name, missing),
         }
     }
 
@@ -399,19 +406,38 @@ impl EditorView {
         self.enqueue_command(Invocation::ex(id, parsed.args));
     }
 
+    pub(super) fn show_next_approval_prompt(&mut self) {
+        if let Some(req) = self.plugin_manager.next_approval_request() {
+            self.palette = Some(PaletteState::with_mode(PaletteMode::Approval {
+                plugin_id: req.plugin_id.clone(),
+                plugin_name: req.plugin_name.clone(),
+                plugin_version: req.plugin_version.clone(),
+                missing: req.missing_capabilities.clone(),
+            }));
+        }
+    }
+
     pub(super) fn handle_palette_key(&mut self, key: Key) -> bool {
         match key {
             Key::Esc => {
-                if let Some(PaletteState {
-                    mode: PaletteMode::Custom { reply, .. },
-                    ..
-                }) = self.palette.take()
-                {
-                    if let Some(req) = reply {
+                let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
+                match mode {
+                    PaletteMode::Custom {
+                        reply: Some(req), ..
+                    } => {
                         req.respond_value(serde_json::Value::Null);
                     }
-                } else {
-                    self.palette = None;
+                    PaletteMode::Approval {
+                        plugin_id,
+                        plugin_name,
+                        ..
+                    } => {
+                        self.plugin_manager.deny(&plugin_id);
+                        self.status =
+                            format!("Denied capabilities for plugin {plugin_name}").into();
+                        self.show_next_approval_prompt();
+                    }
+                    _ => {}
                 }
                 return true;
             }
@@ -437,6 +463,41 @@ impl EditorView {
                     PaletteMode::Custom { reply, .. } => {
                         if let Some(req) = reply {
                             req.respond_value(serde_json::json!({ "selectedId": id }));
+                        }
+                    }
+                    PaletteMode::Approval {
+                        plugin_id,
+                        plugin_name,
+                        plugin_version,
+                        missing,
+                    } => {
+                        if id == "trust" {
+                            if let Err(err) = self.plugin_manager.approve(&plugin_id) {
+                                self.status = format!("Error approving plugin: {err}").into();
+                            } else {
+                                self.status =
+                                    format!("Approved and enabled plugin {plugin_name}").into();
+                                if let Some(vy_app::plugin::PluginState::Trusted(plugin)) =
+                                    self.plugin_manager.state(&plugin_id)
+                                {
+                                    let plugin_clone = plugin.clone();
+                                    self.evaluate_discovered_plugin(&plugin_clone);
+                                }
+                            }
+                            self.show_next_approval_prompt();
+                        } else if id == "deny" {
+                            self.plugin_manager.deny(&plugin_id);
+                            self.status =
+                                format!("Denied capabilities for plugin {plugin_name}").into();
+                            self.show_next_approval_prompt();
+                        } else {
+                            // User selected an info row; keep approval dialog open
+                            self.palette = Some(PaletteState::with_mode(PaletteMode::Approval {
+                                plugin_id,
+                                plugin_name,
+                                plugin_version,
+                                missing,
+                            }));
                         }
                     }
                 }

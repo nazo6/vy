@@ -120,6 +120,18 @@ impl PluginHost {
         }
     }
 
+    /// Reads and evaluates an external script file (e.g. plugin main entry).
+    pub fn evaluate_file(&mut self, path: PathBuf) -> InitLoad {
+        match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                self.script.evaluate(path, source);
+                InitLoad::Loaded
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => InitLoad::Missing,
+            Err(error) => InitLoad::Failed(format!("could not read {}: {error}", path.display())),
+        }
+    }
+
     /// Whether `init.ts` was added, removed, or edited since the last load.
     pub fn changed(&self) -> bool {
         file_stamp(&self.init_path) != self.stamp

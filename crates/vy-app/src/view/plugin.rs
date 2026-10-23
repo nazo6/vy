@@ -88,6 +88,43 @@ impl EditorView {
                 self.status = message.into();
             }
         }
+        self.load_trusted_plugins();
+    }
+
+    /// Evaluates the frontend main entry for all currently trusted plugins.
+    pub(super) fn load_trusted_plugins(&mut self) {
+        let trusted: Vec<vy_app::plugin::DiscoveredPlugin> = self
+            .plugin_manager
+            .trusted_plugins()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        for plugin in trusted {
+            self.evaluate_discovered_plugin(&plugin);
+        }
+    }
+
+    /// Evaluates a single discovered plugin's frontend entry point.
+    pub(super) fn evaluate_discovered_plugin(&mut self, plugin: &vy_app::plugin::DiscoveredPlugin) {
+        let Some(main) = plugin.main_path() else {
+            return;
+        };
+        let Some(host) = self.plugin.as_mut() else {
+            return;
+        };
+
+        match host.evaluate_file(main) {
+            InitLoad::Loaded => {
+                eprintln!("vy: loaded plugin '{}'", plugin.manifest.id);
+            }
+            InitLoad::Missing => {
+                eprintln!("vy: plugin '{}' main entry not found", plugin.manifest.id);
+            }
+            InitLoad::Failed(msg) => {
+                eprintln!("vy: plugin '{}' failed: {msg}", plugin.manifest.id);
+            }
+        }
     }
 
     pub(super) fn handle_script_event(&mut self, event: ScriptEvent) {

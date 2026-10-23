@@ -16,7 +16,7 @@ pub fn render_titlebar(
     theme: &Theme,
     title: impl Into<SharedString>,
     is_dirty: bool,
-    window: &mut Window,
+    _window: &mut Window,
     on_drag: impl Fn(&MouseDownEvent, &mut Window) + 'static,
     on_double_click: impl Fn(&ClickEvent, &mut Window) + 'static,
 ) -> impl IntoElement {

@@ -1,0 +1,27 @@
+{
+  "id": "example.greeter",
+  "name": "Greeter Plugin",
+  "version": "0.1.0",
+  "description": "An example plugin to verify manifest discovery, capability approval, and commands",
+  "engines": {
+    "vy": ">=0.1.0"
+  },
+  "main": "dist/frontend.js",
+  "permissions": [
+    "fs:read:${workspace}/**",
+    "clipboard:write"
+  ],
+  "activationEvents": [
+    "onStartup",
+    "onCommand:example.greeter.hello"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "example.greeter.hello",
+        "title": "Greeter: Say Hello"
+      }
+    ]
+  }
+}
+

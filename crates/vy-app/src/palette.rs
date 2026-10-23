@@ -32,12 +32,56 @@ pub enum PaletteMode {
         placeholder: Option<String>,
         reply: Option<vy_js::HostRequest>,
     },
+    /// Capability approval prompt for an external plugin.
+    Approval {
+        plugin_id: String,
+        plugin_name: String,
+        plugin_version: String,
+        missing: Vec<String>,
+    },
 }
 
 /// Maximum width the command palette grows before it stops filling the window.
 pub const PALETTE_MAX_WIDTH: f32 = 560.0;
 /// Maximum height the command palette grows before the row list is clipped.
 pub const PALETTE_MAX_HEIGHT: f32 = 420.0;
+
+/// Generates picker items for a plugin capability approval prompt.
+pub fn approval_picker_items(
+    plugin_id: &str,
+    plugin_name: &str,
+    missing: &[String],
+) -> Vec<PickerItem> {
+    let mut items = vec![
+        PickerItem {
+            id: "trust".into(),
+            title: "Trust and Enable".into(),
+            description: Some(format!(
+                "Grant {} permission(s) and enable {}",
+                missing.len(),
+                plugin_name
+            )),
+            detail: Some("Action".into()),
+        },
+        PickerItem {
+            id: "deny".into(),
+            title: "Deny".into(),
+            description: Some(format!("Keep {} disabled", plugin_name)),
+            detail: Some("Action".into()),
+        },
+    ];
+
+    for cap in missing {
+        items.push(PickerItem {
+            id: format!("cap:{cap}"),
+            title: cap.clone(),
+            description: Some(format!("Requested by {plugin_id}")),
+            detail: Some("Permission".into()),
+        });
+    }
+
+    items
+}
 
 /// State of an active command palette modal.
 #[derive(Debug, Default)]

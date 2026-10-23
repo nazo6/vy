@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod keymap;
 pub mod palette;
 pub mod paths;
+pub mod plugin;
 pub mod plugin_host;
 pub mod rpc;
 pub mod slots;

@@ -22,6 +22,7 @@ use vy_app::ex::{ExHistory, ExState};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
 use vy_app::palette::PaletteState;
 use vy_app::paths::Paths;
+use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
 use vy_app::rpc::Client;
 use vy_app::slots::{GutterRegistry, HoverState};
@@ -55,6 +56,8 @@ pub struct EditorView {
     settings_stamp: Option<SystemTime>,
     keymap: Keymap,
     commands: CommandRegistry,
+    /// Manages discovered external plugins and capability approval.
+    plugin_manager: PluginManager,
     /// The script thread and `init.ts` bookkeeping.
     plugin: Option<PluginHost>,
     /// Bumped whenever the script thread is replaced, so old pumps stop.
@@ -115,6 +118,22 @@ impl EditorView {
             }
         };
 
+        let roots = vy_capabilities::Roots::new(workspace.clone(), dirs::home_dir());
+        let mut plugin_manager = PluginManager::new(paths.clone(), roots);
+        let plugin_warnings = plugin_manager.scan();
+        for warning in &plugin_warnings {
+            eprintln!("vy: plugins: {warning}");
+        }
+
+        let initial_palette = plugin_manager.next_approval_request().map(|req| {
+            PaletteState::with_mode(vy_app::palette::PaletteMode::Approval {
+                plugin_id: req.plugin_id.clone(),
+                plugin_name: req.plugin_name.clone(),
+                plugin_version: req.plugin_version.clone(),
+                missing: req.missing_capabilities.clone(),
+            })
+        });
+
         let uri = document_uri();
         let (env, trusted_warnings) = plugin_host::script_env(&workspace_info(), &paths);
         for warning in &trusted_warnings {
@@ -136,6 +155,7 @@ impl EditorView {
             settings_stamp,
             keymap,
             commands: CommandRegistry::new(),
+            plugin_manager,
             plugin,
             script_generation: 0,
             init_evaluated: false,
@@ -147,7 +167,7 @@ impl EditorView {
             panes: HashMap::new(),
             documents: HashMap::new(),
             fallback,
-            palette: None,
+            palette: initial_palette,
             ex: None,
             ex_history: ExHistory::new(),
             command_queue: VecDeque::new(),
