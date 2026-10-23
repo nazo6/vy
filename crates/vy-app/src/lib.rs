@@ -17,4 +17,5 @@ pub mod state;
 pub mod statusline;
 pub mod text_layout;
 pub mod when;
+pub mod widget;
 pub mod workspace;

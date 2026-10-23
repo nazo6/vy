@@ -294,6 +294,106 @@ export const ui = {
       };
     },
   },
+
+  column(options, children) {
+    const opts = Array.isArray(options) ? {} : options || {};
+    const kids = Array.isArray(options) ? options : children || [];
+    return {
+      type: "container",
+      kind: "column",
+      id: opts.id ?? null,
+      gap: opts.gap ?? null,
+      children: kids,
+    };
+  },
+
+  row(options, children) {
+    const opts = Array.isArray(options) ? {} : options || {};
+    const kids = Array.isArray(options) ? options : children || [];
+    return {
+      type: "container",
+      kind: "row",
+      id: opts.id ?? null,
+      gap: opts.gap ?? null,
+      children: kids,
+    };
+  },
+
+  stack(options, children) {
+    const opts = Array.isArray(options) ? {} : options || {};
+    const kids = Array.isArray(options) ? options : children || [];
+    return {
+      type: "container",
+      kind: "stack",
+      id: opts.id ?? null,
+      gap: opts.gap ?? null,
+      children: kids,
+    };
+  },
+
+  text(options) {
+    const opts = typeof options === "string" ? { text: options } : options || {};
+    return {
+      type: "text",
+      id: opts.id ?? null,
+      text: opts.text ?? "",
+      color: opts.color ?? null,
+      font: opts.font ?? null,
+    };
+  },
+
+  button(options) {
+    const opts = options || {};
+    return {
+      type: "button",
+      id: opts.id ?? `btn_${Math.random().toString(36).slice(2)}`,
+      label: opts.label ?? "",
+      command: opts.command ?? "",
+      variant: opts.variant ?? null,
+    };
+  },
+
+  textInput(options) {
+    const opts = options || {};
+    return {
+      type: "textInput",
+      id: opts.id ?? `input_${Math.random().toString(36).slice(2)}`,
+      value: opts.value ?? "",
+      placeholder: opts.placeholder ?? null,
+    };
+  },
+
+  separator(options) {
+    const opts = options || {};
+    return {
+      type: "separator",
+      id: opts.id ?? null,
+    };
+  },
+};
+
+const registeredViews = new Map();
+
+export const views = {
+  register(type, options) {
+    if (!type || typeof type !== "string") {
+      throw new TypeError("views.register needs a string type");
+    }
+    registeredViews.set(type, options);
+    if (options && typeof options.render === "function") {
+      const tree = options.render();
+      call("views.render", { id: type, tree });
+    }
+    return {
+      dispose() {
+        registeredViews.delete(type);
+      },
+    };
+  },
+
+  get(type) {
+    return registeredViews.get(type);
+  },
 };
 
 function covers(declared, requested) {

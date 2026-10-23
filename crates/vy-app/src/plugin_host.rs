@@ -25,6 +25,7 @@ use crate::keymap::Keymap;
 use crate::paths::Paths;
 use crate::statusline::{Statusline, StatuslineAlignment, StatuslineItem};
 use crate::when;
+use crate::widget::WidgetNode;
 
 /// Everything the shim knows about the open document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +164,10 @@ pub enum HostAction {
     Pane(PaneCommand),
     Document(DocumentCommand),
     Ui(UiCommand),
+    RenderWidgetTree {
+        view_id: String,
+        tree: WidgetNode,
+    },
 }
 
 impl From<Action> for HostAction {
@@ -498,6 +503,17 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
                 statusline.dispose_item(&id);
             }
             request.respond_value(Value::Null);
+        }
+        "views.render" => {
+            let view_id = text_param(&params, "id").unwrap_or_default();
+            if let Some(tree_value) = params.get("tree")
+                && let Ok(tree) = serde_json::from_value::<WidgetNode>(tree_value.clone())
+            {
+                outcome.action = HostAction::RenderWidgetTree { view_id, tree };
+                request.respond_value(Value::Null);
+            } else {
+                request.respond_error("InvalidParams", "invalid widget tree structure");
+            }
         }
         other => {
             request.respond_error("InvalidState", format!("unknown host method: {other}"));

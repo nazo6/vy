@@ -4,6 +4,7 @@ use std::time::Duration;
 use vy_core::PaneId;
 
 use crate::editor::{Editor, ViewState};
+use crate::widget::WidgetNode;
 
 /// Default rows drawn before measuring the window.
 pub const VISIBLE_LINES: usize = 30;
@@ -54,6 +55,10 @@ pub struct PaneState {
     pub scroll_top: usize,
     /// Rows that fit in this pane. Updated on every render.
     pub viewport_rows: usize,
+    /// Kind of view displayed in this pane (e.g. "editor", "ui", "list", etc.).
+    pub view_type: String,
+    /// Root of the custom widget tree if this is a "ui" view.
+    pub widget_tree: Option<WidgetNode>,
 }
 
 impl PaneState {
@@ -66,6 +71,8 @@ impl PaneState {
             preedit_selection: None,
             scroll_top: 0,
             viewport_rows: VISIBLE_LINES,
+            view_type: "editor".to_string(),
+            widget_tree: None,
         }
     }
 }

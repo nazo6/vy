@@ -179,6 +179,14 @@ impl EditorView {
                 self.run_document_command(command, &Invocation::palette(command.id()));
             }
             HostAction::Ui(command) => self.run_ui_command(command),
+            HostAction::RenderWidgetTree { view_id: _, tree } => {
+                if let Some(pane_id) = self.active_pane
+                    && let Some(pane) = self.panes.get_mut(&pane_id)
+                {
+                    pane.view_type = "ui".to_string();
+                    pane.widget_tree = Some(tree);
+                }
+            }
         }
 
         self.ensure_cursor_visible();

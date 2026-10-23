@@ -109,10 +109,11 @@ Phase 3 で仕上げます。
     `vy.pane.focus_*`、`vy.pane.next`
 - [x] 開いている文書の一覧・切り替え
   - `vy.editor.switch_document`、Ex コマンド（`:b` / `:buffer`）、ドキュメントピッカーモーダルによるファジー検索と切り替え
-- [ ] `views.register`
+- [x] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
-  - `webview` は Phase 6
-- [ ] `ui` ビューのウィジェット木と、キーマップからのアクション解決
+  - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row, stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 6
+- [x] `ui` ビューのウィジェット木と、キーマップからのアクション解決
+  - GPUI によるネイティブウィジェット描画とコマンドバインド対応
 - [ ] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
   - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示

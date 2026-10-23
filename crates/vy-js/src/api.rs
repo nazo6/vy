@@ -73,6 +73,7 @@ mod tests {
         assert!(SHIM_SOURCE.contains("export const log"));
         assert!(SHIM_SOURCE.contains("export const remote"));
         assert!(SHIM_SOURCE.contains("export const ui"));
+        assert!(SHIM_SOURCE.contains("export const views"));
         assert!(SHIM_SOURCE.contains("export const context"));
         assert!(!SHIM_SOURCE.contains(": string"));
     }

@@ -238,6 +238,35 @@ impl EditorView {
             .and_then(|id| self.documents.get(&id));
         let active = self.active_pane == Some(pane_id);
 
+        if let Some(pane) = pane
+            && pane.view_type == "ui"
+        {
+            let mut area = div()
+                .relative()
+                .flex_1()
+                .overflow_hidden()
+                .p_3()
+                .bg(theme.background.surface);
+            if let Some(tree) = &pane.widget_tree {
+                area = area.child(ui::widget::render_widget_node(&theme, tree));
+            } else {
+                area = area.child(
+                    div()
+                        .text_color(theme.foreground.muted)
+                        .child("empty ui view"),
+                );
+            }
+
+            let border = if active && self.panes.len() > 1 {
+                theme.background.split_active
+            } else if self.panes.len() > 1 {
+                theme.background.split_inactive
+            } else {
+                gpui::rgba(0x00000000)
+            };
+            return area.border_1().border_color(border);
+        }
+
         let lines = match (pane, document) {
             (Some(pane), Some(document)) => self.visible_lines(&theme, pane, document, window),
             _ => Vec::new(),

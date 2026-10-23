@@ -153,8 +153,59 @@ export interface StatuslineApi {
   createItem(options: StatuslineItemOptions): StatuslineItem;
 }
 
+export interface WidgetNode {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface UiContainerOptions {
+  id?: string;
+  gap?: "sm" | "md" | "lg";
+}
+
+export interface UiTextOptions {
+  id?: string;
+  text: string;
+  color?: string;
+  font?: "mono";
+}
+
+export interface UiButtonOptions {
+  id?: string;
+  label: string;
+  command: string;
+  variant?: "primary" | "danger";
+}
+
+export interface UiTextInputOptions {
+  id?: string;
+  value?: string;
+  placeholder?: string;
+}
+
 export interface UiApi {
   readonly statusline: StatuslineApi;
+  column(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
+  row(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
+  stack(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
+  text(options: UiTextOptions | string): WidgetNode;
+  button(options: UiButtonOptions): WidgetNode;
+  textInput(options: UiTextInputOptions): WidgetNode;
+  separator(options?: { id?: string }): WidgetNode;
+}
+
+export type ViewKind = "editor" | "ui" | "list" | "text" | "image" | "terminal";
+
+export interface ViewOptions {
+  kind: ViewKind;
+  title?: string;
+  singleton?: boolean;
+  render?: () => WidgetNode;
+}
+
+export interface ViewsApi {
+  register(type: string, options: ViewOptions): Disposable;
+  get(type: string): ViewOptions | undefined;
 }
 
 export interface PluginContext {
@@ -173,4 +224,5 @@ export const notifications: NotificationsApi;
 export const log: LogApi;
 export const remote: RemoteApi;
 export const ui: UiApi;
+export const views: ViewsApi;
 export const context: PluginContext;
