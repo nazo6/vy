@@ -233,7 +233,11 @@ fn render_api() -> String {
         }
     }
 
-    output.push_str("export { context, remote } from \"./overrides\";\n");
+    output.push_str("export { context, remote } from \"./overrides\";\n\n");
+    output.push_str("declare global {\n");
+    output.push_str("  /** The Vy client API exposed in the global scope. */\n");
+    output.push_str("  const vy: typeof import(\"vy-api\");\n");
+    output.push_str("}\n");
 
     output
 }

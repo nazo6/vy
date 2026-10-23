@@ -209,3 +209,8 @@ export interface ViewsApi extends ViewsSugar {
 export const views: ViewsApi;
 
 export { context, remote } from "./overrides";
+
+declare global {
+  /** The Vy client API exposed in the global scope. */
+  const vy: typeof import("vy-api");
+}

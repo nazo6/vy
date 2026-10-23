@@ -6,6 +6,12 @@ Type definitions for the module `init.ts` imports:
 import { commands, config, editor, keymap } from "vy-api";
 ```
 
+The API is available globally as `vy` at runtime, or can be imported from `vy-api`:
+
+```typescript
+vy.config.set({ "ui.fontSize": 14 });
+```
+
 The module itself is provided by the QuickJS host at runtime; it does not exist
 as a file. Point the TypeScript compiler at this package when you write an
 `init.ts`:
@@ -13,8 +19,10 @@ as a file. Point the TypeScript compiler at this package when you write an
 ```json
 {
     "compilerOptions": {
+        "moduleDetection": "force",
         "paths": { "vy-api": ["./packages/vy-api/index.d.ts"] }
-    }
+    },
+    "include": ["init.ts", "./packages/vy-api/index.d.ts"]
 }
 ```
 

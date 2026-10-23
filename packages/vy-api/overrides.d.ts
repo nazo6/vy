@@ -123,9 +123,12 @@ export interface KeymapSugar {
 /** Reads and writes settings. */
 export interface ConfigSugar {
   /** Sets several setting values at once. */
-  set(values: Record<string, unknown>): Promise<{ changed: string[] }>;
-  /** Sets one setting value. */
-  set(key: SettingsKey | (string & {}), value: unknown): Promise<{ changed: string[] }>;
+  set(values: Partial<SettingsMap> & Record<string, unknown>): Promise<{ changed: string[] }>;
+  /** Sets one setting value with a typed key when known. */
+  set<K extends string>(
+    key: K,
+    value: K extends SettingsKey ? SettingsMap[K] : unknown,
+  ): Promise<{ changed: string[] }>;
   /**
    * Returns the typed value of a setting key.
    *

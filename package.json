@@ -3,6 +3,7 @@
     "private": true,
     "packageManager": "pnpm@12.11.2",
     "scripts": {
+        "check:types": "tsc --noEmit",
         "docs:api": "typedoc",
         "docs:api:serve": "typedoc && python3 -m http.server 8000 --directory target/docs/vy-api"
     },
