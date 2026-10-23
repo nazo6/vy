@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Vy
+Comment=Fast, modal, extensible text editor
+Exec=vy-app %F
+Icon=vy
+Terminal=false
+Categories=Development;TextEditor;Utility;
+MimeType=text/plain;
+StartupNotify=true
+StartupWMClass=vy
+
