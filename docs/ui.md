@@ -192,7 +192,7 @@ ui.text({
 ```
 
 プラグインは `theme.register`
-でトークンを追加できますが、既存のトークンの意味は変えません。
+でトークンを追加できますが、既存のトークンの意味は変えません。色・余白・フォント・ボタンの見た目は列挙（`ThemeColor`、`Gap`、`Font`、`ButtonVariant`）で、未知の値は `InvalidParams` で失敗します。
 
 ## 4. スロットとユーザー制御 UI
 
@@ -208,7 +208,7 @@ flowchart TD
     end
     subgraph Script["スクリプト層 (init.ts / プラグイン)"]
         SL["ui.statusline.createItem(...)"]
-        GT["ui.gutter.registerProvider(...)"]
+        GT["ui.gutter.createItem(...)"]
     end
     SL -->|項目・更新| S
     GT -.->|サイン・装飾| L

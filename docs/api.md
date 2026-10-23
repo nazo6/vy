@@ -22,6 +22,8 @@ Phase に分けます。
   は、マニフェストの宣言と初回の承認を必要とします。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
+- 境界の型は Rust を正とします。`crates/vy-api-schema` がメソッド表と params /
+  reply 型を持ち、`packages/vy-api` と `packages/vy-api-types` の宣言はそこから生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
 
 ## 2. 表記の約束
 
@@ -96,9 +98,9 @@ API と、コアが状態の正を持つ API です。
 | `editor.open(uri, options?)`                 | both     | なし           | P0     |
 | `editor.reveal(uri, range?)`                 | local    | なし           | P1     |
 | `editor.mode()`                              | local    | なし           | P0     |
-| `editor.setMode(mode)`                       | local    | なし           | P0     |
+| `editor.setMode({ mode })`                   | local    | なし           | P0     |
 | `editor.selections()`                        | local    | なし           | P0     |
-| `editor.setSelections(selections)`           | local    | なし           | P0     |
+| `editor.setSelections({ selections })`       | local    | なし           | P0     |
 | `editor.onDidChangeActiveDocument(listener)` | local    | なし           | P0     |
 | `editor.onDidChangeSelection(listener)`      | local    | なし           | P0     |
 | `editor.onDidChangeMode(listener)`           | local    | なし           | P1     |
@@ -109,7 +111,8 @@ API と、コアが状態の正を持つ API です。
 を使います。同じ文書を2つのペインで開いた場合、内容はコアで共有し、カーソル、選択範囲、スクロール位置はペインごとにクライアントが持ちます。
 
 `editor.edit(builder)`
-は編集の入口です。1回の呼び出しを1つのトランザクションとして扱い、複数カーソルの編集もまとめて適用します。
+は編集の入口です。1回の呼び出しを1つのトランザクションとして扱い、複数カーソルの編集もまとめて適用します。`TextEdit`
+の配列をそのまま渡すこともできます。
 
 | API                                   | 実行場所 | ケイパビリティ | 優先度 |
 | :------------------------------------ | :------- | :------------- | :----- |
@@ -130,6 +133,9 @@ version と一致したときだけ確定します。
 は編集の前後の選択を一緒に送ります。取り消したあとの選択は、コアが返した値をクライアントが適用します。コアが起こした編集（整形、リネーム、複数ファイルの置換）も同じ履歴に入ります（[ADR 0004](./adr/0004-undo-in-core.md)）。
 
 ## 5. documents
+
+`editor.activeDocument()` と `editor.documents()` は `Document`
+オブジェクトを返します。次の API はそのオブジェクトのメソッドとプロパティです。
 
 | API                                     | 実行場所 | ケイパビリティ | 優先度 |
 | :-------------------------------------- | :------- | :------------- | :----- |
@@ -240,8 +246,8 @@ version と一致したときだけ確定します。
 | `commands.execute(id, args?)`           | both     | なし           | P0     |
 | `commands.getCommands()`                | local    | なし           | P1     |
 | `keymap.bind(keys, target, options?)`   | local    | なし           | P0     |
-| `keymap.unbind(keys, options?)`         | local    | なし           | P0     |
-| `keymap.setContext(key, value)`         | local    | なし           | P0     |
+| `keymap.unbind({ keys })`               | local    | なし           | P0     |
+| `keymap.setContext({ key, value })`     | local    | なし           | P0     |
 | `keymap.registerMode(definition)`       | local    | なし           | P2     |
 | `keymap.sequenceTimeout`                | local    | なし           | P2     |
 
@@ -267,9 +273,9 @@ keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });
 
 | API                                 | 実行場所 | ケイパビリティ | 優先度 |
 | :---------------------------------- | :------- | :------------- | :----- |
-| `config.get(key)`                   | both     | なし           | P0     |
+| `config.get({ key })`                   | both     | なし           | P0     |
 | `config.set(key, value, options?)`  | local    | なし           | P0     |
-| `config.inspect(key)`               | local    | なし           | P1     |
+| `config.inspect({ key })`           | local    | なし           | P1     |
 | `config.onDidChange(key, listener)` | local    | なし           | P0     |
 | `config.define(schema)`             | local    | なし           | P1     |
 
@@ -344,6 +350,9 @@ ID で指定します。キー入力との対応は [`ui.md`](./ui.md) にまと
 | `ui.hover.registerProvider(languageId, provider)`  | local    | なし           | P2     |
 | `ui.gutter.registerProvider(languageId, provider)` | local    | なし           | P2     |
 
+`registerSource` と `registerProvider` は、ホストから JS
+の関数を呼ぶ経路ができるまで未提供です（Phase 3）。
+
 スロットに渡せるのは、テキスト、アイコン名、色トークン、コマンド
 ID、進捗の値です。任意のレイアウトは渡せません。自由な見た目が必要な場合は `ui`
 ビューのウィジェット木を使います。Webview は、Web
@@ -356,16 +365,16 @@ ID、進捗の値です。任意のレイアウトは渡せません。自由な
 ```typescript
 export interface StatuslineItemOptions {
   id?: string;
-  alignment: "left" | "center" | "right";
+  alignment: StatuslineAlignment;
   priority?: number; // 数値が大きいほど外側（左ならより左、右ならより右）に配置
   text: string;
-  color?: string; // テーマのトークン名
+  color?: ThemeColor; // テーマのトークン名
   command?: string; // クリック時に実行されるコマンド ID
 }
 
 export interface StatuslineItem extends Disposable {
   text: string;
-  color?: string;
+  color?: ThemeColor;
   command?: string;
   show(): void;
   hide(): void;
@@ -510,7 +519,8 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 ## 21. Phase 2 の実装状況
 
 Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しました。型は
-[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts) にあり、引数の形は
+[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)（生成）と
+[`packages/vy-api/overrides.d.ts`](../packages/vy-api/overrides.d.ts)（糖衣）にあり、引数の形は
 §2.1 のとおりです。
 
 | 名前空間        | 実装済み                                                                                                |
@@ -519,7 +529,7 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 | `keymap`        | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
 | `config`        | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
 | `editor`        | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
-| `document`      | `getText`、`lineAt`、`positionAt`、`offsetAt`、`fullRange`                                              |
+| `document`（`Document` のメソッド） | `getText`、`lineAt`、`positionAt`、`offsetAt`、`fullRange`                                              |
 | `workspace`     | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
 | `notifications` | `show`                                                                                                  |
 | `log`           | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
