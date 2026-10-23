@@ -87,8 +87,6 @@ pub struct EditorView {
     status: SharedString,
     frame_log: bool,
     last_frame: Option<Instant>,
-    /// Set once the input handler has been registered with the platform.
-    input_registered: bool,
     /// Statusline slots registered by scripts or default.
     statusline: Statusline,
 }
@@ -157,7 +155,6 @@ impl EditorView {
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
-            input_registered: false,
             statusline: Statusline::new(),
         };
 

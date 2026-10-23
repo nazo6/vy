@@ -257,16 +257,6 @@ impl EditorView {
                     |_, _, _| (),
                     move |bounds, _, window, cx| {
                         let focus = view.read(cx).focus_handle.clone();
-
-                        if !view.read(cx).input_registered {
-                            view.update(cx, |view, _| {
-                                view.input_registered = true;
-                                if view.frame_log {
-                                    eprintln!("vy: input bounds={bounds:?}");
-                                }
-                            });
-                        }
-
                         window.handle_input(
                             &focus,
                             ElementInputHandler::new(bounds, view.clone()),

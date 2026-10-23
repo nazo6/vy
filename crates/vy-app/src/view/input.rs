@@ -90,6 +90,15 @@ impl Focusable for EditorView {
 }
 
 impl EntityInputHandler for EditorView {
+    fn accepts_text_input(&self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
+        if self.palette.is_some() || self.ex.is_some() {
+            return false;
+        }
+        self.active_view()
+            .map(|view| view.mode() == Mode::Insert)
+            .unwrap_or(false)
+    }
+
     fn text_for_range(
         &mut self,
         range_utf16: std::ops::Range<usize>,
