@@ -257,7 +257,7 @@ impl EditorView {
         let Some(document_id) = pane.document_id else {
             return;
         };
-        let last_visual = (view.mode() == Mode::Select).then(|| view.selection());
+        let last_visual = view.mode().is_select().then(|| view.selection());
 
         let Some(document) = self.documents.get_mut(&document_id) else {
             return;

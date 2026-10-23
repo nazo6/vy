@@ -36,12 +36,14 @@ pub fn render_statusline(
             Mode::Normal => "NORMAL",
             Mode::Insert => "INSERT",
             Mode::Select => "VISUAL",
+            Mode::SelectLine => "VISUAL LINE",
+            Mode::SelectBlock => "VISUAL BLOCK",
         };
 
         let mode_bg = match active_view.mode() {
             Mode::Normal => theme.statusline.normal,
             Mode::Insert => theme.statusline.insert,
-            Mode::Select => theme.statusline.select,
+            Mode::Select | Mode::SelectLine | Mode::SelectBlock => theme.statusline.select,
         };
 
         let uri = document_uri

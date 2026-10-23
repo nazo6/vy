@@ -18,15 +18,24 @@ pub enum Mode {
     Normal,
     Insert,
     Select,
+    SelectLine,
+    SelectBlock,
 }
 
 impl Mode {
+    /// Whether this mode is any visual/select variant.
+    pub fn is_select(self) -> bool {
+        matches!(self, Self::Select | Self::SelectLine | Self::SelectBlock)
+    }
+
     /// Lowercase name used by `when` expressions.
     pub fn name(self) -> &'static str {
         match self {
             Self::Normal => "normal",
             Self::Insert => "insert",
             Self::Select => "select",
+            Self::SelectLine => "select_line",
+            Self::SelectBlock => "select_block",
         }
     }
 
@@ -35,7 +44,9 @@ impl Mode {
         match self {
             Self::Normal => "NORMAL",
             Self::Insert => "INSERT",
-            Self::Select => "SELECT",
+            Self::Select => "VISUAL",
+            Self::SelectLine => "VISUAL LINE",
+            Self::SelectBlock => "VISUAL BLOCK",
         }
     }
 
@@ -44,7 +55,11 @@ impl Mode {
         match value {
             "normal" => Some(Self::Normal),
             "insert" => Some(Self::Insert),
-            "select" => Some(Self::Select),
+            "select" | "visual" => Some(Self::Select),
+            "select_line" | "select-line" | "visual_line" | "visual-line" => Some(Self::SelectLine),
+            "select_block" | "select-block" | "visual_block" | "visual-block" => {
+                Some(Self::SelectBlock)
+            }
             _ => None,
         }
     }
@@ -71,7 +86,10 @@ pub enum Key {
 impl Key {
     /// Parses one key name. Returns [`None`] for names the keymap does not know.
     pub fn parse(name: &str) -> Option<Self> {
-        if let Some(rest) = name.strip_prefix("ctrl-")
+        let ctrl_rest = name
+            .strip_prefix("ctrl-")
+            .or_else(|| name.strip_prefix("c-"));
+        if let Some(rest) = ctrl_rest
             && rest.chars().count() == 1
         {
             return rest
@@ -150,7 +168,9 @@ impl KeyContext {
             "mode" => Some(Value::Text(self.mode.name().to_string())),
             "normalMode" => Some(Value::Bool(self.mode == Mode::Normal)),
             "insertMode" => Some(Value::Bool(self.mode == Mode::Insert)),
-            "selectMode" => Some(Value::Bool(self.mode == Mode::Select)),
+            "selectMode" => Some(Value::Bool(self.mode.is_select())),
+            "selectLineMode" => Some(Value::Bool(self.mode == Mode::SelectLine)),
+            "selectBlockMode" => Some(Value::Bool(self.mode == Mode::SelectBlock)),
             "hasSelection" => Some(Value::Bool(self.has_selection)),
             "operatorPending" => Some(Value::Bool(self.operator_pending)),
             "textObjectPending" => Some(Value::Bool(self.text_object_pending)),

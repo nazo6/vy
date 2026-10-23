@@ -514,6 +514,8 @@ pub enum BuiltinCommand {
     OpenBelow,
     OpenAbove,
     SelectMode,
+    SelectLineMode,
+    SelectBlockMode,
     NormalMode,
     Undo,
     Redo,
@@ -569,6 +571,8 @@ impl BuiltinCommand {
             Self::OpenBelow => "vy.mode.open_below",
             Self::OpenAbove => "vy.mode.open_above",
             Self::SelectMode => "vy.mode.select",
+            Self::SelectLineMode => "vy.mode.select_line",
+            Self::SelectBlockMode => "vy.mode.select_block",
             Self::NormalMode => "vy.mode.normal",
             Self::Undo => "vy.history.undo",
             Self::Redo => "vy.history.redo",
@@ -607,7 +611,7 @@ impl BuiltinCommand {
 
     /// Every built-in command. Used by `commands.getCommands`.
     pub fn all() -> &'static [BuiltinCommand] {
-        const COMMANDS: [BuiltinCommand; 49] = [
+        const COMMANDS: [BuiltinCommand; 51] = [
             BuiltinCommand::MoveLeft,
             BuiltinCommand::MoveRight,
             BuiltinCommand::MoveUp,
@@ -631,6 +635,8 @@ impl BuiltinCommand {
             BuiltinCommand::OpenBelow,
             BuiltinCommand::OpenAbove,
             BuiltinCommand::SelectMode,
+            BuiltinCommand::SelectLineMode,
+            BuiltinCommand::SelectBlockMode,
             BuiltinCommand::NormalMode,
             BuiltinCommand::Undo,
             BuiltinCommand::Redo,

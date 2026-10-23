@@ -17,7 +17,12 @@ export interface Disposable {
 }
 
 /** The mode reported by `editor.mode()` and accepted by `editor.setMode()`. */
-export type Mode = "normal" | "insert" | "select";
+export type Mode =
+  | "normal"
+  | "insert"
+  | "select"
+  | "select_line"
+  | "select_block";
 
 /** One layer's value for a setting, as `config.inspect` reports it. */
 export interface Inspect {

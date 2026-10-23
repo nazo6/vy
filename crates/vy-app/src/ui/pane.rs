@@ -159,12 +159,13 @@ pub fn render_line(
 
     let text = document.editor.line(line_number).unwrap_or_default();
     let cursor = pane.view.cursor();
-
-    if line_number as u32 != cursor.line {
-        return row.child(text);
-    }
+    let is_cursor_line = line_number as u32 == cursor.line;
 
     if pane.view.mode() == Mode::Insert {
+        if !is_cursor_line {
+            return row.child(text);
+        }
+
         let (display, caret, preedit) = insert_marker(pane, &text);
         let width = text_width(config, theme, &display, caret, window);
         let gutter = gutter_width(config, document.editor.line_count());
@@ -185,8 +186,63 @@ pub fn render_line(
         );
     }
 
-    let (display, highlight) = cursor_marker(pane, &text);
-    row.child(StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight(theme))]))
+    if pane.view.mode() == Mode::Normal {
+        if !is_cursor_line {
+            return row.child(text);
+        }
+        let (display, highlight) = cursor_marker(pane, &text);
+        return row.child(
+            StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight(theme))]),
+        );
+    }
+
+    // Visual modes: Select, SelectLine, SelectBlock
+    let length = text
+        .chars()
+        .map(|character| character.len_utf16() as u32)
+        .sum();
+
+    let selection_range = match pane.view.mode() {
+        Mode::SelectBlock => {
+            let first_line = pane.view.anchor().line.min(pane.view.head().line);
+            let last_line = pane.view.anchor().line.max(pane.view.head().line);
+            if (line_number as u32) >= first_line && (line_number as u32) <= last_line {
+                let first_col = pane.view.anchor().character.min(pane.view.head().character);
+                let last_col = pane.view.anchor().character.max(pane.view.head().character);
+                let from = first_col.min(length);
+                let to = (last_col + 1).min(length);
+                Some((from, to))
+            } else {
+                None
+            }
+        }
+        _ => selection_on_line(pane.view.selection(), line_number as u32, length),
+    };
+
+    let Some((from, to)) = selection_range else {
+        if is_cursor_line {
+            let (display, highlight) = cursor_marker(pane, &text);
+            return row.child(
+                StyledText::new(display)
+                    .with_highlights(vec![(highlight, cursor_highlight(theme))]),
+            );
+        }
+        return row.child(text);
+    };
+
+    let mut display = text.to_string();
+    let from_byte = utf16_to_byte(&display, from);
+    let mut to_byte = utf16_to_byte(&display, to);
+
+    if to_byte <= from_byte {
+        display.push(' ');
+        to_byte = display.len();
+    }
+
+    row.child(
+        StyledText::new(display)
+            .with_highlights(vec![(from_byte..to_byte, cursor_highlight(theme))]),
+    )
 }
 
 /// Collects all visible lines in one pane.

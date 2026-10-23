@@ -220,7 +220,7 @@ impl Editor {
         let position = self.clamp(position);
         match self.mode {
             Mode::Normal => self.select_one_char(position),
-            Mode::Select => self.head = position,
+            Mode::Select | Mode::SelectLine | Mode::SelectBlock => self.head = position,
             Mode::Insert => {
                 self.anchor = position;
                 self.head = position;

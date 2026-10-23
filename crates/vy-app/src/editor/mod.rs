@@ -163,7 +163,21 @@ impl Editor {
 
     /// The current cursor as an anchor and a head, in the shape scripts use.
     pub fn selections(&self) -> Vec<Selection> {
-        vec![self.selection_state()]
+        match self.mode {
+            Mode::SelectBlock => {
+                let first_line = self.anchor.line.min(self.head.line);
+                let last_line = self.anchor.line.max(self.head.line);
+                let first_col = self.anchor.character.min(self.head.character);
+                let last_col = self.anchor.character.max(self.head.character);
+                (first_line..=last_line)
+                    .map(|line| Selection {
+                        anchor: Position::new(line, first_col),
+                        head: Position::new(line, last_col),
+                    })
+                    .collect()
+            }
+            _ => vec![self.selection_state()],
+        }
     }
 
     /// Moves the cursor. Positions are clamped to the document.
@@ -194,10 +208,46 @@ impl Editor {
         self.current()
     }
 
+    /// Computes the selection range for the given mode and endpoints.
+    pub fn range_for(&self, mode: Mode, anchor: Position, head: Position) -> Range {
+        match mode {
+            Mode::Normal => {
+                let (start, end) = if anchor <= head {
+                    (anchor, head)
+                } else {
+                    (head, anchor)
+                };
+                Range::new(start, end)
+            }
+            Mode::Insert => Range::empty(head),
+            Mode::Select => {
+                let min_pos = anchor.min(head);
+                let max_pos = anchor.max(head);
+                let end = self.next_char(max_pos).unwrap_or(max_pos);
+                Range::new(min_pos, end)
+            }
+            Mode::SelectLine => {
+                let first_line = anchor.line.min(head.line);
+                let last_line = anchor.line.max(head.line);
+                let range = self.linewise_range(first_line, last_line);
+                Range::new(range.start, range.end)
+            }
+            Mode::SelectBlock => {
+                let first_line = anchor.line.min(head.line);
+                let last_line = anchor.line.max(head.line);
+                let first_col = anchor.character.min(head.character);
+                let last_col = anchor.character.max(head.character);
+                Range::new(
+                    Position::new(first_line, first_col),
+                    Position::new(last_line, last_col + 1),
+                )
+            }
+        }
+    }
+
     /// The selection range. Empty in Insert.
     pub fn selection(&self) -> Range {
-        let (start, end) = self.ordered();
-        Range::new(start, end)
+        self.range_for(self.mode, self.anchor, self.head)
     }
 
     /// Copies the pane-local state out of the editor.
@@ -206,6 +256,7 @@ impl Editor {
             mode: self.mode,
             anchor: self.anchor,
             head: self.head,
+            selection: self.selection(),
             operator: self.operator,
             operator_count: self.operator_count,
             text_object: self.text_object,
@@ -233,6 +284,7 @@ impl Editor {
     pub fn clamp_view_state(&self, mut state: ViewState) -> ViewState {
         state.anchor = self.clamp(state.anchor);
         state.head = self.clamp(state.head);
+        state.selection = self.range_for(state.mode, state.anchor, state.head);
         state
     }
 
@@ -251,7 +303,7 @@ impl Editor {
 
         self.mode = Mode::Select;
         self.anchor = self.clamp(range.start);
-        self.head = self.clamp(range.end);
+        self.head = self.previous_char(range.end).unwrap_or(self.anchor);
         self.last_edit = None;
         self.preferred_character = None;
         Action::None
@@ -342,7 +394,7 @@ impl Editor {
                 Action::None
             }
             BuiltinCommand::Delete => {
-                if self.mode == Mode::Select {
+                if self.mode.is_select() {
                     self.delete_selection()
                 } else {
                     self.delete_charwise(count)
@@ -379,7 +431,48 @@ impl Editor {
             BuiltinCommand::OpenBelow => self.open_below(),
             BuiltinCommand::OpenAbove => self.open_above(),
             BuiltinCommand::SelectMode => {
-                self.set_mode(Mode::Select);
+                if self.mode == Mode::Select {
+                    self.set_mode(Mode::Normal);
+                    self.select_one_char(self.head);
+                } else {
+                    let cursor = self.current();
+                    let was_normal = self.mode == Mode::Normal;
+                    self.set_mode(Mode::Select);
+                    if was_normal {
+                        self.anchor = cursor;
+                        self.head = cursor;
+                    }
+                }
+                Action::None
+            }
+            BuiltinCommand::SelectLineMode => {
+                if self.mode == Mode::SelectLine {
+                    self.set_mode(Mode::Normal);
+                    self.select_one_char(self.head);
+                } else {
+                    let cursor = self.current();
+                    let was_normal = self.mode == Mode::Normal;
+                    self.set_mode(Mode::SelectLine);
+                    if was_normal {
+                        self.anchor = cursor;
+                        self.head = cursor;
+                    }
+                }
+                Action::None
+            }
+            BuiltinCommand::SelectBlockMode => {
+                if self.mode == Mode::SelectBlock {
+                    self.set_mode(Mode::Normal);
+                    self.select_one_char(self.head);
+                } else {
+                    let cursor = self.current();
+                    let was_normal = self.mode == Mode::Normal;
+                    self.set_mode(Mode::SelectBlock);
+                    if was_normal {
+                        self.anchor = cursor;
+                        self.head = cursor;
+                    }
+                }
                 Action::None
             }
             BuiltinCommand::NormalMode => {
@@ -389,8 +482,9 @@ impl Editor {
                     self.set_mode(Mode::Normal);
                     self.select_near_caret();
                 } else {
+                    let cursor = self.head;
                     self.set_mode(Mode::Normal);
-                    self.select_one_char(self.current());
+                    self.select_one_char(cursor);
                 }
                 Action::None
             }
@@ -635,7 +729,7 @@ impl Editor {
                 self.head = new_head;
             }
             Mode::Normal => self.select_one_char(new_head),
-            Mode::Select => {
+            Mode::Select | Mode::SelectLine | Mode::SelectBlock => {
                 self.head = self.clamp(new_head);
             }
         }
@@ -682,11 +776,8 @@ impl Editor {
     }
 
     pub(super) fn ordered(&self) -> (Position, Position) {
-        if self.anchor <= self.head {
-            (self.anchor, self.head)
-        } else {
-            (self.head, self.anchor)
-        }
+        let range = self.selection();
+        (range.start, range.end)
     }
 
     /// Selects one character at the cursor. The selection is empty at the end of the text.

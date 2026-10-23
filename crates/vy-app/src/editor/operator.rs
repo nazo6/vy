@@ -72,7 +72,7 @@ pub(super) fn is_text_object_command(command: BuiltinCommand) -> bool {
 
 impl Editor {
     pub(super) fn start_operator(&mut self, operator: Operator, count: Option<u32>) -> Action {
-        if self.mode == Mode::Select {
+        if self.mode.is_select() {
             return match operator {
                 Operator::Delete => self.delete_selection(),
                 Operator::Yank => self.yank_selection(),
@@ -406,24 +406,66 @@ impl Editor {
     }
 
     pub(super) fn delete_selection(&mut self) -> Action {
-        let (start, end) = self.ordered();
-        if start == end {
-            return Action::None;
+        match self.mode {
+            Mode::SelectLine => {
+                let first = self.anchor.line.min(self.head.line);
+                let last = self.anchor.line.max(self.head.line);
+                let range = self.linewise_range(first, last);
+                self.apply_operator_range(Operator::Delete, range)
+            }
+            Mode::SelectBlock => self.delete_block(),
+            _ => {
+                let (start, end) = self.ordered();
+                if start == end {
+                    return Action::None;
+                }
+
+                let range = Range::new(start, end);
+                let deleted = self.text.slice(range).unwrap_or_default();
+                self.store_register(&deleted, RegisterKind::Charwise);
+                self.last_change = Some(Repeat::Delete {
+                    count: self.char_count(range),
+                });
+
+                let edit = TextEdit::delete(range);
+                let mode = if self.mode.is_select() {
+                    Mode::Normal
+                } else {
+                    self.mode
+                };
+                self.commit(vec![edit], start, mode)
+            }
         }
+    }
 
-        let range = Range::new(start, end);
-        let deleted = self.text.slice(range).unwrap_or_default();
-        self.store_register(&deleted, RegisterKind::Charwise);
-        self.last_change = Some(Repeat::Delete {
-            count: self.char_count(range),
-        });
+    pub(super) fn delete_block(&mut self) -> Action {
+        let first_line = self.anchor.line.min(self.head.line);
+        let last_line = self.anchor.line.max(self.head.line);
+        let first_col = self.anchor.character.min(self.head.character);
+        let last_col = self.anchor.character.max(self.head.character);
 
-        let edit = TextEdit::delete(range);
-        let mode = if self.mode == Mode::Select {
-            Mode::Normal
-        } else {
-            self.mode
-        };
-        self.commit(vec![edit], start, mode)
+        let mut edits = Vec::new();
+        let mut yanked_lines = Vec::new();
+
+        for line in (first_line..=last_line).rev() {
+            let length = self.text.line_len_utf16(line as usize).unwrap_or(0);
+            if length > first_col {
+                let end_col = (last_col + 1).min(length);
+                let range =
+                    Range::new(Position::new(line, first_col), Position::new(line, end_col));
+                if let Ok(sliced) = self.text.slice(range) {
+                    yanked_lines.push(sliced);
+                }
+                edits.push(TextEdit::delete(range));
+            } else {
+                yanked_lines.push(String::new());
+            }
+        }
+        yanked_lines.reverse();
+        let stored = yanked_lines.join("\n");
+        self.store_register(&stored, RegisterKind::Charwise);
+
+        let start = Position::new(first_line, first_col);
+        self.commit(edits, start, Mode::Normal)
     }
 }

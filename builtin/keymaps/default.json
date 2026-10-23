@@ -170,6 +170,16 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "V",
+        "command": "vy.mode.select_line",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "ctrl-v",
+        "command": "vy.mode.select_block",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "esc",
         "command": "vy.mode.normal"
     },

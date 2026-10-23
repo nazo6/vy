@@ -661,3 +661,115 @@ fn dot_repeats_open_below_with_count() {
     press(&mut editor, ".");
     assert_eq!(editor.text(), "first\nx\nxxx\nsecond");
 }
+
+#[test]
+fn visual_mode_symmetric_motion_and_toggle() {
+    let mut editor = Editor::with_text("abcdef", 0);
+    press(&mut editor, "l");
+    press(&mut editor, "l");
+    assert_eq!(editor.cursor(), at(0, 2));
+
+    // Entering visual mode selects the character under cursor
+    press(&mut editor, "v");
+    assert_eq!(editor.mode(), Mode::Select);
+    assert_eq!(editor.cursor(), at(0, 2));
+    assert_eq!(editor.selection(), Range::new(at(0, 2), at(0, 3)));
+
+    // Moving right expands selection to the right
+    press(&mut editor, "l");
+    assert_eq!(editor.cursor(), at(0, 3));
+    assert_eq!(editor.selection(), Range::new(at(0, 2), at(0, 4)));
+
+    // Moving left shrinks selection back to the anchor character
+    press(&mut editor, "h");
+    assert_eq!(editor.cursor(), at(0, 2));
+    assert_eq!(editor.selection(), Range::new(at(0, 2), at(0, 3)));
+
+    // Moving left past the anchor expands selection to the left, keeping anchor included
+    press(&mut editor, "h");
+    assert_eq!(editor.cursor(), at(0, 1));
+    assert_eq!(editor.selection(), Range::new(at(0, 1), at(0, 3)));
+
+    press(&mut editor, "h");
+    assert_eq!(editor.cursor(), at(0, 0));
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 3)));
+
+    // Pressing v again toggles back to normal mode at the current cursor
+    press(&mut editor, "v");
+    assert_eq!(editor.mode(), Mode::Normal);
+    assert_eq!(editor.cursor(), at(0, 0));
+}
+
+#[test]
+fn visual_line_mode_selection_and_delete() {
+    let mut editor = Editor::with_text("first\nsecond\nthird\n", 0);
+
+    // Shift-V enters line-wise visual mode
+    editor.handle_key(Key::Char('V'));
+    assert_eq!(editor.mode(), Mode::SelectLine);
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(1, 0)));
+
+    // Moving down expands by whole lines
+    press(&mut editor, "j");
+    assert_eq!(editor.cursor(), at(1, 0));
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(2, 0)));
+
+    // Delete removes the selected lines and stores them linewise
+    let transaction = last_edit(&mut editor, Key::Char('d'));
+    assert_eq!(transaction.edits[0].range, Range::new(at(0, 0), at(2, 0)));
+    assert_eq!(editor.text(), "third\n");
+    assert_eq!(editor.mode(), Mode::Normal);
+    assert_eq!(editor.cursor(), at(0, 0));
+
+    // Pasting pastes linewise below current line
+    editor.handle_key(Key::Char('p'));
+    assert_eq!(editor.text(), "third\nfirst\nsecond\n");
+}
+
+#[test]
+fn visual_block_mode_selection_and_delete() {
+    let mut editor = Editor::with_text("12345\nabcde\n!@#$%\n", 0);
+    press(&mut editor, "l");
+    assert_eq!(editor.cursor(), at(0, 1));
+
+    // Ctrl-V enters visual block mode
+    editor.handle_key(Key::Ctrl('v'));
+    assert_eq!(editor.mode(), Mode::SelectBlock);
+
+    // Expand 1 line down and 2 characters right (cols 1..=3)
+    press(&mut editor, "j");
+    press(&mut editor, "l");
+    press(&mut editor, "l");
+    assert_eq!(editor.cursor(), at(1, 3));
+
+    // Delete removes the rectangular block from each line
+    editor.handle_key(Key::Char('d'));
+    assert_eq!(editor.text(), "15\nae\n!@#$%\n");
+    assert_eq!(editor.mode(), Mode::Normal);
+    assert_eq!(editor.cursor(), at(0, 1));
+}
+
+#[test]
+fn visual_mode_switching_between_variants() {
+    let mut editor = Editor::with_text("hello\nworld", 0);
+
+    // v -> Select
+    press(&mut editor, "v");
+    assert_eq!(editor.mode(), Mode::Select);
+
+    // V -> SelectLine
+    editor.handle_key(Key::Char('V'));
+    assert_eq!(editor.mode(), Mode::SelectLine);
+
+    // Ctrl-v -> SelectBlock
+    editor.handle_key(Key::Ctrl('v'));
+    assert_eq!(editor.mode(), Mode::SelectBlock);
+
+    // v -> Select
+    press(&mut editor, "v");
+    assert_eq!(editor.mode(), Mode::Select);
+
+    // Esc -> Normal
+    editor.handle_key(Key::Esc);
+    assert_eq!(editor.mode(), Mode::Normal);
+}

@@ -15,6 +15,7 @@ pub struct ViewState {
     pub(super) mode: Mode,
     pub(super) anchor: Position,
     pub(super) head: Position,
+    pub(super) selection: Range,
     pub(super) operator: Option<Operator>,
     pub(super) operator_count: Option<u32>,
     pub(super) text_object: Option<TextObjectKind>,
@@ -27,6 +28,7 @@ impl Default for ViewState {
             mode: Mode::Normal,
             anchor: Position::new(0, 0),
             head: Position::new(0, 0),
+            selection: Range::new(Position::new(0, 0), Position::new(0, 0)),
             operator: None,
             operator_count: None,
             text_object: None,
@@ -40,17 +42,24 @@ impl ViewState {
         self.mode
     }
 
+    pub fn anchor(&self) -> Position {
+        self.anchor
+    }
+
+    pub fn head(&self) -> Position {
+        self.head
+    }
+
     /// Cursor used for drawing. The selection start in Normal, otherwise the end.
     pub fn cursor(&self) -> Position {
         match self.mode {
-            Mode::Normal => self.ordered().0,
+            Mode::Normal => self.selection.start,
             _ => self.head,
         }
     }
 
     pub fn selection(&self) -> Range {
-        let (start, end) = self.ordered();
-        Range::new(start, end)
+        self.selection
     }
 
     pub fn operator_pending(&self) -> bool {
@@ -59,13 +68,5 @@ impl ViewState {
 
     pub fn text_object_pending(&self) -> bool {
         self.text_object.is_some()
-    }
-
-    pub(super) fn ordered(&self) -> (Position, Position) {
-        if self.anchor <= self.head {
-            (self.anchor, self.head)
-        } else {
-            (self.head, self.anchor)
-        }
     }
 }
