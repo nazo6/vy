@@ -185,6 +185,9 @@ config.set = (first, second) => {
   return call("config.set", { values });
 };
 
+// Hand-written so the declaration can return the type of a known key.
+config.get = async (params) => call("config.get", params ?? {});
+
 config.onDidChange = (key, listener) => {
   configListeners.push({ key, listener });
   return {

@@ -9,6 +9,7 @@
 //! both use these types.
 
 mod calls;
+mod codegen;
 mod mode;
 mod picker;
 mod slots;

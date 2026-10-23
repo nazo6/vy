@@ -8,6 +8,8 @@ export type { Range } from "./Range";
 export type { Selection } from "./Selection";
 export type { TextEdit } from "./TextEdit";
 export type { Uri } from "./Uri";
+export type { CommandId } from "./CommandId";
+export type { SettingsKey, SettingsMap } from "./SettingsKey";
 
 export type { Mode } from "./Mode";
 export type { PickerItem } from "./PickerItem";
