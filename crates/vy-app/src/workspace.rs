@@ -80,8 +80,8 @@ mod tests {
             "file:///tmp/vy-ws/README.md"
         );
         assert_eq!(
-            uri_from_argument("/etc/hosts", Some(Path::new("/tmp/vy-ws"))),
-            "file:///etc/hosts"
+            uri_from_argument("/nonexistent/file.txt", Some(Path::new("/tmp/vy-ws"))),
+            "file:///nonexistent/file.txt"
         );
         assert_eq!(
             uri_from_argument("vy:untitled", Some(Path::new("/tmp/vy-ws"))),

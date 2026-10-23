@@ -176,7 +176,7 @@ impl Config {
     }
 
     pub fn font_family(&self) -> String {
-        self.string("ui.fontFamily", "monospace")
+        self.string("ui.fontFamily", default_font_family())
     }
 
     pub fn font_size(&self) -> f32 {
@@ -245,9 +245,25 @@ impl Config {
     }
 }
 
+/// Default monospace font family for the current platform.
+pub fn default_font_family() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Consolas"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "monospace"
+    }
+}
+
 fn defaults() -> Map<String, Value> {
     let mut values = Map::new();
-    values.insert("ui.fontFamily".into(), Value::from("monospace"));
+    values.insert("ui.fontFamily".into(), Value::from(default_font_family()));
     values.insert("ui.fontSize".into(), Value::from(14.0));
     values.insert("ui.lineHeight".into(), Value::from(20.0));
     values.insert("ui.lineNumbers".into(), Value::from("absolute"));
@@ -415,5 +431,14 @@ mod tests {
         assert_eq!(config.font_size(), 14.0);
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn resolves_default_font_family() {
+        let mut config = Config::with_defaults();
+        assert_eq!(config.font_family(), default_font_family());
+
+        config.set("ui.fontFamily", Value::from("JetBrains Mono"));
+        assert_eq!(config.font_family(), "JetBrains Mono");
     }
 }

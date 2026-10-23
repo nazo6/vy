@@ -23,4 +23,4 @@ vy-proto.workspace = true
 gpui-platform = { workspace = true, features = ["wayland", "x11"] }
 
 [target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
-gpui-platform = { workspace = true }
+gpui-platform = { workspace = true, features = ["font-kit"] }
