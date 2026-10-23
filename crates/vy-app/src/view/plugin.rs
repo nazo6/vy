@@ -94,7 +94,7 @@ impl EditorView {
             ScriptEvent::Evaluated => {
                 self.status = "init.ts loaded".into();
             }
-            ScriptEvent::CommandFinished { id } => {
+            ScriptEvent::CommandFinished { id, .. } => {
                 if self.frame_log {
                     eprintln!("vy: command {id} finished");
                 }

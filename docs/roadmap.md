@@ -119,7 +119,7 @@ Phase 3 で仕上げます。
 - [ ] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する
-  - [ ] `commands.execute` の戻り値を JS へ返す
+  - [x] `commands.execute` の戻り値を JS へ返す
   - [x] 実行キュー（実行中のコマンドを直列に進める）
   - [x] コマンドパレット（`space` リーダー、単語検索、選択、実行）
   - [x] コマンド記述子と `Invocation`

@@ -78,12 +78,15 @@ pub enum ScriptTask {
 }
 
 /// Something the JavaScript thread reports to the UI.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScriptEvent {
     /// The module finished evaluating.
     Evaluated,
-    /// A command handler returned.
-    CommandFinished { id: String },
+    /// A command handler returned with an optional result.
+    CommandFinished {
+        id: String,
+        result: serde_json::Value,
+    },
     /// The module or a handler failed. The message is in English.
     Error { message: String },
     /// The thread exited.
@@ -330,21 +333,29 @@ fn run_task(
         }
         ScriptTask::Execute { id, args } => {
             let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
-            let result = with_deadline(deadline, COMMAND_TIMEOUT, || {
-                let function: Function = ctx.globals().get("__vy_run_command")?;
-                let value: JsValue = function.call((id.clone(), args_json))?;
-                // Handlers are `async`, so the value is usually a promise. A
-                // synchronous host call resolves it without touching the queue.
-                if let Some(promise) = value.as_promise() {
-                    promise.finish::<()>()?;
-                }
-                drain_jobs(&ctx);
-                Ok(())
-            });
+            let result: rquickjs::Result<serde_json::Value> =
+                with_deadline(deadline, COMMAND_TIMEOUT, || {
+                    let function: Function = ctx.globals().get("__vy_run_command")?;
+                    let value: JsValue = function.call((id.clone(), args_json))?;
+                    let resolved = if let Some(promise) = value.as_promise() {
+                        let inner: JsValue = promise.finish()?;
+                        inner
+                    } else {
+                        value
+                    };
+                    drain_jobs(&ctx);
+                    let json_str: String = ctx
+                        .json_stringify(resolved)?
+                        .and_then(|val| val.to_string().ok())
+                        .unwrap_or_else(|| "null".to_string());
+                    let json_val =
+                        serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+                    Ok(json_val)
+                });
 
             match result {
-                Ok(()) => {
-                    let _ = events.send_blocking(ScriptEvent::CommandFinished { id });
+                Ok(result) => {
+                    let _ = events.send_blocking(ScriptEvent::CommandFinished { id, result });
                 }
                 Err(error) => {
                     let _ = events.send_blocking(ScriptEvent::Error {
@@ -374,11 +385,11 @@ fn run_task(
 }
 
 /// Resets the interrupt deadline around `body` so a runaway script stops.
-fn with_deadline(
+fn with_deadline<T>(
     deadline: &Arc<AtomicU64>,
     timeout: Duration,
-    body: impl FnOnce() -> rquickjs::Result<()>,
-) -> rquickjs::Result<()> {
+    body: impl FnOnce() -> rquickjs::Result<T>,
+) -> rquickjs::Result<T> {
     deadline.store(
         now_millis().saturating_add(timeout.as_millis() as u64),
         Ordering::Relaxed,
@@ -599,6 +610,7 @@ export const answer: number = 42;
 import { commands, notifications } from "vy-api";
 commands.registerCommand("user.hello", async () => {
   await notifications.show("hi");
+  return 42;
 });
 "#,
         );
@@ -606,6 +618,7 @@ commands.registerCommand("user.hello", async () => {
         let mut running = true;
         let mut shown = false;
         let mut finished = false;
+        let mut command_result = serde_json::Value::Null;
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while std::time::Instant::now() < deadline && !finished {
             if let Ok(request) = host.requests.try_recv() {
@@ -623,7 +636,10 @@ commands.registerCommand("user.hello", async () => {
                     running = false;
                     host.execute("user.hello", json!(null));
                 }
-                Ok(ScriptEvent::CommandFinished { .. }) => finished = true,
+                Ok(ScriptEvent::CommandFinished { result, .. }) => {
+                    command_result = result;
+                    finished = true;
+                }
                 Ok(ScriptEvent::Error { message }) => panic!("{message}"),
                 Ok(_) => {}
                 Err(_) => std::thread::yield_now(),
@@ -632,5 +648,52 @@ commands.registerCommand("user.hello", async () => {
 
         assert!(shown, "the handler did not call notifications.show");
         assert!(finished, "the handler did not finish");
+        assert_eq!(command_result, json!(42));
+    }
+
+    #[test]
+    fn executes_registered_command_from_script_and_returns_value() {
+        let host = ScriptHost::spawn(test_env());
+        host.evaluate(
+            PathBuf::from("init.ts"),
+            r#"
+import { commands } from "vy-api";
+commands.registerCommand("user.add", async (args) => {
+  return (args.a || 0) + (args.b || 0);
+});
+
+commands.registerCommand("user.compute", async () => {
+  const result = await commands.execute("user.add", { a: 10, b: 20 });
+  return result;
+});
+"#,
+        );
+
+        let mut running = true;
+        let mut finished = false;
+        let mut command_result = serde_json::Value::Null;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline && !finished {
+            if let Ok(request) = host.requests.try_recv() {
+                request.respond_value(json!(null));
+                continue;
+            }
+            match host.events.try_recv() {
+                Ok(ScriptEvent::Evaluated) if running => {
+                    running = false;
+                    host.execute("user.compute", json!(null));
+                }
+                Ok(ScriptEvent::CommandFinished { result, .. }) => {
+                    command_result = result;
+                    finished = true;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                Ok(_) => {}
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+
+        assert!(finished, "user.compute did not finish");
+        assert_eq!(command_result, json!(30));
     }
 }

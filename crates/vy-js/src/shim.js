@@ -91,7 +91,13 @@ export const commands = {
     };
   },
 
-  execute: async (id, args) => call("commands.execute", { id, args: args ?? null }),
+  async execute(id, args) {
+    if (commandHandlers.has(id)) {
+      const handler = commandHandlers.get(id);
+      return await handler(args ?? null);
+    }
+    return call("commands.execute", { id, args: args ?? null });
+  },
 
   getCommands: async () => call("commands.getCommands", {}),
 };

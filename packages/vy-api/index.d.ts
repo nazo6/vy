@@ -62,8 +62,8 @@ export interface EditorEditBuilder {
 }
 
 export interface CommandsApi {
-  registerCommand(id: string, handler: (args?: CommandArgs) => unknown): Disposable;
-  execute(id: string, args?: unknown): Promise<unknown>;
+  registerCommand(id: string, handler: (args?: unknown) => unknown): Disposable;
+  execute<T = unknown>(id: string, args?: unknown): Promise<T>;
   getCommands(): Promise<string[]>;
 }
 
