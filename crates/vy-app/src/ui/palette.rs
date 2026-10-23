@@ -85,9 +85,18 @@ pub fn render_palette(
     let filtered = filtered_picker_indices(items, &palette.query);
     let filtered_count = filtered.len();
 
-    let count_label = match palette.mode {
+    let count_label = match &palette.mode {
         PaletteMode::Commands => format!("{filtered_count} commands"),
         PaletteMode::Documents => format!("{filtered_count} documents"),
+        PaletteMode::Custom { .. } => format!("{filtered_count} items"),
+    };
+
+    let prefix = match &palette.mode {
+        PaletteMode::Custom {
+            placeholder: Some(p),
+            ..
+        } => format!("{p} > "),
+        _ => "> ".to_string(),
     };
 
     let query = div()
@@ -104,7 +113,7 @@ pub fn render_palette(
                 .items_center()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .child(format!("> {}", palette.query))
+                .child(format!("{prefix}{}", palette.query))
                 .child(input_caret(theme, font_size, caret_width)),
         )
         .child(
@@ -115,9 +124,10 @@ pub fn render_palette(
                 .child(count_label),
         );
 
-    let empty_label = match palette.mode {
+    let empty_label = match &palette.mode {
         PaletteMode::Commands => "no matching commands",
         PaletteMode::Documents => "no matching documents",
+        PaletteMode::Custom { .. } => "no matching items",
     };
 
     let rows_element: AnyElement = if filtered.is_empty() {
@@ -158,9 +168,10 @@ pub fn render_palette(
         .into_any_element()
     };
 
-    let hint_label = match palette.mode {
+    let hint_label = match &palette.mode {
         PaletteMode::Commands => "Enter run  ·  Esc close  ·  Up/Down move",
         PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
+        PaletteMode::Custom { .. } => "Enter select  ·  Esc close  ·  Up/Down move",
     };
 
     let hint = div()

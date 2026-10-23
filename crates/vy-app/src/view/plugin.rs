@@ -187,6 +187,14 @@ impl EditorView {
                     pane.widget_tree = Some(tree);
                 }
             }
+            HostAction::ShowPicker {
+                id,
+                items,
+                placeholder,
+                request,
+            } => {
+                self.open_custom_picker(id, items, placeholder, request);
+            }
         }
 
         self.ensure_cursor_visible();

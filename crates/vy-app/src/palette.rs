@@ -1,13 +1,17 @@
 //! State and item filtering for the command palette.
 
+use serde::{Deserialize, Serialize};
+
 use crate::commands::CommandDescriptor;
 
 /// A generic item displayed in a picker / palette list.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickerItem {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
@@ -44,13 +48,20 @@ impl From<&CommandDescriptor> for PickerItem {
 }
 
 /// The mode/kind of picker currently active.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default)]
 pub enum PaletteMode {
     /// Command palette for searching and executing commands.
     #[default]
     Commands,
     /// Document / buffer picker for switching open documents.
     Documents,
+    /// Custom picker triggered by a script or plugin via `ui.picker.show`.
+    Custom {
+        id: String,
+        items: Vec<PickerItem>,
+        placeholder: Option<String>,
+        reply: Option<vy_js::HostRequest>,
+    },
 }
 
 /// Maximum width the command palette grows before it stops filling the window.
@@ -59,7 +70,7 @@ pub const PALETTE_MAX_WIDTH: f32 = 560.0;
 pub const PALETTE_MAX_HEIGHT: f32 = 420.0;
 
 /// State of an active command palette modal.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default)]
 pub struct PaletteState {
     pub mode: PaletteMode,
     pub query: String,

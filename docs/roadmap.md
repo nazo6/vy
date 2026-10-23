@@ -118,6 +118,7 @@ Phase 3 で仕上げます。
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
   - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
   - [ ] ピッカー（`ui.picker`）、ホバー（`ui.hover`）、ガター（`ui.gutter`）
+    - `ui.picker.show` および `ui.picker.registerSource` を実装した
 - [ ] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する
@@ -127,7 +128,7 @@ Phase 3 で仕上げます。
   - [x] コマンド記述子と `Invocation`
         の共通化（キーマップ、パレット、Ex、スクリプト）
   - [x] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
-  - [ ] ピッカー API（`ui.picker.registerSource`）と、パレットからの引数入力
+  - [x] ピッカー API（`ui.picker.registerSource` / `ui.picker.show`）
 
 ### Phase 4: リモート接続
 

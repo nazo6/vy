@@ -22,6 +22,7 @@ use crate::commands::{
 use crate::config::Config;
 use crate::editor::{Action, Editor, Mode, Transaction};
 use crate::keymap::Keymap;
+use crate::palette::PickerItem;
 use crate::paths::Paths;
 use crate::statusline::{Statusline, StatuslineAlignment, StatuslineItem};
 use crate::when;
@@ -167,6 +168,12 @@ pub enum HostAction {
     RenderWidgetTree {
         view_id: String,
         tree: WidgetNode,
+    },
+    ShowPicker {
+        id: String,
+        items: Vec<PickerItem>,
+        placeholder: Option<String>,
+        request: vy_js::HostRequest,
     },
 }
 
@@ -514,6 +521,21 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
             } else {
                 request.respond_error("InvalidParams", "invalid widget tree structure");
             }
+        }
+        "ui.picker.show" => {
+            let id = text_param(&params, "id").unwrap_or_default();
+            let placeholder = text_param(&params, "placeholder");
+            let items: Vec<PickerItem> = params
+                .get("items")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            outcome.action = HostAction::ShowPicker {
+                id,
+                items,
+                placeholder,
+                request,
+            };
         }
         other => {
             request.respond_error("InvalidState", format!("unknown host method: {other}"));
@@ -986,5 +1008,52 @@ commands.registerCommand("user.hello", async () => {
         let reply3 = rec3.recv().expect("reply");
         assert!(matches!(reply3, vy_js::HostReply::Ok(_)));
         assert!(statusline.is_empty());
+    }
+
+    #[test]
+    fn ui_picker_show_triggers_action() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        let (req, rec) = HostRequest::new(
+            "ui.picker.show",
+            json!({
+                "id": "test_picker",
+                "placeholder": "Choose an item",
+                "items": [
+                    { "id": "1", "title": "First" },
+                    { "id": "2", "title": "Second", "description": "desc" }
+                ]
+            }),
+        );
+        let ctx = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        let outcome = handle_request(ctx, req);
+        match outcome.action {
+            HostAction::ShowPicker {
+                id,
+                items,
+                placeholder,
+                request,
+            } => {
+                assert_eq!(id, "test_picker");
+                assert_eq!(items.len(), 2);
+                assert_eq!(placeholder.as_deref(), Some("Choose an item"));
+                request.respond_value(json!({ "selectedId": "1" }));
+            }
+            _ => panic!("expected ShowPicker"),
+        }
+        let reply = rec.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Ok(_)));
     }
 }

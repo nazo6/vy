@@ -234,8 +234,49 @@ export const remote = {
 };
 
 let nextStatuslineItemId = 1;
+let nextPickerId = 1;
+const pickerSources = new Map();
 
 export const ui = {
+  picker: {
+    show(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("ui.picker.show needs options object");
+      }
+      const id = String(nextPickerId++);
+      const items = Array.isArray(options.items) ? options.items : [];
+      const placeholder = options.placeholder || null;
+
+      const reply = call("ui.picker.show", {
+        id,
+        items,
+        placeholder,
+      });
+
+      if (!reply || !reply.selectedId) {
+        return Promise.resolve(undefined);
+      }
+      const found = items.find((item) => item.id === reply.selectedId);
+      return Promise.resolve(found);
+    },
+
+    registerSource(source) {
+      if (!source || typeof source.id !== "string") {
+        throw new TypeError("ui.picker.registerSource needs a source with an id");
+      }
+      pickerSources.set(source.id, source);
+      return {
+        dispose() {
+          pickerSources.delete(source.id);
+        },
+      };
+    },
+
+    getSource(id) {
+      return pickerSources.get(id);
+    },
+  },
+
   statusline: {
     createItem(options) {
       if (!options || typeof options !== "object") {

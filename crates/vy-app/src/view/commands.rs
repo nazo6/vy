@@ -266,6 +266,7 @@ impl EditorView {
                     })
                     .collect()
             }
+            PaletteMode::Custom { ref items, .. } => items.clone(),
         }
     }
 
@@ -300,6 +301,27 @@ impl EditorView {
         self.palette_scroll_handle
             .scroll_to_item(0, ScrollStrategy::Top);
         self.status = "switch document".into();
+    }
+
+    pub(super) fn open_custom_picker(
+        &mut self,
+        id: String,
+        items: Vec<PickerItem>,
+        placeholder: Option<String>,
+        request: vy_js::HostRequest,
+    ) {
+        self.clear_preedit();
+        self.ex = None;
+        let status_text = placeholder.clone().unwrap_or_else(|| "select item".into());
+        self.palette = Some(PaletteState::with_mode(PaletteMode::Custom {
+            id,
+            items,
+            placeholder,
+            reply: Some(request),
+        }));
+        self.palette_scroll_handle
+            .scroll_to_item(0, ScrollStrategy::Top);
+        self.status = status_text.into();
     }
 
     pub(super) fn open_ex(&mut self) {
@@ -380,19 +402,24 @@ impl EditorView {
     pub(super) fn handle_palette_key(&mut self, key: Key) -> bool {
         match key {
             Key::Esc => {
-                self.palette = None;
+                if let Some(PaletteState {
+                    mode: PaletteMode::Custom { reply, .. },
+                    ..
+                }) = self.palette.take()
+                {
+                    if let Some(req) = reply {
+                        req.respond_value(serde_json::Value::Null);
+                    }
+                } else {
+                    self.palette = None;
+                }
                 return true;
             }
             Key::Enter => {
                 let Some(id) = self.palette_selected_id() else {
                     return true;
                 };
-                let mode = self
-                    .palette
-                    .as_ref()
-                    .map(|p| p.mode.clone())
-                    .unwrap_or_default();
-                self.palette = None;
+                let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
                 match mode {
                     PaletteMode::Commands => {
                         self.enqueue_command(Invocation::palette(id));
@@ -406,6 +433,11 @@ impl EditorView {
                             }),
                             Pending::EditorOpen,
                         );
+                    }
+                    PaletteMode::Custom { reply, .. } => {
+                        if let Some(req) = reply {
+                            req.respond_value(serde_json::json!({ "selectedId": id }));
+                        }
                     }
                 }
                 return true;

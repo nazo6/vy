@@ -8,9 +8,9 @@
 //! See `docs/plugin-system.md` §2.2 and `docs/architecture.md`.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, Value as JsValue};
@@ -94,12 +94,20 @@ pub enum ScriptEvent {
 }
 
 /// A call from the shim to the UI.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HostRequest {
     pub method: String,
     pub params: serde_json::Value,
-    reply: mpsc::Sender<HostReply>,
+    reply: Arc<Mutex<Option<mpsc::Sender<HostReply>>>>,
 }
+
+impl PartialEq for HostRequest {
+    fn eq(&self, other: &Self) -> bool {
+        self.method == other.method && self.params == other.params
+    }
+}
+
+impl Eq for HostRequest {}
 
 impl HostRequest {
     /// Creates a request and the channel its reply arrives on. The UI owns the
@@ -113,7 +121,7 @@ impl HostRequest {
             Self {
                 method: method.into(),
                 params,
-                reply,
+                reply: Arc::new(Mutex::new(Some(reply))),
             },
             receiver,
         )
@@ -121,7 +129,11 @@ impl HostRequest {
 
     /// Sends the result and unblocks the JavaScript thread.
     pub fn respond(self, reply: HostReply) {
-        let _ = self.reply.send(reply);
+        if let Ok(mut lock) = self.reply.lock()
+            && let Some(sender) = lock.take()
+        {
+            let _ = sender.send(reply);
+        }
     }
 
     pub fn respond_value(self, value: serde_json::Value) {
@@ -442,7 +454,7 @@ impl Bridge {
         let request = HostRequest {
             method: method.clone(),
             params,
-            reply: reply_sender,
+            reply: Arc::new(Mutex::new(Some(reply_sender))),
         };
 
         if self.requests.send_blocking(request).is_err() {
@@ -695,5 +707,65 @@ commands.registerCommand("user.compute", async () => {
 
         assert!(finished, "user.compute did not finish");
         assert_eq!(command_result, json!(30));
+    }
+
+    #[test]
+    fn ui_picker_show_and_register_source() {
+        let host = ScriptHost::spawn(test_env());
+        host.evaluate(
+            PathBuf::from("init.ts"),
+            r#"
+import { ui, commands } from "vy-api";
+
+const disposable = ui.picker.registerSource({
+  id: "test-source",
+  provideItems: () => [{ id: "x", title: "Item X" }]
+});
+
+commands.registerCommand("user.pick", async () => {
+  const result = await ui.picker.show({
+    placeholder: "Select one",
+    items: [{ id: "foo", title: "Foo Title" }, { id: "bar", title: "Bar Title" }]
+  });
+  return result;
+});
+"#,
+        );
+
+        let mut running = true;
+        let mut finished = false;
+        let mut command_result = serde_json::Value::Null;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+
+        while std::time::Instant::now() < deadline && !finished {
+            if let Ok(request) = host.requests.try_recv() {
+                if request.method == "ui.picker.show" {
+                    assert_eq!(
+                        request.params.get("placeholder").and_then(|v| v.as_str()),
+                        Some("Select one")
+                    );
+                    request.respond_value(json!({ "selectedId": "foo" }));
+                } else {
+                    request.respond_value(json!(null));
+                }
+                continue;
+            }
+            match host.events.try_recv() {
+                Ok(ScriptEvent::Evaluated) if running => {
+                    running = false;
+                    host.execute("user.pick", json!(null));
+                }
+                Ok(ScriptEvent::CommandFinished { id, result }) if id == "user.pick" => {
+                    command_result = result;
+                    finished = true;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                Ok(_) => {}
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+
+        assert!(finished, "user.pick did not finish");
+        assert_eq!(command_result, json!({ "id": "foo", "title": "Foo Title" }));
     }
 }

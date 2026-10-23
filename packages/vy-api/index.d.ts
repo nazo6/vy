@@ -149,6 +149,29 @@ export interface StatuslineItem extends Disposable {
   dispose(): void;
 }
 
+export interface PickerItem {
+  id: string;
+  title: string;
+  description?: string;
+  detail?: string;
+}
+
+export interface ShowPickerOptions {
+  items: PickerItem[];
+  placeholder?: string;
+}
+
+export interface PickerSource {
+  id: string;
+  provideItems(query: string): Promise<PickerItem[]> | PickerItem[];
+}
+
+export interface PickerApi {
+  show(options: ShowPickerOptions): Promise<PickerItem | undefined>;
+  registerSource(source: PickerSource): Disposable;
+  getSource(id: string): PickerSource | undefined;
+}
+
 export interface StatuslineApi {
   createItem(options: StatuslineItemOptions): StatuslineItem;
 }
@@ -184,6 +207,7 @@ export interface UiTextInputOptions {
 }
 
 export interface UiApi {
+  readonly picker: PickerApi;
   readonly statusline: StatuslineApi;
   column(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
   row(options: UiContainerOptions | WidgetNode[], children?: WidgetNode[]): WidgetNode;
