@@ -10,6 +10,7 @@ use vy_app::state::{DocumentState, PaneState};
 use vy_app::text_layout::{selection_on_line, utf16_to_byte};
 
 use crate::theme::Theme;
+use crate::ui::color::color;
 
 /// Width of one character at default font size. Used to scale the gutter.
 pub const CHARACTER_WIDTH: f32 = 10.0;
@@ -155,13 +156,9 @@ pub fn render_line(
     };
 
     let mark_color = if let Some(first) = marks.first() {
-        match first.color.as_deref() {
-            Some("error" | "danger") => theme.statusline.error,
-            Some("warning") => theme.statusline.warning,
-            Some("info" | "primary") => theme.statusline.info,
-            Some("success") => theme.statusline.success,
-            _ => theme.editor.gutter,
-        }
+        first
+            .color
+            .map_or(theme.editor.gutter, |token| color(theme, token))
     } else {
         theme.editor.gutter
     };

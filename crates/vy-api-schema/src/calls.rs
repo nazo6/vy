@@ -13,9 +13,9 @@ use serde_json::Value;
 use strum::VariantArray;
 use ts_rs::TS;
 
-use vy_core::{Position, Range, Selection, TextEdit};
+use vy_core::{Position, Range, Selection, TextEdit, Uri};
 
-use crate::{Mode, PickerItem, StatuslineAlignment, WidgetNode};
+use crate::{Mode, PickerItem, StatuslineAlignment, ThemeColor, WidgetNode};
 
 /// Parameters of a call that takes none.
 ///
@@ -504,7 +504,7 @@ pub struct EditorEditReply {
 pub struct DocumentInfoReply {
     #[ts(type = "number")]
     pub id: u64,
-    pub uri: String,
+    pub uri: Uri,
     pub language_id: String,
     #[ts(type = "number")]
     pub version: u64,
@@ -581,11 +581,10 @@ impl LogLevel {
 
 /// `notifications.show` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 #[ts(export)]
 pub struct NotificationsShowParams {
     pub message: String,
-    #[ts(optional = nullable)]
-    pub level: Option<LogLevel>,
 }
 
 /// `log.write` parameters.
@@ -612,7 +611,7 @@ pub struct StatuslineCreateParams {
     pub priority: i32,
     pub text: String,
     #[ts(optional = nullable)]
-    pub color: Option<String>,
+    pub color: Option<ThemeColor>,
     #[ts(optional = nullable)]
     pub command: Option<String>,
 }
@@ -620,7 +619,7 @@ pub struct StatuslineCreateParams {
 /// `ui.statusline.updateItem` parameters.
 ///
 /// `color` and `command` distinguish an absent field (leave as is) from `null`
-/// (clear it), so they are untyped as far as TypeScript is concerned.
+/// (clear it). The host validates `color` against the theme tokens.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct StatuslineUpdateParams {
@@ -650,7 +649,7 @@ pub struct GutterCreateParams {
     pub line: usize,
     pub text: String,
     #[ts(optional = nullable)]
-    pub color: Option<String>,
+    pub color: Option<ThemeColor>,
 }
 
 /// `ui.gutter.disposeItem` parameters.

@@ -31,6 +31,7 @@ import type {
 } from "./overrides";
 
 export type {
+  ButtonVariant,
   CommandId,
   CommandsExecuteParams,
   CommandsRegisterParams,
@@ -50,6 +51,8 @@ export type {
   EditorSetModeParams,
   EditorSetSelectionsParams,
   ErrorCode,
+  Font,
+  Gap,
   GutterCreateParams,
   GutterDisposeParams,
   HoverShowParams,
@@ -72,6 +75,7 @@ export type {
   StatuslineDisposeParams,
   StatuslineUpdateParams,
   TextEdit,
+  ThemeColor,
   Uri,
   ViewsRenderParams,
   WidgetNode,

@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, Value as JsValue};
 use serde::Serialize;
 use vy_api_schema::HOST_METHODS;
+use vy_core::Uri;
 
 use crate::api::{VyLoader, VyResolver};
 use crate::transpile::strip_types;
@@ -43,9 +44,9 @@ pub struct ScriptEnv {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceEnv {
-    pub root_uri: Option<String>,
+    pub root_uri: Option<Uri>,
     pub name: Option<String>,
-    pub folders: Vec<String>,
+    pub folders: Vec<Uri>,
     pub trusted: bool,
 }
 
@@ -615,9 +616,9 @@ pub fn test_env() -> ScriptEnv {
         plugin_id: "init".to_string(),
         version: "0.1.0".to_string(),
         workspace: WorkspaceEnv {
-            root_uri: Some("file:///tmp/vy-test".to_string()),
+            root_uri: Some(Uri::parse("file:///tmp/vy-test").expect("uri")),
             name: Some("vy-test".to_string()),
-            folders: vec!["file:///tmp/vy-test".to_string()],
+            folders: vec![Uri::parse("file:///tmp/vy-test").expect("uri")],
             trusted: true,
         },
         capabilities: Vec::new(),

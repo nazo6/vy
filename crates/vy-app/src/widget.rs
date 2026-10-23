@@ -4,4 +4,4 @@
 //! crosses the plugin boundary, so the types live in `vy-api-schema` and are
 //! re-exported here for the renderer.
 
-pub use vy_api_schema::{ContainerKind, WidgetNode};
+pub use vy_api_schema::{ButtonVariant, ContainerKind, Font, Gap, WidgetNode};

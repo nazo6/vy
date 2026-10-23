@@ -9,6 +9,7 @@ use std::collections::HashMap;
 /// Horizontal alignment of a statusline item. Defined in `vy-api-schema`
 /// because scripts set it.
 pub use vy_api_schema::StatuslineAlignment;
+use vy_api_schema::ThemeColor;
 
 /// One item displayed in the statusline.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,7 +18,7 @@ pub struct StatuslineItem {
     pub alignment: StatuslineAlignment,
     pub priority: i32,
     pub text: String,
-    pub color: Option<String>,
+    pub color: Option<ThemeColor>,
     pub command: Option<String>,
     pub visible: bool,
 }
@@ -60,7 +61,7 @@ impl Statusline {
         &mut self,
         id: &str,
         text: Option<String>,
-        color: Option<Option<String>>,
+        color: Option<Option<ThemeColor>>,
         command: Option<Option<String>>,
         visible: Option<bool>,
     ) -> bool {

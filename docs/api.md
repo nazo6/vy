@@ -298,7 +298,8 @@ JSON Schema として登録し、設定画面の生成と検証に使います�
 | `channel.error(message, data?)`        | local    | なし           | P0     |
 
 `notifications.show` は level、message、actions
-を受け取ります。`progress.withProgress` は `report` と `CancellationToken`
+を受け取る設計です。Phase 2 では `message` だけを受け付け、`level` と `actions`
+は Phase 3 以降です。`progress.withProgress` は `report` と `CancellationToken`
 を渡します。
 
 ## 13. ペインとビュー
@@ -486,6 +487,8 @@ Webview は最終手段です。Notebook の出力、HTML
 | `PanePlacement`     | 対象のペイン、方向、比率                                                            |
 | `FloatingRect`      | フローティングの位置と大きさ                                                        |
 
+`ThemeColor`（`default`、`muted`、`primary`、`info`、`success`、`warning`、`danger`、`error` など）と、ウィジェットの語彙（`Gap` の `sm`/`md`/`lg`、`Font` の `mono`、`ButtonVariant` の `primary`/`danger`）は列挙です。未知の値は `InvalidParams` で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](./adr/0007-rust-typed-plugin-api.md) §6）。
+
 ## 20. エラー
 
 API の失敗は例外で返します。例外は `code` を持ちます。
@@ -541,6 +544,8 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
   です。
 - `editor.edit` は1回の呼び出しを1トランザクションにしますが、複数カーソルの
   選択はまだ扱いません。
+- `notifications.show` の `level` と `actions`、`notifications.onDidClose`
+  は Phase 3 以降です。今は `message` だけを受け付けます。
 
 `init.ts` は常に信頼し、ケイパビリティの承認を求めません。外部プラグインの
 マニフェストと承認 UI は Phase 3 です。

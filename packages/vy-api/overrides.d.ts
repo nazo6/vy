@@ -6,14 +6,19 @@
 // slot handles, the picker, views, and the widget builders.
 
 import type {
+  ButtonVariant,
   CommandId,
+  Font,
+  Gap,
   Mode,
   PickerItem,
   Position,
   Range,
   SettingsKey,
   SettingsMap,
+  StatuslineAlignment,
   TextEdit,
+  ThemeColor,
   Uri,
   WidgetNode,
 } from "../vy-api-types";
@@ -95,9 +100,7 @@ export interface WorkspaceSugar {
 }
 
 export interface NotificationsSugar {
-  show(
-    message: string | { level?: "info" | "warn" | "error"; message: string },
-  ): Promise<void>;
+  show(message: string): Promise<void>;
 }
 
 export interface LogChannel {
@@ -112,17 +115,17 @@ export interface LogSugar {
 
 export interface StatuslineItemOptions {
   id?: string;
-  alignment: "left" | "center" | "right";
+  alignment: StatuslineAlignment;
   priority?: number;
   text: string;
-  color?: string;
+  color?: ThemeColor;
   command?: string;
 }
 
 export interface StatuslineItem extends Disposable {
   readonly id: string;
   text: string;
-  color?: string;
+  color?: ThemeColor;
   command?: string;
   show(): void;
   hide(): void;
@@ -136,7 +139,7 @@ export interface GutterItemOptions {
   id?: string;
   line: number;
   text: string;
-  color?: string;
+  color?: ThemeColor;
 }
 
 export interface GutterItem extends Disposable {
@@ -158,21 +161,21 @@ export interface UiPickerSugar {
 
 export interface UiContainerOptions {
   id?: string;
-  gap?: "sm" | "md" | "lg";
+  gap?: Gap;
 }
 
 export interface UiTextOptions {
   id?: string;
   text: string;
-  color?: string;
-  font?: "mono";
+  color?: ThemeColor;
+  font?: Font;
 }
 
 export interface UiButtonOptions {
   id?: string;
   label: string;
   command: string;
-  variant?: "primary" | "danger";
+  variant?: ButtonVariant;
 }
 
 export interface UiTextInputOptions {

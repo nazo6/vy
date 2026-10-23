@@ -6,6 +6,7 @@ use gpui::Context;
 use vy_app::commands::Invocation;
 use vy_app::plugin_host::{self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext};
 use vy_app::workspace::workspace_info;
+use vy_core::Uri;
 use vy_js::{HostRequest, ScriptEvent};
 
 use super::{EditorView, Pending};
@@ -211,7 +212,7 @@ impl EditorView {
         let document = self.active_document()?;
         Some(DocumentInfo {
             id: document.id,
-            uri: document.uri.clone(),
+            uri: Uri::parse(document.uri.clone()).ok()?,
             language_id: "text".to_string(),
         })
     }

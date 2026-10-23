@@ -4,6 +4,6 @@
  * `ui.statusline.updateItem` parameters.
  *
  * `color` and `command` distinguish an absent field (leave as is) from `null`
- * (clear it), so they are untyped as far as TypeScript is concerned.
+ * (clear it). The host validates `color` against the theme tokens.
  */
 export type StatuslineUpdateParams = { id: string, text?: string | null, color: string | null, command: string | null, visible?: boolean | null, };

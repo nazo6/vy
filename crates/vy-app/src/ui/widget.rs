@@ -3,9 +3,10 @@
 //! Defined in `docs/ui.md` and `docs/adr/0005-native-plugin-ui.md`.
 
 use gpui::{Div, div, prelude::*, px};
-use vy_app::widget::{ContainerKind, WidgetNode};
+use vy_app::widget::{ButtonVariant, ContainerKind, Gap, WidgetNode};
 
 use crate::theme::Theme;
+use crate::ui::color::color as resolve_color;
 
 /// Renders a custom declarative widget node into a GPUI element tree.
 pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
@@ -29,17 +30,17 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
                 }
             }
 
-            match gap.as_deref() {
-                Some("sm") => {
+            match gap {
+                Some(Gap::Sm) => {
                     container = container.gap_1();
                 }
-                Some("md") => {
+                Some(Gap::Md) => {
                     container = container.gap_2();
                 }
-                Some("lg") => {
+                Some(Gap::Lg) => {
                     container = container.gap_4();
                 }
-                _ => {}
+                None => {}
             }
 
             for child in children {
@@ -49,23 +50,9 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
         }
         WidgetNode::Text { text, color, .. } => {
             let mut text_el = div().child(text.clone());
-            match color.as_deref() {
-                Some("muted") => {
-                    text_el = text_el.text_color(theme.foreground.muted);
-                }
-                Some("accent" | "info") => {
-                    text_el = text_el.text_color(theme.statusline.info);
-                }
-                Some("danger" | "error") => {
-                    text_el = text_el.text_color(theme.statusline.error);
-                }
-                Some("success") => {
-                    text_el = text_el.text_color(theme.statusline.success);
-                }
-                _ => {
-                    text_el = text_el.text_color(theme.foreground.default);
-                }
-            }
+            text_el = text_el.text_color(color.map_or(theme.foreground.default, |token| {
+                resolve_color(theme, token)
+            }));
             text_el
         }
         WidgetNode::Button {
@@ -81,18 +68,18 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
                 .cursor_pointer()
                 .child(label.clone());
 
-            match variant.as_deref() {
-                Some("primary") => {
+            match variant {
+                Some(ButtonVariant::Primary) => {
                     button = button
                         .bg(theme.statusline.info)
                         .text_color(theme.statusline.foreground);
                 }
-                Some("danger") => {
+                Some(ButtonVariant::Danger) => {
                     button = button
                         .bg(theme.statusline.error)
                         .text_color(theme.statusline.foreground);
                 }
-                _ => {
+                None => {
                     button = button
                         .bg(theme.list.active_background)
                         .text_color(theme.foreground.default);

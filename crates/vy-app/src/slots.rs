@@ -5,13 +5,15 @@
 
 use std::collections::HashMap;
 
+use vy_api_schema::ThemeColor;
+
 /// An item or mark displayed in the gutter next to a line number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GutterItem {
     pub id: String,
     pub line: usize,
     pub text: String,
-    pub color: Option<String>,
+    pub color: Option<ThemeColor>,
 }
 
 impl GutterItem {

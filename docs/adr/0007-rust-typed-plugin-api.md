@@ -65,8 +65,7 @@ Phase 3 以降、API
 にも rquickjs にも依存しません。依存は
 `serde`、`serde_json`、`thiserror`、`ts-rs`、`vy-core` だけです。
 
-- **値型**: `Mode`、`Color`（`Token(ThemeColor)` か
-  `Hex`）、`ThemeColor`、`StatuslineAlignment`、`Gap`、`Font`、`ButtonVariant`、`LogLevel`、通知のレベル、`WidgetNode`
+- **値型**: `Mode`、`ThemeColor`、`StatuslineAlignment`、`Gap`、`Font`、`ButtonVariant`、`LogLevel`、通知のレベル、`WidgetNode`
   とその構成要素。
 - **メソッド型**: メソッドごとの params と result。すべて `Serialize` /
   `Deserialize` / `TS` を導出します。

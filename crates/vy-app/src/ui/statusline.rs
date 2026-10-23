@@ -5,18 +5,7 @@ use vy_app::editor::{Mode, ViewState};
 use vy_app::statusline::{Statusline, StatuslineAlignment};
 
 use crate::theme::Theme;
-
-/// Maps a semantic color token or hex string to a GPUI RGBA color.
-pub fn color_for_token(theme: &Theme, token: Option<&str>) -> gpui::Rgba {
-    match token {
-        Some("primary" | "info") => theme.statusline.info,
-        Some("success") => theme.statusline.success,
-        Some("warning") => theme.statusline.warning,
-        Some("danger" | "error") => theme.statusline.error,
-        Some("secondary" | "muted") => theme.foreground.muted,
-        _ => theme.foreground.default,
-    }
-}
+use crate::ui::color::color;
 
 /// Renders the bottom statusline bar.
 pub fn render_statusline(
@@ -111,7 +100,10 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(theme, item.color.as_deref()))
+                    .text_color(
+                        item.color
+                            .map_or(theme.foreground.default, |token| color(theme, token)),
+                    )
                     .child(item.text.clone())
             })
             .collect();
@@ -121,7 +113,10 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(theme, item.color.as_deref()))
+                    .text_color(
+                        item.color
+                            .map_or(theme.foreground.default, |token| color(theme, token)),
+                    )
                     .child(item.text.clone())
             })
             .collect();
@@ -131,7 +126,10 @@ pub fn render_statusline(
             .into_iter()
             .map(|item| {
                 div()
-                    .text_color(color_for_token(theme, item.color.as_deref()))
+                    .text_color(
+                        item.color
+                            .map_or(theme.foreground.default, |token| color(theme, token)),
+                    )
                     .child(item.text.clone())
             })
             .collect();

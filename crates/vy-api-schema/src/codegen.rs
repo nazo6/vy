@@ -34,9 +34,12 @@ const TYPE_KEYWORDS: &[&str] = &[
 /// Types scripts can import from `vy-api` even when no generated signature uses
 /// them.
 const EXTRA_TYPES: &[&str] = &[
+    "ButtonVariant",
     "CommandId",
     "ContainerKind",
     "ErrorCode",
+    "Font",
+    "Gap",
     "LogLevel",
     "Mode",
     "PickerItem",
@@ -47,6 +50,7 @@ const EXTRA_TYPES: &[&str] = &[
     "SettingsMap",
     "StatuslineAlignment",
     "TextEdit",
+    "ThemeColor",
     "Uri",
     "WidgetNode",
 ];

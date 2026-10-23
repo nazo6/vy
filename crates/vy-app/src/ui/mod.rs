@@ -1,5 +1,6 @@
 //! GPUI rendering components for `vy-app`.
 
+pub mod color;
 pub mod ex;
 pub mod key;
 pub mod palette;

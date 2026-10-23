@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::ThemeColor;
+
 /// Layout container direction or kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -15,6 +17,33 @@ pub enum ContainerKind {
     Column,
     Row,
     Stack,
+}
+
+/// Spacing between the children of a container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Gap {
+    Sm,
+    Md,
+    Lg,
+}
+
+/// Font a text widget asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Font {
+    Mono,
+}
+
+/// Visual weight of a button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum ButtonVariant {
+    Primary,
+    Danger,
 }
 
 /// A node in the declarative widget tree rendered by the host.
@@ -27,7 +56,7 @@ pub enum WidgetNode {
         id: Option<String>,
         kind: ContainerKind,
         #[serde(default)]
-        gap: Option<String>,
+        gap: Option<Gap>,
         #[serde(default)]
         children: Vec<WidgetNode>,
     },
@@ -36,9 +65,9 @@ pub enum WidgetNode {
         id: Option<String>,
         text: String,
         #[serde(default)]
-        color: Option<String>,
+        color: Option<ThemeColor>,
         #[serde(default)]
-        font: Option<String>,
+        font: Option<Font>,
     },
     /// Clickable action button triggering a registered command.
     Button {
@@ -46,7 +75,7 @@ pub enum WidgetNode {
         label: String,
         command: String,
         #[serde(default)]
-        variant: Option<String>,
+        variant: Option<ButtonVariant>,
     },
     /// Text input field.
     TextInput {

@@ -17,6 +17,10 @@ export type { StatuslineAlignment } from "./StatuslineAlignment";
 export type { LogLevel } from "./LogLevel";
 export type { ContainerKind } from "./ContainerKind";
 export type { WidgetNode } from "./WidgetNode";
+export type { ButtonVariant } from "./ButtonVariant";
+export type { Font } from "./Font";
+export type { Gap } from "./Gap";
+export type { ThemeColor } from "./ThemeColor";
 
 export type { ConfigGetParams } from "./ConfigGetParams";
 export type { ConfigSetParams } from "./ConfigSetParams";

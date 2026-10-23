@@ -6476,6 +6476,7 @@ dependencies = [
  "serde",
  "serde_json",
  "vy-api-schema",
+ "vy-core",
 ]
 
 [[package]]

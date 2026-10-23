@@ -9,14 +9,17 @@
 //! both use these types.
 
 mod calls;
+#[cfg(test)]
 mod codegen;
+mod color;
 mod mode;
 mod picker;
 mod slots;
 mod widget;
 
 pub use calls::*;
+pub use color::ThemeColor;
 pub use mode::Mode;
 pub use picker::PickerItem;
 pub use slots::StatuslineAlignment;
-pub use widget::{ContainerKind, WidgetNode};
+pub use widget::{ButtonVariant, ContainerKind, Font, Gap, WidgetNode};

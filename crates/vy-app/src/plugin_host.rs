@@ -22,9 +22,10 @@ use vy_api_schema::{
     GutterDisposeParams, HostCall, HoverShowParams, KeyContextValue, KeymapBindParams,
     KeymapSetContextParams, KeymapUnbindParams, LogWriteParams, NotificationsShowParams,
     PickerShowParams, StatuslineCreateParams, StatuslineDisposeParams, StatuslineUpdateParams,
-    ViewsRenderParams,
+    ThemeColor, ViewsRenderParams,
 };
 use vy_capabilities::TrustedStore;
+use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 use vy_proto::ErrorCode;
 
@@ -45,7 +46,7 @@ use crate::widget::WidgetNode;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentInfo {
     pub id: u64,
-    pub uri: String,
+    pub uri: Uri,
     pub language_id: String,
 }
 
@@ -155,9 +156,16 @@ pub fn script_env(workspace: &WorkspaceInfo, paths: &Paths) -> (ScriptEnv, Vec<S
         plugin_id: "init".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         workspace: WorkspaceEnv {
-            root_uri: workspace.root_uri.clone(),
+            root_uri: workspace
+                .root_uri
+                .as_deref()
+                .and_then(|uri| Uri::parse(uri).ok()),
             name: workspace.name.clone(),
-            folders: workspace.folders.clone(),
+            folders: workspace
+                .folders
+                .iter()
+                .filter_map(|uri| Uri::parse(uri.clone()).ok())
+                .collect(),
             trusted: true,
         },
         capabilities: Vec::new(),
@@ -290,6 +298,19 @@ fn optional_text(value: Value) -> Result<Option<String>, CallError> {
         Value::String(text) => Ok(Some(text)),
         other => Err(CallError::invalid_params(format!(
             "expected a string or null, found {other}"
+        ))),
+    }
+}
+
+/// Reads a color field that distinguishes an absent value from `null`.
+fn optional_theme_color(value: Value) -> Result<Option<ThemeColor>, CallError> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(name) => ThemeColor::parse(&name)
+            .map(Some)
+            .ok_or_else(|| CallError::invalid_params(format!("unknown color token: {name}"))),
+        other => Err(CallError::invalid_params(format!(
+            "expected a color token or null, found {other}"
         ))),
     }
 }
@@ -538,7 +559,7 @@ fn dispatch(
         }
         HostCall::UiStatuslineUpdateItem => {
             let params: StatuslineUpdateParams = parse_params(params)?;
-            let color = params.color.map(optional_text).transpose()?;
+            let color = params.color.map(optional_theme_color).transpose()?;
             let command = params.command.map(optional_text).transpose()?;
             if let Some(statusline) = context.statusline.as_deref_mut() {
                 statusline.update_item(&params.id, params.text, color, command, params.visible);
@@ -691,7 +712,7 @@ mod tests {
             commands,
             document: Some(DocumentInfo {
                 id: 1,
-                uri: "file:///tmp/a.txt".to_string(),
+                uri: Uri::parse("file:///tmp/a.txt").expect("uri"),
                 language_id: "text".to_string(),
             }),
             workspace,
@@ -1023,6 +1044,52 @@ commands.registerCommand("user.hello", async () => {
     }
 
     #[test]
+    fn rejects_unknown_color_tokens() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        let (request, receiver) = HostRequest::new(
+            "ui.statusline.createItem",
+            json!({ "id": "x", "alignment": "left", "text": "x", "color": "chartreuse" }),
+        );
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidParams"));
+
+        let (request, receiver) = HostRequest::new(
+            "ui.statusline.updateItem",
+            json!({ "id": "x", "color": "chartreuse" }),
+        );
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidParams"));
+    }
+
+    #[test]
     fn keeps_document_offsets_in_utf16() {
         let mut editor = Editor::with_text("a😀b\n", 1);
         let mut config = Config::with_defaults();
@@ -1086,7 +1153,7 @@ commands.registerCommand("user.hello", async () => {
         let left = statusline.items_for(StatuslineAlignment::Left);
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].text, "NORMAL");
-        assert_eq!(left[0].color.as_deref(), Some("primary"));
+        assert_eq!(left[0].color, Some(ThemeColor::Primary));
 
         let (req2, rec2) = HostRequest::new(
             "ui.statusline.updateItem",
