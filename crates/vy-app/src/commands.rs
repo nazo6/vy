@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use strum::VariantArray;
+
 use serde_json::Value as JsonValue;
 use vy_core::Range;
 
@@ -173,120 +175,79 @@ impl Invocation {
     }
 }
 
-/// A command that acts on a document rather than the cursor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DocumentCommand {
-    Open,
-    Save,
+macro_rules! define_command_enum {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$doc:meta])*
+                $variant:ident => ($id:literal, $title:literal),
+            )*
+        }
+    ) => {
+        $(#[$meta])*
+        $vis enum $name {
+            $(
+                $(#[$doc])*
+                $variant,
+            )*
+        }
+
+        impl $name {
+            /// Stable identifier used by key bindings and `commands.execute`.
+            pub fn id(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $id,)*
+                }
+            }
+
+            pub fn title(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $title,)*
+                }
+            }
+
+            pub fn parse(id: &str) -> Option<Self> {
+                match id {
+                    $($id => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+
+            pub fn all() -> &'static [Self] {
+                &[$(Self::$variant,)*]
+            }
+        }
+    };
 }
 
-impl DocumentCommand {
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Open => "vy.editor.open",
-            Self::Save => "vy.document.save",
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Open => "Editor Open",
-            Self::Save => "Document Save",
-        }
-    }
-
-    pub fn parse(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|command| command.id() == id)
-    }
-
-    pub fn all() -> &'static [Self] {
-        &[Self::Open, Self::Save]
-    }
-}
-
-/// A command handled by the client UI instead of the editor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UiCommand {
-    CommandPalette,
-    ExCommandLine,
-}
-
-impl UiCommand {
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::CommandPalette => "vy.ui.command_palette",
-            Self::ExCommandLine => "vy.ui.ex_command_line",
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::CommandPalette => "Command Palette",
-            Self::ExCommandLine => "Ex Command Line",
-        }
-    }
-
-    pub fn parse(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|command| command.id() == id)
-    }
-
-    pub fn all() -> &'static [Self] {
-        &[Self::CommandPalette, Self::ExCommandLine]
+define_command_enum! {
+    /// A command that acts on a document rather than the cursor.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum DocumentCommand {
+        Open => ("vy.editor.open", "Editor Open"),
+        Save => ("vy.document.save", "Document Save"),
     }
 }
 
-/// A command that scrolls or positions the view within an editor pane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewCommand {
-    ScrollHalfPageDown,
-    ScrollHalfPageUp,
-    CenterCursor,
-    ScrollCursorTop,
-    ScrollCursorBottom,
+define_command_enum! {
+    /// A command handled by the client UI instead of the editor.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum UiCommand {
+        CommandPalette => ("vy.ui.command_palette", "Command Palette"),
+        ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
+    }
 }
 
-impl ViewCommand {
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::ScrollHalfPageDown => "vy.view.scroll_half_page_down",
-            Self::ScrollHalfPageUp => "vy.view.scroll_half_page_up",
-            Self::CenterCursor => "vy.view.center_cursor",
-            Self::ScrollCursorTop => "vy.view.scroll_cursor_top",
-            Self::ScrollCursorBottom => "vy.view.scroll_cursor_bottom",
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::ScrollHalfPageDown => "Scroll Half Page Down",
-            Self::ScrollHalfPageUp => "Scroll Half Page Up",
-            Self::CenterCursor => "Center Cursor",
-            Self::ScrollCursorTop => "Scroll Cursor Top",
-            Self::ScrollCursorBottom => "Scroll Cursor Bottom",
-        }
-    }
-
-    pub fn parse(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|command| command.id() == id)
-    }
-
-    pub fn all() -> &'static [Self] {
-        &[
-            Self::ScrollHalfPageDown,
-            Self::ScrollHalfPageUp,
-            Self::CenterCursor,
-            Self::ScrollCursorTop,
-            Self::ScrollCursorBottom,
-        ]
+define_command_enum! {
+    /// A command that scrolls or positions the view within an editor pane.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ViewCommand {
+        ScrollHalfPageDown => ("vy.view.scroll_half_page_down", "Scroll Half Page Down"),
+        ScrollHalfPageUp => ("vy.view.scroll_half_page_up", "Scroll Half Page Up"),
+        CenterCursor => ("vy.view.center_cursor", "Center Cursor"),
+        ScrollCursorTop => ("vy.view.scroll_cursor_top", "Scroll Cursor Top"),
+        ScrollCursorBottom => ("vy.view.scroll_cursor_bottom", "Scroll Cursor Bottom"),
     }
 }
 
@@ -298,17 +259,10 @@ pub struct ExCommandLine {
     pub args: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExParseError {
+    #[error("empty Ex command")]
     Empty,
-}
-
-impl std::fmt::Display for ExParseError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("empty Ex command"),
-        }
-    }
 }
 
 /// Parses `name[!] [args]`. Ranges are reserved for a later step.
@@ -375,28 +329,15 @@ pub const EX_ALIASES: &[ExAlias] = &[
     },
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExResolveError {
+    #[error("unknown Ex command: {0}")]
     Unknown(String),
+    #[error("ambiguous Ex command `{name}`: {}", candidates.join(", "))]
     Ambiguous {
         name: String,
         candidates: Vec<String>,
     },
-}
-
-impl std::fmt::Display for ExResolveError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unknown(name) => write!(formatter, "unknown Ex command: {name}"),
-            Self::Ambiguous { name, candidates } => {
-                write!(
-                    formatter,
-                    "ambiguous Ex command `{name}`: {}",
-                    candidates.join(", ")
-                )
-            }
-        }
-    }
 }
 
 /// Resolves an exact name or a unique prefix to a command id.
@@ -440,232 +381,173 @@ pub fn display_title(id: &str) -> String {
 }
 
 /// A command that changes the window layout instead of the buffer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString, strum::VariantArray,
+)]
 pub enum PaneCommand {
+    #[strum(serialize = "vy.pane.split_right")]
     SplitRight,
+    #[strum(serialize = "vy.pane.split_down")]
     SplitDown,
+    #[strum(serialize = "vy.pane.close")]
     Close,
+    #[strum(serialize = "vy.pane.focus_left")]
     FocusLeft,
+    #[strum(serialize = "vy.pane.focus_down")]
     FocusDown,
+    #[strum(serialize = "vy.pane.focus_up")]
     FocusUp,
+    #[strum(serialize = "vy.pane.focus_right")]
     FocusRight,
+    #[strum(serialize = "vy.pane.next")]
     Next,
 }
 
 impl PaneCommand {
     /// Stable identifier used by key bindings and `commands.execute`.
     pub fn id(self) -> &'static str {
-        match self {
-            Self::SplitRight => "vy.pane.split_right",
-            Self::SplitDown => "vy.pane.split_down",
-            Self::Close => "vy.pane.close",
-            Self::FocusLeft => "vy.pane.focus_left",
-            Self::FocusDown => "vy.pane.focus_down",
-            Self::FocusUp => "vy.pane.focus_up",
-            Self::FocusRight => "vy.pane.focus_right",
-            Self::Next => "vy.pane.next",
-        }
+        self.into()
     }
 
     pub fn parse(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|command| command.id() == id)
+        id.parse().ok()
     }
 
     pub fn all() -> &'static [Self] {
-        &[
-            Self::SplitRight,
-            Self::SplitDown,
-            Self::Close,
-            Self::FocusLeft,
-            Self::FocusDown,
-            Self::FocusUp,
-            Self::FocusRight,
-            Self::Next,
-        ]
+        Self::VARIANTS
     }
 }
 
 /// A command implemented in Rust.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::IntoStaticStr,
+    strum::EnumString,
+    strum::VariantArray,
+)]
 pub enum BuiltinCommand {
+    #[strum(serialize = "vy.motion.left")]
     MoveLeft,
+    #[strum(serialize = "vy.motion.right")]
     MoveRight,
+    #[strum(serialize = "vy.motion.up")]
     MoveUp,
+    #[strum(serialize = "vy.motion.down")]
     MoveDown,
+    #[strum(serialize = "vy.motion.word_forward")]
     WordForward,
+    #[strum(serialize = "vy.motion.word_backward")]
     WordBackward,
+    #[strum(serialize = "vy.motion.word_end")]
     WordEnd,
+    #[strum(serialize = "vy.motion.line_start")]
     LineStart,
+    #[strum(serialize = "vy.motion.line_end")]
     LineEnd,
+    #[strum(serialize = "vy.motion.document_start")]
     DocumentStart,
+    #[strum(serialize = "vy.motion.document_end")]
     DocumentEnd,
+    #[strum(serialize = "vy.edit.delete")]
     Delete,
+    #[strum(serialize = "vy.edit.paste_after")]
     PasteAfter,
+    #[strum(serialize = "vy.edit.paste_before")]
     PasteBefore,
+    #[strum(serialize = "vy.edit.repeat")]
     Repeat,
+    #[strum(serialize = "vy.edit.last_visual")]
     LastVisual,
+    #[strum(serialize = "vy.mode.insert")]
     InsertHere,
+    #[strum(serialize = "vy.mode.insert_after")]
     InsertAfter,
+    #[strum(serialize = "vy.mode.insert_line_end")]
     InsertLineEnd,
+    #[strum(serialize = "vy.mode.insert_line_start")]
     InsertLineStart,
+    #[strum(serialize = "vy.mode.open_below")]
     OpenBelow,
+    #[strum(serialize = "vy.mode.open_above")]
     OpenAbove,
+    #[strum(serialize = "vy.mode.select")]
     SelectMode,
+    #[strum(serialize = "vy.mode.select_line")]
     SelectLineMode,
+    #[strum(serialize = "vy.mode.select_block")]
     SelectBlockMode,
+    #[strum(serialize = "vy.mode.normal")]
     NormalMode,
+    #[strum(serialize = "vy.history.undo")]
     Undo,
+    #[strum(serialize = "vy.history.redo")]
     Redo,
+    #[strum(serialize = "vy.insert.newline")]
     InsertNewline,
+    #[strum(serialize = "vy.insert.tab")]
     InsertTab,
+    #[strum(serialize = "vy.insert.backspace")]
     InsertBackspace,
+    #[strum(serialize = "vy.insert.left")]
     InsertLeft,
+    #[strum(serialize = "vy.insert.right")]
     InsertRight,
+    #[strum(serialize = "vy.insert.up")]
     InsertUp,
+    #[strum(serialize = "vy.insert.down")]
     InsertDown,
+    #[strum(serialize = "vy.insert.home")]
     InsertHome,
+    #[strum(serialize = "vy.insert.end")]
     InsertEnd,
+    #[strum(serialize = "vy.operator.delete")]
     OperatorDelete,
+    #[strum(serialize = "vy.operator.yank")]
     OperatorYank,
+    #[strum(serialize = "vy.edit.yank_line")]
     YankLine,
+    #[strum(serialize = "vy.operator.inner")]
     OperatorInner,
+    #[strum(serialize = "vy.operator.around")]
     OperatorAround,
+    #[strum(serialize = "vy.text_object.word")]
     TextObjectWord,
+    #[strum(serialize = "vy.text_object.paragraph")]
     TextObjectParagraph,
+    #[strum(serialize = "vy.text_object.paren")]
     TextObjectParen,
+    #[strum(serialize = "vy.text_object.bracket")]
     TextObjectBracket,
+    #[strum(serialize = "vy.text_object.brace")]
     TextObjectBrace,
+    #[strum(serialize = "vy.text_object.angle")]
     TextObjectAngle,
+    #[strum(serialize = "vy.text_object.double_quote")]
     TextObjectDoubleQuote,
+    #[strum(serialize = "vy.text_object.single_quote")]
     TextObjectSingleQuote,
+    #[strum(serialize = "vy.text_object.backtick")]
     TextObjectBacktick,
 }
 
 impl BuiltinCommand {
     /// Stable identifier used by key bindings and `commands.execute`.
     pub fn id(self) -> &'static str {
-        match self {
-            Self::MoveLeft => "vy.motion.left",
-            Self::MoveRight => "vy.motion.right",
-            Self::MoveUp => "vy.motion.up",
-            Self::MoveDown => "vy.motion.down",
-            Self::WordForward => "vy.motion.word_forward",
-            Self::WordBackward => "vy.motion.word_backward",
-            Self::WordEnd => "vy.motion.word_end",
-            Self::LineStart => "vy.motion.line_start",
-            Self::LineEnd => "vy.motion.line_end",
-            Self::DocumentStart => "vy.motion.document_start",
-            Self::DocumentEnd => "vy.motion.document_end",
-            Self::Delete => "vy.edit.delete",
-            Self::PasteAfter => "vy.edit.paste_after",
-            Self::PasteBefore => "vy.edit.paste_before",
-            Self::Repeat => "vy.edit.repeat",
-            Self::LastVisual => "vy.edit.last_visual",
-            Self::InsertHere => "vy.mode.insert",
-            Self::InsertAfter => "vy.mode.insert_after",
-            Self::InsertLineEnd => "vy.mode.insert_line_end",
-            Self::InsertLineStart => "vy.mode.insert_line_start",
-            Self::OpenBelow => "vy.mode.open_below",
-            Self::OpenAbove => "vy.mode.open_above",
-            Self::SelectMode => "vy.mode.select",
-            Self::SelectLineMode => "vy.mode.select_line",
-            Self::SelectBlockMode => "vy.mode.select_block",
-            Self::NormalMode => "vy.mode.normal",
-            Self::Undo => "vy.history.undo",
-            Self::Redo => "vy.history.redo",
-            Self::InsertNewline => "vy.insert.newline",
-            Self::InsertTab => "vy.insert.tab",
-            Self::InsertBackspace => "vy.insert.backspace",
-            Self::InsertLeft => "vy.insert.left",
-            Self::InsertRight => "vy.insert.right",
-            Self::InsertUp => "vy.insert.up",
-            Self::InsertDown => "vy.insert.down",
-            Self::InsertHome => "vy.insert.home",
-            Self::InsertEnd => "vy.insert.end",
-            Self::OperatorDelete => "vy.operator.delete",
-            Self::OperatorYank => "vy.operator.yank",
-            Self::YankLine => "vy.edit.yank_line",
-            Self::OperatorInner => "vy.operator.inner",
-            Self::OperatorAround => "vy.operator.around",
-            Self::TextObjectWord => "vy.text_object.word",
-            Self::TextObjectParagraph => "vy.text_object.paragraph",
-            Self::TextObjectParen => "vy.text_object.paren",
-            Self::TextObjectBracket => "vy.text_object.bracket",
-            Self::TextObjectBrace => "vy.text_object.brace",
-            Self::TextObjectAngle => "vy.text_object.angle",
-            Self::TextObjectDoubleQuote => "vy.text_object.double_quote",
-            Self::TextObjectSingleQuote => "vy.text_object.single_quote",
-            Self::TextObjectBacktick => "vy.text_object.backtick",
-        }
+        self.into()
     }
 
     pub fn parse(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|command| command.id() == id)
+        id.parse().ok()
     }
 
     /// Every built-in command. Used by `commands.getCommands`.
     pub fn all() -> &'static [BuiltinCommand] {
-        const COMMANDS: [BuiltinCommand; 51] = [
-            BuiltinCommand::MoveLeft,
-            BuiltinCommand::MoveRight,
-            BuiltinCommand::MoveUp,
-            BuiltinCommand::MoveDown,
-            BuiltinCommand::WordForward,
-            BuiltinCommand::WordBackward,
-            BuiltinCommand::WordEnd,
-            BuiltinCommand::LineStart,
-            BuiltinCommand::LineEnd,
-            BuiltinCommand::DocumentStart,
-            BuiltinCommand::DocumentEnd,
-            BuiltinCommand::Delete,
-            BuiltinCommand::PasteAfter,
-            BuiltinCommand::PasteBefore,
-            BuiltinCommand::Repeat,
-            BuiltinCommand::LastVisual,
-            BuiltinCommand::InsertHere,
-            BuiltinCommand::InsertAfter,
-            BuiltinCommand::InsertLineEnd,
-            BuiltinCommand::InsertLineStart,
-            BuiltinCommand::OpenBelow,
-            BuiltinCommand::OpenAbove,
-            BuiltinCommand::SelectMode,
-            BuiltinCommand::SelectLineMode,
-            BuiltinCommand::SelectBlockMode,
-            BuiltinCommand::NormalMode,
-            BuiltinCommand::Undo,
-            BuiltinCommand::Redo,
-            BuiltinCommand::InsertNewline,
-            BuiltinCommand::InsertTab,
-            BuiltinCommand::InsertBackspace,
-            BuiltinCommand::InsertLeft,
-            BuiltinCommand::InsertRight,
-            BuiltinCommand::InsertUp,
-            BuiltinCommand::InsertDown,
-            BuiltinCommand::InsertHome,
-            BuiltinCommand::InsertEnd,
-            BuiltinCommand::OperatorDelete,
-            BuiltinCommand::OperatorYank,
-            BuiltinCommand::YankLine,
-            BuiltinCommand::OperatorInner,
-            BuiltinCommand::OperatorAround,
-            BuiltinCommand::TextObjectWord,
-            BuiltinCommand::TextObjectParagraph,
-            BuiltinCommand::TextObjectParen,
-            BuiltinCommand::TextObjectBracket,
-            BuiltinCommand::TextObjectBrace,
-            BuiltinCommand::TextObjectAngle,
-            BuiltinCommand::TextObjectDoubleQuote,
-            BuiltinCommand::TextObjectSingleQuote,
-            BuiltinCommand::TextObjectBacktick,
-        ];
-
-        &COMMANDS
+        Self::VARIANTS
     }
 }
 
@@ -707,27 +589,15 @@ impl CommandId {
 }
 
 /// Why a command could not be registered.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CommandError {
+    #[error("invalid command id: {0}")]
     InvalidId(String),
+    #[error("command ids starting with `vy.` are reserved: {0}")]
     Reserved(String),
+    #[error("command {0} is already registered")]
     Duplicate(String),
 }
-
-impl std::fmt::Display for CommandError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidId(id) => write!(formatter, "invalid command id: {id}"),
-            Self::Reserved(id) => write!(
-                formatter,
-                "command ids starting with `vy.` are reserved: {id}"
-            ),
-            Self::Duplicate(id) => write!(formatter, "command {id} is already registered"),
-        }
-    }
-}
-
-impl std::error::Error for CommandError {}
 
 /// Script commands registered at runtime.
 #[derive(Debug, Default)]

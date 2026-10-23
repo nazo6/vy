@@ -435,28 +435,17 @@ struct BindingSpec {
 }
 
 /// Why a binding could not be built.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KeymapError {
+    #[error("unknown key name: {0}")]
     InvalidKey(String),
+    #[error("a key binding needs at least one key")]
     EmptySequence,
-    When(when::ParseError),
+    #[error("invalid `when` expression: {0}")]
+    When(#[from] when::ParseError),
+    #[error("could not load the default keymap: {0}")]
     DefaultKeymap(String),
 }
-
-impl std::fmt::Display for KeymapError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidKey(key) => write!(formatter, "unknown key name: {key}"),
-            Self::EmptySequence => formatter.write_str("a key binding needs at least one key"),
-            Self::When(error) => write!(formatter, "invalid `when` expression: {error}"),
-            Self::DefaultKeymap(message) => {
-                write!(formatter, "could not load the default keymap: {message}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for KeymapError {}
 
 #[cfg(test)]
 mod tests {

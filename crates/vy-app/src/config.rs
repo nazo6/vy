@@ -35,7 +35,8 @@ impl Layer {
 }
 
 /// How line numbers are drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum LineNumbers {
     Absolute,
     Relative,
@@ -44,12 +45,7 @@ pub enum LineNumbers {
 
 impl LineNumbers {
     pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "absolute" => Some(Self::Absolute),
-            "relative" => Some(Self::Relative),
-            "off" => Some(Self::Off),
-            _ => None,
-        }
+        value.parse().ok()
     }
 
     /// Returns the label for `line`, or [`None`] when the gutter is hidden.

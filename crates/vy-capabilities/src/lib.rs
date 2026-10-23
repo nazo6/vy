@@ -352,22 +352,13 @@ fn matches_from(pattern: &[char], mut p: usize, value: &[char], mut v: usize) ->
 }
 
 /// Why a capability string could not be parsed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CapabilityError {
+    #[error("a capability must not be empty")]
     Empty,
+    #[error("unknown capability: {0}")]
     UnknownKind(String),
 }
-
-impl std::fmt::Display for CapabilityError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("a capability must not be empty"),
-            Self::UnknownKind(value) => write!(formatter, "unknown capability: {value}"),
-        }
-    }
-}
-
-impl std::error::Error for CapabilityError {}
 
 #[cfg(test)]
 mod tests {

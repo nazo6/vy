@@ -4,8 +4,6 @@
 //! `==`, `!=`, `&&`, `||`, `!`, and parentheses. Unknown identifiers are false at
 //! evaluation time so `keymap.setContext` can add names later.
 
-use std::fmt;
-
 /// A value visible to a `when` expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -75,7 +73,8 @@ pub fn parse(source: &str) -> Result<Expr, ParseError> {
     Ok(expr)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct ParseError {
     message: String,
 }
@@ -87,14 +86,6 @@ impl ParseError {
         }
     }
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {

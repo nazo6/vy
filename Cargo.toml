@@ -20,6 +20,7 @@ rmp-serde = "1"
 rmpv = { version = "1", features = ["with-serde"] }
 # Protocol
 serde = { version = "1", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 thiserror = "2"
 
 # Core

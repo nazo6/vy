@@ -6421,6 +6421,8 @@ dependencies = [
  "rmpv",
  "serde",
  "serde_json",
+ "strum",
+ "thiserror 2.0.21",
  "vy-capabilities",
  "vy-core",
  "vy-js",
@@ -6433,6 +6435,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

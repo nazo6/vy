@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 
 /// Horizontal alignment of a statusline item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum StatuslineAlignment {
     Left,
     Center,
@@ -16,12 +17,7 @@ pub enum StatuslineAlignment {
 
 impl StatuslineAlignment {
     pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "left" => Some(Self::Left),
-            "center" => Some(Self::Center),
-            "right" => Some(Self::Right),
-            _ => None,
-        }
+        value.parse().ok()
     }
 }
 
