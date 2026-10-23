@@ -183,8 +183,8 @@ Vim
 | 項目                                                       | 状態     | 備考                                                                      |
 | :--------------------------------------------------------- | :------- | :------------------------------------------------------------------------ |
 | `keymap.bind(keys, target, options?)`                      | 実装済み | 後から登録したものが優先。`options.when` か `options.mode` で条件を付ける |
-| `keymap.unbind(keys)`                                      | 実装済み | 一致するキー列をすべて外す（既定の束縛も対象）                            |
-| `keymap.setContext(key, value)`                            | 実装済み | `when` から参照できる。真偽値・文字列・数値                               |
+| `keymap.unbind({ keys })`                                  | 実装済み | 一致するキー列をすべて外す（既定の束縛も対象）                            |
+| `keymap.setContext({ key, value })`                        | 実装済み | `when` から参照できる。真偽値・文字列・数値                               |
 | `keymap.registerMode(definition)`                          | 未実装   | 優先度 P2                                                                 |
 | `keymap.sequenceTimeout`                                   | 実装済み | `editor.sequenceTimeoutMs`。既定 1000ms                                   |
 | カウントをアクションへ渡す方法                             | 決定済み | コマンドへ `args.count` で渡す                                            |

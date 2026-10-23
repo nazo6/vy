@@ -117,7 +117,8 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
 - [x] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
   - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
-  - [x] ピッカー（`ui.picker`、`ui.picker.show`、`ui.picker.registerSource`）
+  - [x] ピッカー（`ui.picker`、`ui.picker.show`）
+  - [ ] ピッカーのソース登録（`ui.picker.registerSource`。ホストから提供関数を呼ぶ経路ができるまで保留）
   - [x] ガター（`ui.gutter`、行横のマークやサイン表示スロット）
   - [x] ホバー（`ui.hover`、カーソル行桁へのポップアップ表示スロット）
 - [x] コマンド実行の仕上げ
@@ -129,7 +130,7 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
   - [x] コマンド記述子と `Invocation`
         の共通化（キーマップ、パレット、Ex、スクリプト）
   - [x] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
-  - [x] ピッカー API（`ui.picker.registerSource` / `ui.picker.show`）
+  - [x] ピッカー API（`ui.picker.show`）
 
 ### Phase 4: プラグイン拡充と実用拡張の基盤
 

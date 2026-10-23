@@ -42,7 +42,7 @@ export interface Document {
   readonly lineCount: number;
   readonly end: Position;
   getText(range?: Range): Promise<string>;
-  lineAt(line: number): Promise<string>;
+  lineAt(line: number): Promise<string | null>;
   positionAt(offset: number): Promise<Position>;
   offsetAt(position: Position): Promise<number>;
   fullRange(): Range;
@@ -75,15 +75,15 @@ export interface KeyBindingOptions {
 
 export interface KeymapApi {
   bind(keys: string, target: string, options?: KeyBindingOptions): Disposable;
-  unbind(keys: string): void;
-  setContext(key: string, value: boolean | string | number): void;
+  unbind(params: { keys: string }): Promise<number>;
+  setContext(params: { key: string; value: boolean | string | number }): Promise<void>;
 }
 
 export interface ConfigApi {
-  get(key: string): Promise<unknown>;
+  get(params: { key: string }): Promise<unknown>;
   set(values: Record<string, unknown>): Promise<{ changed: string[] }>;
   set(key: string, value: unknown): Promise<{ changed: string[] }>;
-  inspect(key: string): Promise<Inspect>;
+  inspect(params: { key: string }): Promise<Inspect>;
   onDidChange(key: string, listener: (event: { key: string }) => void): Disposable;
 }
 
@@ -91,10 +91,12 @@ export interface EditorApi {
   activeDocument(): Promise<Document | null>;
   documents(): Promise<Document[]>;
   mode(): Promise<Mode>;
-  setMode(mode: Mode): Promise<void>;
+  setMode(params: { mode: Mode }): Promise<void>;
   selections(): Promise<Selection[]>;
-  setSelections(selections: Selection[]): Promise<void>;
-  edit(builder: (builder: EditorEditBuilder) => void): Promise<{ version: number }>;
+  setSelections(params: { selections: Selection[] }): Promise<void>;
+  edit(
+    edits: TextEdit[] | ((builder: EditorEditBuilder) => void),
+  ): Promise<{ version: number }>;
   undo(): Promise<void>;
   redo(): Promise<void>;
 }
@@ -161,15 +163,8 @@ export interface ShowPickerOptions {
   placeholder?: string;
 }
 
-export interface PickerSource {
-  id: string;
-  provideItems(query: string): Promise<PickerItem[]> | PickerItem[];
-}
-
 export interface PickerApi {
   show(options: ShowPickerOptions): Promise<PickerItem | undefined>;
-  registerSource(source: PickerSource): Disposable;
-  getSource(id: string): PickerSource | undefined;
 }
 
 export interface StatuslineApi {
@@ -188,14 +183,10 @@ export interface GutterItem extends Disposable {
   dispose(): void;
 }
 
-export interface GutterProvider {
-  provideGutterItems?(document: Document, line: number): GutterItemOptions[] | Promise<GutterItemOptions[]>;
-}
-
 export interface GutterApi {
   createItem(options: GutterItemOptions): GutterItem;
-  clear(): void;
-  registerProvider(languageId: string, provider: GutterProvider): Disposable;
+  disposeItem(params: { id: string }): Promise<void>;
+  clear(): Promise<void>;
 }
 
 export interface HoverOptions {
@@ -204,14 +195,9 @@ export interface HoverOptions {
   text: string;
 }
 
-export interface HoverProvider {
-  provideHover?(document: Document, position: Position): HoverOptions | undefined | Promise<HoverOptions | undefined>;
-}
-
 export interface HoverApi {
-  show(options: HoverOptions): void;
-  hide(): void;
-  registerProvider(languageId: string, provider: HoverProvider): Disposable;
+  show(options: HoverOptions): Promise<void>;
+  hide(): Promise<void>;
 }
 
 export interface WidgetNode {

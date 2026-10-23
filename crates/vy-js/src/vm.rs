@@ -15,6 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, Value as JsValue};
 use serde::Serialize;
+use vy_api_schema::HOST_METHODS;
 
 use crate::api::{VyLoader, VyResolver};
 use crate::transpile::strip_types;
@@ -246,6 +247,28 @@ impl Drop for ScriptHost {
     }
 }
 
+/// One entry of the method table as the shim sees it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShimMethod {
+    method: &'static str,
+    manual: bool,
+    has_params: bool,
+}
+
+/// Serializes `HOST_METHODS` for `globalThis.__vy_spec`.
+fn shim_spec_json() -> String {
+    let methods: Vec<ShimMethod> = HOST_METHODS
+        .iter()
+        .map(|spec| ShimMethod {
+            method: spec.method,
+            manual: spec.manual,
+            has_params: spec.has_params(),
+        })
+        .collect();
+    serde_json::to_string(&methods).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// Runs the thread until the task channel closes.
 fn run(
     env_json: String,
@@ -287,6 +310,9 @@ fn run(
     let setup = context.with(|ctx| -> rquickjs::Result<()> {
         let env = ctx.json_parse(env_json)?;
         ctx.globals().set("__vy_env", env)?;
+
+        let spec = ctx.json_parse(shim_spec_json())?;
+        ctx.globals().set("__vy_spec", spec)?;
 
         let bridge = Bridge { requests };
         let call = Function::new(
@@ -692,6 +718,76 @@ export const answer: number = 42;
     }
 
     #[test]
+    fn generated_forwarders_keep_the_object_shape() {
+        let host = ScriptHost::spawn(test_env());
+        host.evaluate(
+            PathBuf::from("init.ts"),
+            r#"
+import { commands, config, editor } from "vy-api";
+
+commands.registerCommand("user.check", async () => {
+  await editor.setMode({ mode: "insert" });
+  const mode = await editor.mode();
+  const size = await config.get({ key: "ui.fontSize" });
+  return { mode, size };
+});
+"#,
+        );
+
+        let mut evaluated = false;
+        let mut running = false;
+        let mut result = serde_json::Value::Null;
+        let mut calls: Vec<(String, serde_json::Value)> = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+
+        while std::time::Instant::now() < deadline {
+            if let Ok(request) = host.requests.try_recv() {
+                calls.push((request.method.clone(), request.params.clone()));
+                match request.method.as_str() {
+                    "editor.mode" => request.respond_value(json!("normal")),
+                    "config.get" => request.respond_value(json!(18)),
+                    _ => request.respond_value(json!(null)),
+                }
+                continue;
+            }
+            match host.events.try_recv() {
+                Ok(ScriptEvent::Evaluated) if !running => {
+                    evaluated = true;
+                    running = true;
+                    host.execute("user.check", json!(null));
+                }
+                Ok(ScriptEvent::CommandFinished { result: value, .. }) => {
+                    result = value;
+                    break;
+                }
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                Ok(_) => {}
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+
+        assert!(evaluated, "the module did not finish");
+        assert_eq!(result, json!({ "mode": "normal", "size": 18 }));
+
+        let set_mode = calls
+            .iter()
+            .find(|(method, _)| method == "editor.setMode")
+            .expect("setMode");
+        assert_eq!(set_mode.1, json!({ "mode": "insert" }));
+        // A method without parameters is called with no arguments.
+        let mode = calls
+            .iter()
+            .find(|(method, _)| method == "editor.mode")
+            .expect("mode");
+        assert_eq!(mode.1, json!({}));
+        let get = calls
+            .iter()
+            .find(|(method, _)| method == "config.get")
+            .expect("get");
+        assert_eq!(get.1, json!({ "key": "ui.fontSize" }));
+    }
+
+    #[test]
     fn stops_an_infinite_loop() {
         let host = ScriptHost::spawn(test_env());
         host.evaluate(PathBuf::from("init.ts"), "while (true) {}\n");
@@ -796,17 +892,12 @@ commands.registerCommand("user.compute", async () => {
     }
 
     #[test]
-    fn ui_picker_show_and_register_source() {
+    fn ui_picker_show_returns_the_selected_item() {
         let host = ScriptHost::spawn(test_env());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
 import { ui, commands } from "vy-api";
-
-const disposable = ui.picker.registerSource({
-  id: "test-source",
-  provideItems: () => [{ id: "x", title: "Item X" }]
-});
 
 commands.registerCommand("user.pick", async () => {
   const result = await ui.picker.show({

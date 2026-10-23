@@ -6475,6 +6475,7 @@ dependencies = [
  "rquickjs",
  "serde",
  "serde_json",
+ "vy-api-schema",
 ]
 
 [[package]]

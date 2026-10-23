@@ -46,6 +46,16 @@ API と、コアが状態の正を持つ API です。
 ケイパビリティの列が「なし」の API
 は、承認なしで使えます。それ以外は、マニフェストで宣言し、初回の有効化で承認を得た場合だけ動きます。組み込みプラグインは承認を省略します。
 
+### 2.1 引数の形
+
+パラメータを取る低レベル API は、オブジェクトを 1 つ渡します。`editor.setMode({ mode: "insert" })`、`config.get({ key: "ui.fontSize" })`、`ui.hover.show({ line, character, text })` のように、メソッドごとの params 型がそのまま引数になります。パラメータの無いメソッドは引数を取りません（`editor.mode()`）。型は
+[`packages/vy-api-types`](../packages/vy-api-types) に生成され、メソッド名と型の対応は
+`HostMethods` が持ちます。
+
+`Document`、`editor.edit` のビルダー、ステータスラインのハンドルのように、JavaScript
+側に状態を持つ糖衣だけは位置引数を使います。どのメソッドが糖衣かは `HOST_METHODS`
+の `manual` で表します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md) §3）。
+
 優先度は Phase に対応します。
 
 | 優先度 | 対応する Phase  | 範囲                                                                                                       |
@@ -497,7 +507,8 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 ## 21. Phase 2 の実装状況
 
 Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しました。型は
-[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts) にあります。
+[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts) にあり、引数の形は
+§2.1 のとおりです。
 
 | 名前空間        | 実装済み                                                                                                |
 | :-------------- | :------------------------------------------------------------------------------------------------------ |
@@ -511,6 +522,8 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 | `log`           | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
 | `remote`        | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
 | `context`       | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
+
+スロットは `ui.statusline`、`ui.gutter`、`ui.hover`、`ui.picker.show` とウィジェット木のビルダーだけを提供します。プロバイダの登録（`ui.picker.registerSource`、`ui.gutter.registerProvider`、`ui.hover.registerProvider`）は、ホストから JS の関数を呼ぶ経路ができるまで API から外しました（Phase 3）。
 
 先送りしたもの:
 

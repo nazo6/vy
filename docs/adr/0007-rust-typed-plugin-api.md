@@ -107,7 +107,7 @@ flowchart LR
 
 - **コア（手書き、約 150〜200 行）**: `__vy_host_call` の JSON 境界、`ErrorCode`
   を持つ例外、メソッド表を回して名前空間を組み立てるフォワーダ、コマンドハンドラの表、設定変更リスナー、`Document`
-  ラッパー、`editor.edit` の受け口。
+  ラッパー、`editor.edit` の受け口（`TextEdit[]` とビルダーの両方を受ける）。
 - **メソッド表（Rust から注入）**: `vm.rs` が `ScriptEnv` と並べて
   `globalThis.__vy_spec` を設定します。shim は表を読み、`manual`
   でないメソッドについて `(params) => call(method, params)` を生成します。
@@ -261,11 +261,10 @@ tsconfig の `include` に加えます。宣言マージは同じ TS
 
 ## 関連する未決定事項
 
-- `editor.edit` の形。ビルダーのコールバックを残すか、`TextEdit[]`
-  を受け取る形にするか。
-- `keymap.bind` の `keys` を文字列のままにするか、キーの配列にするか。
+- `keymap.bind` の `keys` を文字列のままにするか、キーの配列にするか（現状は文字列）。
 - プロバイダ
-  API（`ui.picker.registerSource`、ガター、ホバー）を生かすか、呼び出し経路ができるまで削除するか。
+  API（`ui.picker.registerSource`、ガター、ホバー）は、ホストから JS
+  の関数を呼ぶ経路ができるまで API から削除した。Phase 3 で戻すか、ホスト主導の問い合わせに変えるかを決めます。
 - `when` を文字列の式から構造化した条件木にするか。
 - イベント API の型生成方法と、購読の上限（[`api.md`](../api.md) §22）。
 - 生成物の差分を検査する CI の整備（現状は手元のコマンドのみ）。

@@ -134,6 +134,19 @@ pub struct MethodSpec {
     pub manual: bool,
 }
 
+impl MethodSpec {
+    /// Whether the method takes parameters.
+    ///
+    /// The shim generates a zero-argument function for methods without any, so
+    /// scripts write `editor.mode()` rather than `editor.mode({})`.
+    pub fn has_params(&self) -> bool {
+        self.params != EMPTY_PARAMS
+    }
+}
+
+/// TypeScript type the table uses for methods without parameters.
+pub const EMPTY_PARAMS: &str = "Record<string, never>";
+
 /// Every host method. `HostCall` and this table must agree (see the tests).
 pub const HOST_METHODS: &[MethodSpec] = &[
     MethodSpec {
@@ -194,13 +207,13 @@ pub const HOST_METHODS: &[MethodSpec] = &[
         method: "editor.activeDocument",
         params: "Record<string, never>",
         result: "DocumentInfoReply | null",
-        manual: false,
+        manual: true,
     },
     MethodSpec {
         method: "editor.documents",
         params: "Record<string, never>",
         result: "DocumentInfoReply[]",
-        manual: false,
+        manual: true,
     },
     MethodSpec {
         method: "editor.mode",
@@ -248,7 +261,7 @@ pub const HOST_METHODS: &[MethodSpec] = &[
         method: "workspace.textDocuments",
         params: "Record<string, never>",
         result: "DocumentInfoReply[]",
-        manual: false,
+        manual: true,
     },
     MethodSpec {
         method: "document.getText",

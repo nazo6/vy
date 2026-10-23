@@ -17,3 +17,4 @@ oxc_transformer = "0.155"
 rquickjs = { version = "0.14", features = ["loader"] }
 serde.workspace = true
 serde_json.workspace = true
+vy-api-schema.workspace = true
