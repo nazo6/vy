@@ -13,18 +13,19 @@ Vy
 flowchart TD
     P1["Phase 1: 2プロセスの骨格と編集の最小経路\n(vy-app / vy-server / vy-proto, stdio RPC, rope, モーダル入力)"]
     P2["Phase 2: TypeScript設定 & プラグイン実行基盤\n(QuickJS + Oxc, init.ts, keymap, capabilities)"]
-    P3["Phase 3: ペイン・ビュー・コマンド実行\n(レイアウト木, panes/views API, コマンドパレット)"]
-    P4["Phase 4: リモート接続\n(SSH起動, 再接続と再同期, 配備)"]
-    P5["Phase 5: 言語機能 (LSP & Tree-sitter)\n(ハイライト, 非同期LSP, 補完)"]
-    P6["Phase 6: Webview・Notebook (最終段階)\n(Markdownプレビュー, セル描画, gpui-kit/webview)"]
+    P3["Phase 3: 画面の骨格とユーザー制御 UI の完成\n(レイアウト木, panes/views API, statusline/picker/gutter/hover スロット, コマンド)"]
+    P4["Phase 4: プラグイン拡充と実用拡張の基盤\n(外部プラグイン読み込み, 承認UI, イベントAPI, nvim-tree等の実用プラグイン実現)"]
+    P5["Phase 5: 実用エディタ化と言語機能拡充\n(Tree-sitterハイライト, 非同期LSPクライアント, 補完)"]
+    P6["Phase 6: リモート接続\n(SSH起動, 再接続と再同期, 配備)"]
+    P7["Phase 7: Webview・Notebook (最終段階)\n(Markdownプレビュー, セル描画, gpui-kit/webview)"]
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
 ```
 
-画面の骨格を早く固めるため、ペインとビューを Phase 3 で先に実装します。 Webview
-と Notebook は、Web の文書を表示する最後の手段なので Phase 6 に回します。
-コマンドの実行（一覧、戻り値、コマンドパレット）も、ペインとビューを操作するために
-Phase 3 で仕上げます。
+画面の骨格を早く固めるため、ペインとビュー、ユーザー制御 UI スロット群を Phase 3 で完成させます。
+Phase 4 では外部プラグインのマニフェスト読み込みや承認 UI、エディタ・ワークスペースイベントを整備し、`nvim-tree` のようなファイラーをはじめとする実用プラグインを実際に実装できるようにします。
+Phase 5 では Tree-sitter と LSP による言語機能を拡充して日常的に使える実用エディタに仕上げます。
+Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と Notebook は最後の手段として Phase 7 で扱います。
 
 ### Phase 1: 2プロセスの骨格と編集の最小経路
 
@@ -74,7 +75,7 @@ Phase 3 で仕上げます。
   - `init.ts` からの登録はスクリプトホスト経由で動く
 - [ ] ケイパビリティの宣言と承認の記録（`trusted.json`）
   - `vy-capabilities` にパース、glob 照合、`trusted.json`
-    の読み書きを実装した。マニフェストの読み込みと承認 UI は Phase 3
+    の読み書きを実装した。マニフェストの読み込みと承認 UI は Phase 4
 - [x] 設定の4層の解決（既定値、ユーザー、プロジェクト、`init.ts`）
 
 #### Phase 2 の進捗
@@ -91,10 +92,9 @@ Phase 3 で仕上げます。
   `y`、テキストオブジェクト、行単位レジスタ、単語クラス
 - 2F: ts-rs による `packages/vy-api-types` の生成、
   `packages/vy-api/index.d.ts`、`examples/init.ts`、ドキュメント
-- 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents` （Phase
-  3）。`editor.onDidChangeSelection` などのイベント API も Phase 3
+- 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents`、イベント API（Phase 4）
 
-### Phase 3: ペイン・ビュー・コマンド実行
+### Phase 3: 画面の骨格とユーザー制御 UI の完成
 
 - [x] レイアウト木（分割、フォーカス）と `pane/open` / `pane/focus` /
       `pane/close` / `layout/get`
@@ -111,15 +111,16 @@ Phase 3 で仕上げます。
   - `vy.editor.switch_document`、Ex コマンド（`:b` / `:buffer`）、ドキュメントピッカーモーダルによるファジー検索と切り替え
 - [x] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
-  - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row, stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 6
+  - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row, stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 7
 - [x] `ui` ビューのウィジェット木と、キーマップからのアクション解決
   - GPUI によるネイティブウィジェット描画とコマンドバインド対応
 - [ ] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
   - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
-  - [ ] ピッカー（`ui.picker`）、ホバー（`ui.hover`）、ガター（`ui.gutter`）
-    - `ui.picker.show` および `ui.picker.registerSource` を実装した
-- [ ] コマンド実行の仕上げ
+  - [x] ピッカー（`ui.picker`、`ui.picker.show`、`ui.picker.registerSource`）
+  - [ ] ガター（`ui.gutter`）
+  - [ ] ホバー（`ui.hover`）
+- [x] コマンド実行の仕上げ
   - [x] `commands.getCommands` に組み込みのペインコマンドを含める
   - [x] `commands.execute` からペインコマンドを実行する
   - [x] `commands.execute` の戻り値を JS へ返す
@@ -130,20 +131,37 @@ Phase 3 で仕上げます。
   - [x] `:` の Ex コマンドライン（[`ex-commands.md`](./ex-commands.md)）
   - [x] ピッカー API（`ui.picker.registerSource` / `ui.picker.show`）
 
-### Phase 4: リモート接続
+### Phase 4: プラグイン拡充と実用拡張の基盤
+
+外部プラグインの導入と実用的なプラグイン（`nvim-tree` 風のファイラー、Git、ステータス拡張など）を実装・動作させられる基盤を整えます。
+
+- [ ] 外部プラグインのマニフェスト読み込みと初回の承認 UI（`trusted.json` の対話的承認）
+- [ ] `activationEvents` による遅延読み込み（`onView:xxx`、`onCommand:xxx`）
+- [ ] エディタとワークスペースのイベント通知 API
+  - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
+  - `workspace.onDidChangeWorkspaceFolders`
+- [ ] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
+- [ ] 実用プラグインの検証
+  - サイドバー的なツリービューペイン（`views.register` と `ui` ウィジェット木を用いた `nvim-tree` 相当のファイルエクスプローラー）の実装と検証
+
+### Phase 5: 実用エディタ化と言語機能拡充
+
+エディタを本格的に日常利用できるようにするための言語機能と言語サーバー連携を実装します。
+
+- [ ] `tree-sitter` によるシンタックスハイライト
+- [ ] エディタ本体での非同期LSPクライアント基盤（プロセス管理・ドキュメント同期）
+- [ ] 補完プロバイダー（`registerCompletionProvider`）とローカルファジー絞り込み
+- [ ] 診断表示（Diagnostics）とガター・ホバー連携
+- [ ] 定義ジャンプ・参照検索・フォーマット
+
+### Phase 6: リモート接続
 
 - [ ] SSH 経由で `vy-server` を起動する
 - [ ] バイナリの配備方法を決めて実装する
 - [ ] 再接続と再同期（`resume_session`、`layout/get`、version の突き合わせ）
 - [ ] 遅延の計測と、先読み描画の範囲の調整
 
-### Phase 5: 言語機能 (LSP & Tree-sitter)
-
-- [ ] `tree-sitter` によるシンタックスハイライト
-- [ ] エディタ本体での非同期LSPクライアント基盤（プロセス管理・ドキュメント同期）
-- [ ] 補完プロバイダー（`registerCompletionProvider`）とローカルファジー絞り込み
-
-### Phase 6: Webview・Notebook (最終段階)
+### Phase 7: Webview・Notebook (最終段階)
 
 Webview は Web の文書そのものを表示するときだけ使います。操作を伴う UI は Phase
 3 の `ui` ビューで作ります（[`ui.md`](./ui.md)）。
@@ -185,7 +203,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                     | [`keymap.md`](./keymap.md)                                                         |
 | JS の実行              | クライアントの専用スレッド 1 本。`vy-api` は仮想モジュール。UI とは要求と応答で通信 | [`architecture.md`](./architecture.md) と [`plugin-system.md`](./plugin-system.md) |
 | TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
-| `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 3                            | [`plugin-system.md`](./plugin-system.md)                                           |
+| `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./plugin-system.md)                                           |
 | 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
 | Ex コマンド            | パレットと同じ実行層を使い、`:` はオーバーレイ。Ex 名は明示的な別名で解決する       | [`ex-commands.md`](./ex-commands.md)                                               |
 
