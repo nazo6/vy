@@ -218,6 +218,95 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 - [ ] Webview を Web 文書の表示に限って開く（Markdown プレビュー等）
 - [ ] Jupyter Notebook 形式のセル描画と Webview 出力
 
+## UI・エディタの改善バックログ
+
+機能追加ではなく、すでにある画面と編集の正しさ、使い勝手、性能を上げる作業です。
+優先度は P0（不具合・データの危険）、P1（日常の操作感）、P2（性能・保守）です。
+各項目には実装の入口になるファイルを添えています。着手したらチェックを付けます。
+
+### P0: 正しさと安全性
+
+- [ ] 未保存の文書を閉じるときに確認する。`vy.pane.close` はそのまま
+      `pane/close` を送り、コアは最後のペインと一緒に文書を破棄します。ウィンドウを
+      閉じたときの確認もありません（`crates/vy-app/src/view/commands.rs` の
+      `close_active_pane`、`crates/vy-server/src/session/pane.rs` の `close_pane`）。
+      `:q!` も未実装です。
+- [ ] 列を UTF-16 コード単位ではなく表示セルで数える。折り返しの幅、横スクロール、
+      ホバーの x 座標が 1 文字 = 1 セルの前提で、全角文字、絵文字、タブがはみ出します
+      （`crates/vy-app/src/text_layout.rs` の `chunk_line` と
+      `scroll_to_show_horizontal`、`crates/vy-app/src/ui/pane.rs`、
+      `crates/vy-app/src/view/render.rs` のホバー）。
+- [ ] IME の候補ウィンドウの位置を、横スクロール、折り返し、サブ行を考慮して返す。
+      `bounds_for_range` はスクロール量を見ず、`character_index_for_point` は常に
+      `None` を返します（`crates/vy-app/src/view/input.rs`）。Phase 1 の
+      「日本語 IME の前編集が、カーソル位置に正しく出る」も未チェックのままです。
+- [ ] パレットと Ex コマンドラインで IME の前編集を使えるようにする。どちらも
+      キーイベントで文字を積むため、日本語の入力と検索ができません
+      （`crates/vy-app/src/view/commands.rs`、`crates/vy-app/src/view/input.rs`、
+      [`keymap.md`](./keymap.md)）。
+- [ ] `session.json` を実装する。文書ではウィンドウの大きさ、スクロール位置、
+      フォーカスの履歴をクライアントが保存すると決めていますが、書くコードが
+      ありません。ウィンドウは 1000x700 で固定です（[`panes.md`](./panes.md)、
+      [`layout.md`](./layout.md)、`crates/vy-app/src/main.rs`）。
+
+### P1: 表示と操作の質
+
+- [ ] カーソルの見た目: 点滅、Select 系のカーソル、現在行のハイライト
+      （`crates/vy-app/src/ui/pane.rs`、`crates/vy-app/src/theme.rs`）。
+- [ ] ステータスライン: 長いパスの切り詰め。今は省略や `overflow` の指定がなく、長い URI が
+      右側の項目と重なります（`crates/vy-app/src/ui/statusline.rs`）。
+- [ ] 通知: 自動消去と重なりの扱い。`notifications.show` は `message` だけを受け取り、
+      状態行に置くだけで消えません（`crates/vy-app/src/api/host/notifications.rs`、
+      [`api.md`](./api.md)）。
+- [ ] テーマ: 起動時に `Theme::dark()` を固定しています。`Theme::light()` を設定から
+      選べるようにし、切り替え時に再描画します（`crates/vy-app/src/main.rs`、
+      `crates/vy-app/src/theme.rs`）。
+- [ ] タブ: タブを 1 列として折り返しています。表示セル幅の計算と合わせて、
+      `tabstop`（既定値を決める）で描くようにします（`crates/vy-app/src/text_layout.rs`、
+      [`keymap.md`](./keymap.md)）。
+- [ ] ガター: 実測した文字幅とずれないようにし、1 行に複数のマークを描く。今は
+      近似幅を使い、`marks.first()` で 1 つだけ描きます
+      （`crates/vy-app/src/ui/pane.rs`）。
+- [ ] ホバー: 折り返しのサブ行と全角幅を考慮した位置に出す
+      （`crates/vy-app/src/view/render.rs`）。
+- [ ] 横スクロール: 行の長さで上限を決め、文書の切り替えや再同期で 0 に戻す。
+      `reset_views_for_document` は `scroll_top` だけ戻します
+      （`crates/vy-app/src/text_layout.rs`、`crates/vy-app/src/view/mod.rs`）。
+
+### P2: 性能と保守
+
+- [ ] フレームごとの `Config` と `Theme` の clone をやめ、共有参照か `Arc` にする
+      （`crates/vy-app/src/ui/pane.rs` の `prepare_editor_paint`、
+      `crates/vy-app/src/view/render.rs`）。
+- [ ] 折り返し時の `chunk_line` と行長の計算を、可視行だけ、差分、キャッシュにする。
+      長い 1 行のファイルでは毎フレーム O(行長) になります
+      （`crates/vy-app/src/ui/pane.rs`、`crates/vy-app/src/view/mod.rs`）。
+- [ ] 文字幅の測定結果をフォント設定ごとにキャッシュする。`font_character_width` は
+      毎フレーム呼ばれます（`crates/vy-app/src/ui/pane.rs`）。
+- [ ] アクセシビリティ: 読み上げ、キーボードだけでのフォーカス移動、フォーカス順
+      （[`ui.md`](./ui.md) の未決定事項）。`Esc` のフォーカス層も決めます
+      （[`keymap.md`](./keymap.md)）。
+- [ ] ドキュメントを実装に追いつかせる: [`panes.md`](./panes.md) の実装状況は
+      `editor` ビューだけのまま、[`keymap.md`](./keymap.md) は Phase 2 のまま、
+      `editor.wrap` と `:wrap` は README に載っていません。
+
+### 機能追加として別に扱うもの
+
+次は改善ではなく機能追加なので、このバックログには入れません。予定は各文書にあります。
+
+- マウス操作（クリックでフォーカスとカーソル移動、ドラッグで選択、ポインタ下の
+  ペインのホイール）: [`keymap.md`](./keymap.md)
+- ペインの比率変更とフローティング（`pane/resize`、境界のドラッグ）:
+  [`panes.md`](./panes.md)
+- ペインごとのステータスラインと、項目のクリック実行: [`ui.md`](./ui.md)
+- システムのクリップボードと `"+` / `"*`: [`keymap.md`](./keymap.md)
+- 未実装の編集キー（`Delete`、`Ctrl-w`、`Ctrl-r`、`Ctrl-e` / `Ctrl-y` など）:
+  [`keymap.md`](./keymap.md) の「編集・移動・検索（未実装）」
+
+次に着手するなら、未保存の確認、表示セル幅、パレットと Ex の IME、`session.json`、
+ホバーと横スクロールの状態の順です。前の 3 つは正しさに直結し、後ろの 2 つは
+表示のずれをまとめて直します。
+
 ---
 
 ## 決定済み
