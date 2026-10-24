@@ -24,7 +24,6 @@ export * from "./EditorEditReply";
 export * from "./EditorOpenParams";
 export * from "./EditorSetModeParams";
 export * from "./EditorSetSelectionsParams";
-export * from "./ErrorCode";
 export * from "./FileStat";
 export * from "./Font";
 export * from "./FsCopyParams";

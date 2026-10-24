@@ -4,7 +4,8 @@ Types generated from the Rust crates with `ts-rs`. Do not edit the files in this
 directory by hand.
 
 - `vy-core` exports `Position`, `Range`, `Selection`, `TextEdit`, and `Uri`.
-- `vy-proto` exports `ErrorCode`.
+- `vy-proto` exports `DirEntry`, `FileStat`, `ProcessExecParams`, and
+  `ProcessOutput`.
 
 Regenerate after changing a type:
 
