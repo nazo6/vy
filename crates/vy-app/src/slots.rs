@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use vy_api_schema::ThemeColor;
+use crate::color::ThemeColor;
 
 /// An item or mark displayed in the gutter next to a line number.
 #[derive(Debug, Clone, PartialEq, Eq)]

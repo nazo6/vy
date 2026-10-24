@@ -6,10 +6,37 @@
 
 use std::collections::HashMap;
 
-/// Horizontal alignment of a statusline item. Defined in `vy-api-schema`
-/// because scripts set it.
-pub use vy_api_schema::StatuslineAlignment;
-use vy_api_schema::ThemeColor;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+use crate::color::ThemeColor;
+
+/// Horizontal alignment of a statusline item.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    TS,
+    strum::IntoStaticStr,
+    strum::EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum StatuslineAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+impl StatuslineAlignment {
+    pub fn parse(value: &str) -> Option<Self> {
+        value.parse().ok()
+    }
+}
 
 /// One item displayed in the statusline.
 #[derive(Debug, Clone, PartialEq, Eq)]

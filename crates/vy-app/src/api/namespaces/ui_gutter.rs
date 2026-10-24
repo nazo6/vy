@@ -3,9 +3,9 @@
 /// Creates and removes gutter items.
 #[vy_api_schema::vy_api_namespace("ui.gutter")]
 mod api {
+    use crate::color::ThemeColor;
     use serde::{Deserialize, Serialize};
     use ts_rs::TS;
-    use vy_api_schema::ThemeColor;
 
     use crate::api::{Call, CallError, Reply};
     use crate::slots::GutterItem;

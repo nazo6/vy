@@ -7,7 +7,7 @@ mod api {
 
     use serde::{Deserialize, Serialize};
     use ts_rs::TS;
-    use vy_api_schema::PickerItem;
+    use crate::palette::PickerItem;
 
     use crate::api::{Call, CallError, Reply};
     use crate::plugin_host::HostAction;

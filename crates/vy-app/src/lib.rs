@@ -4,6 +4,7 @@
 //! tested without a display.
 
 pub mod api;
+pub mod color;
 pub mod commands;
 pub mod config;
 pub mod editor;

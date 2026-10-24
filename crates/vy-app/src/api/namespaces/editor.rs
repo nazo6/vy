@@ -6,7 +6,7 @@ mod api {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use ts_rs::TS;
-    use vy_api_schema::Mode;
+    use crate::keymap::Mode;
     use vy_core::{Selection, TextEdit, Uri};
     use vy_js::DocumentInfoReply;
 

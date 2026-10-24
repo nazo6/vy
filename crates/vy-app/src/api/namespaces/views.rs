@@ -6,7 +6,7 @@ mod api {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use ts_rs::TS;
-    use vy_api_schema::WidgetNode;
+    use crate::widget::WidgetNode;
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::UiCommand;

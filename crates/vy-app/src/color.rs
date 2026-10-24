@@ -23,7 +23,6 @@ use ts_rs::TS;
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
-#[ts(export)]
 pub enum ThemeColor {
     Default,
     Muted,

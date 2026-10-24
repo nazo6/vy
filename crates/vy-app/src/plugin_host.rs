@@ -307,11 +307,11 @@ fn file_stamp(path: &Path) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::ThemeColor;
     use crate::commands::CommandArgs;
     use crate::keymap::KeyContext;
     use crate::statusline::StatuslineAlignment;
     use serde_json::json;
-    use vy_api_schema::ThemeColor;
 
     fn test_env() -> &'static ScriptEnv {
         static ENV: std::sync::OnceLock<ScriptEnv> = std::sync::OnceLock::new();

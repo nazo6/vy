@@ -2,6 +2,8 @@
 
 use gpui::{App, Context, Global, Rgba, rgb};
 
+pub use vy_app::color::ThemeColor;
+
 /// Semantic design tokens for the entire UI.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Theme {

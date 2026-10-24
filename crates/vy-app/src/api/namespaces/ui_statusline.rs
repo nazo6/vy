@@ -3,10 +3,11 @@
 /// Creates and updates status line items.
 #[vy_api_schema::vy_api_namespace("ui.statusline")]
 mod api {
+    use crate::color::ThemeColor;
+    use crate::statusline::StatuslineAlignment;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
     use ts_rs::TS;
-    use vy_api_schema::{StatuslineAlignment, ThemeColor};
 
     use crate::api::{Call, CallError, Reply};
     use crate::statusline::StatuslineItem;
