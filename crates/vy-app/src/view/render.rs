@@ -6,7 +6,7 @@ use gpui::{
     Context, DefiniteLength, Div, ElementInputHandler, InteractiveElement, IntoElement,
     ParentElement, Render, Styled, Window, canvas, div, px,
 };
-use vy_app::state::{DocumentState, PaneState};
+
 use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
@@ -20,17 +20,6 @@ const STATUSLINE_HEIGHT: f32 = 24.0;
 const CARET_WIDTH: f32 = 2.0;
 
 impl EditorView {
-    /// Collects the lines visible in one pane.
-    pub(super) fn visible_lines(
-        &self,
-        theme: &Theme,
-        pane: &PaneState,
-        document: &DocumentState,
-        window: &mut Window,
-    ) -> Vec<Div> {
-        ui::pane::visible_lines(&self.config, theme, pane, document, &self.gutter, window)
-    }
-
     /// Height of one text row from the settings.
     pub(super) fn line_height(&self) -> f32 {
         ui::pane::line_height(&self.config)
@@ -385,7 +374,7 @@ impl EditorView {
         )
     }
 
-    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, window: &mut Window) -> Div {
+    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, _window: &mut Window) -> Div {
         let theme = cx.theme().clone();
         let pane = self.panes.get(&pane_id);
         let document = pane
@@ -422,40 +411,52 @@ impl EditorView {
             return area.border_1().border_color(border);
         }
 
-        let lines = match (pane, document) {
-            (Some(pane), Some(document)) => self.visible_lines(&theme, pane, document, window),
-            _ => Vec::new(),
-        };
+        let view_entity = cx.entity();
+        let view_entity_paint = view_entity.clone();
+        let editor_canvas = canvas(
+            move |bounds, _window, cx| {
+                let view = view_entity.read(cx);
+                let theme = cx.theme().clone();
+                let pane = view.panes.get(&pane_id);
+                let document = pane
+                    .and_then(|pane| pane.document_id)
+                    .and_then(|id| view.documents.get(&id));
+
+                pane.zip(document).map(|(pane, document)| {
+                    ui::pane::prepare_editor_paint(
+                        &view.config,
+                        &theme,
+                        pane,
+                        document,
+                        &view.gutter,
+                        bounds,
+                    )
+                })
+            },
+            move |bounds, paint_data, window, cx| {
+                if let Some(data) = paint_data {
+                    ui::pane::paint_editor(data, bounds, window, cx);
+                }
+
+                if active {
+                    let focus = view_entity_paint.read(cx).focus_handle.clone();
+                    window.handle_input(
+                        &focus,
+                        ElementInputHandler::new(bounds, view_entity_paint.clone()),
+                        cx,
+                    );
+                }
+            },
+        )
+        .size_full();
 
         let mut area = div()
             .relative()
             .flex_1()
             .overflow_hidden()
-            .flex()
-            .flex_col()
-            .line_height(px(self.line_height()))
-            .children(lines);
+            .child(editor_canvas);
 
         if active {
-            let view = cx.entity();
-            area = area.child(
-                canvas(
-                    |_, _, _| (),
-                    move |bounds, _, window, cx| {
-                        let focus = view.read(cx).focus_handle.clone();
-                        window.handle_input(
-                            &focus,
-                            ElementInputHandler::new(bounds, view.clone()),
-                            cx,
-                        );
-                    },
-                )
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full(),
-            );
-
             // Render hover popup if active
             if let Some(hover) = &self.hover
                 && let Some(pane) = pane

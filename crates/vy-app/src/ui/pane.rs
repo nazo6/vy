@@ -1,15 +1,14 @@
 //! Editor pane and line rendering.
 
 use gpui::{
-    Div, HighlightStyle, Pixels, SharedString, StyledText, TextRun, Window, div, prelude::*, px,
+    App, Bounds, ContentMask, Pixels, SharedString, TextAlign, TextRun, UnderlineStyle, Window,
+    fill, point, px, size,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
 use vy_app::slots::GutterRegistry;
 use vy_app::state::{DocumentState, PaneState};
-use vy_app::text_layout::{
-    chunk_line, cursor_in_chunk, selection_in_chunk, selection_on_line, utf16_to_byte,
-};
+use vy_app::text_layout::{chunk_line, cursor_in_chunk, selection_in_chunk, utf16_to_byte};
 
 use crate::theme::Theme;
 use crate::ui::color::color;
@@ -19,14 +18,6 @@ use crate::ui::color::color;
 pub const CHARACTER_WIDTH: f32 = 8.4;
 /// Width of the vertical insert caret bar in pixels.
 pub const CARET_WIDTH: f32 = 2.0;
-
-/// The background style used for the selection and for active IME composition text.
-pub fn cursor_highlight(theme: &Theme) -> HighlightStyle {
-    HighlightStyle {
-        background_color: Some(theme.editor.selection.into()),
-        ..Default::default()
-    }
-}
 
 /// Computes the number of digits needed for line numbers (at least 4).
 pub fn line_number_width(line_count: usize) -> usize {
@@ -76,16 +67,6 @@ pub fn gutter_width(config: &Config, line_count: usize) -> f32 {
     base + character_width(config) * 1.5
 }
 
-/// Returns the text to draw on the Insert cursor line, the caret's byte offset,
-/// and the preedit byte range.
-#[allow(dead_code)]
-pub fn insert_marker(
-    pane: &PaneState,
-    text: &str,
-) -> (String, usize, Option<std::ops::Range<usize>>) {
-    insert_marker_at(&pane.preedit, pane.view.cursor().character, text)
-}
-
 /// Returns the text to draw on an Insert cursor line/chunk with an explicit character offset.
 pub fn insert_marker_at(
     preedit: &str,
@@ -104,345 +85,388 @@ pub fn insert_marker_at(
     (display, end, Some(caret..end))
 }
 
-/// Measures the pixel width from the start of a shaped line up to byte offset `index`.
-pub fn text_width(
-    config: &Config,
-    theme: &Theme,
-    text: &str,
-    index: usize,
-    window: &mut Window,
-) -> Pixels {
-    if index == 0 {
-        return px(0.);
-    }
-
-    let run = TextRun {
-        len: text.len(),
-        font: gpui::font(config.font_family()),
-        color: theme.editor.text.into(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    let shaped = window.text_system().shape_line(
-        SharedString::from(text.to_string()),
-        px(config.font_size()),
-        &[run],
-        None,
-    );
-    shaped.x_for_index(index)
+pub struct VisualRow {
+    pub line_number: usize,
+    pub chunk_index: usize,
+    pub total_chunks: usize,
+    pub text: String,
+    pub utf16_range: std::ops::Range<usize>,
+    pub line_length: u32,
+    pub y: Pixels,
 }
 
-/// Returns the text to draw on the cursor line and the byte range to mark for Normal/Visual.
-#[allow(dead_code)]
-pub fn cursor_marker(pane: &PaneState, text: &str) -> (String, std::ops::Range<usize>) {
-    let length = text.chars().map(|c| c.len_utf16() as u32).sum();
-    let selection = selection_on_line(pane.view.selection(), pane.view.cursor().line, length);
-    cursor_marker_at(selection, pane.view.cursor().character, text)
+pub struct EditorPaintData {
+    pub config: Config,
+    pub theme: Theme,
+    pub line_count: usize,
+    pub view: vy_app::editor::ViewState,
+    pub preedit: String,
+    pub scroll_left: usize,
+    pub wrap: bool,
+    pub visual_rows: Vec<VisualRow>,
+    pub gutter_marks: Vec<(usize, Vec<vy_app::slots::GutterItem>)>,
 }
 
-/// Returns the text to draw on a cursor line/chunk with an explicit character offset.
-pub fn cursor_marker_at(
-    selection_range: Option<(u32, u32)>,
-    char_offset: u32,
-    text: &str,
-) -> (String, std::ops::Range<usize>) {
-    let mut display = text.to_string();
-
-    let (from, to) = match selection_range {
-        Some((from, to)) => (from, to),
-        None => {
-            let from = char_offset;
-            let to = char_offset + 1;
-            (from, to)
-        }
-    };
-
-    let from_byte = utf16_to_byte(&display, from);
-    let mut to_byte = utf16_to_byte(&display, to);
-
-    if to_byte <= from_byte {
-        display.push(' ');
-        to_byte = display.len();
-    }
-
-    (display, from_byte..to_byte)
-}
-
-/// Renders a single row of text or a chunk of a wrapped line in an editor pane.
-#[allow(clippy::too_many_arguments)]
-pub fn render_line(
+pub fn prepare_editor_paint(
     config: &Config,
     theme: &Theme,
     pane: &PaneState,
     document: &DocumentState,
     gutter_registry: &GutterRegistry,
-    line_number: usize,
-    chunk_index: usize,
-    total_chunks: usize,
-    chunk_text: &str,
-    utf16_range: &std::ops::Range<usize>,
-    line_length: u32,
-    scroll_left_px: f32,
-    window: &mut Window,
-) -> Div {
-    let cursor_line = pane.view.cursor().line as usize;
+    bounds: Bounds<Pixels>,
+) -> EditorPaintData {
+    let visual_rows = collect_visual_rows(config, pane, document, bounds);
+    let mut gutter_marks = Vec::new();
+    for row in &visual_rows {
+        if row.chunk_index == 0 {
+            let items = gutter_registry.items_for_line(row.line_number);
+            if !items.is_empty() {
+                gutter_marks.push((row.line_number, items.into_iter().cloned().collect()));
+            }
+        }
+    }
+
+    EditorPaintData {
+        config: config.clone(),
+        theme: theme.clone(),
+        line_count: document.editor.line_count(),
+        view: pane.view,
+        preedit: pane.preedit.clone(),
+        scroll_left: pane.scroll_left,
+        wrap: pane.is_wrap(config),
+        visual_rows,
+        gutter_marks,
+    }
+}
+
+fn collect_visual_rows(
+    config: &Config,
+    pane: &PaneState,
+    document: &DocumentState,
+    bounds: Bounds<Pixels>,
+) -> Vec<VisualRow> {
+    let line_count = document.editor.line_count();
     let lh = line_height(config);
-    let mut row = div()
-        .relative()
-        .flex()
-        .flex_shrink_0()
-        .h(px(lh))
-        .line_height(px(lh))
-        .items_center();
-
-    let is_first_chunk = chunk_index == 0;
-    let marks = if is_first_chunk {
-        gutter_registry.items_for_line(line_number)
-    } else {
-        Vec::new()
-    };
-
-    let mark_text = if let Some(first) = marks.first() {
-        first.text.clone()
-    } else {
-        " ".to_string()
-    };
-
-    let mark_color = if let Some(first) = marks.first() {
-        first
-            .color
-            .map_or(theme.editor.gutter, |token| color(theme, token))
-    } else {
-        theme.editor.gutter
-    };
-
-    let line_count = document.editor.line_count();
-    let digits = line_number_width(line_count);
-    let num_label = if is_first_chunk {
-        config.line_numbers().label(line_number, cursor_line)
-    } else {
-        None
-    };
-
-    row = row.child(
-        div()
-            .flex()
-            .items_center()
-            .h(px(lh))
-            .line_height(px(lh))
-            .w(px(gutter_width(config, line_count)))
-            .flex_shrink_0()
-            .child(
-                div()
-                    .w(px(character_width(config) * 1.2))
-                    .text_color(mark_color)
-                    .child(mark_text),
-            )
-            .child(div().flex_1().text_color(theme.editor.gutter).child(
-                if let Some(label) = num_label {
-                    format!("{label:>digits$} ")
-                } else {
-                    format!("{:>digits$} ", "")
-                },
-            )),
-    );
-
-    let cursor_chunk_col = cursor_in_chunk(
-        pane.view.cursor(),
-        line_number,
-        chunk_index,
-        total_chunks,
-        utf16_range,
-    );
-
-    let selection_range = match pane.view.mode() {
-        Mode::SelectBlock => {
-            let first_line = pane.view.anchor().line.min(pane.view.head().line);
-            let last_line = pane.view.anchor().line.max(pane.view.head().line);
-            if (line_number as u32) >= first_line && (line_number as u32) <= last_line {
-                let first_col = pane.view.anchor().character.min(pane.view.head().character);
-                let last_col = pane.view.anchor().character.max(pane.view.head().character);
-                let from = first_col.min(line_length);
-                let to = (last_col + 1).min(line_length);
-                let from_chunk = (from as usize).max(utf16_range.start);
-                let to_chunk = (to as usize).min(utf16_range.end);
-                if from_chunk < to_chunk {
-                    Some((
-                        (from_chunk - utf16_range.start) as u32,
-                        (to_chunk - utf16_range.start) as u32,
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }
-        _ => selection_in_chunk(
-            pane.view.selection(),
-            line_number,
-            chunk_index,
-            total_chunks,
-            utf16_range,
-            line_length,
-        ),
-    };
-
-    let text_area = div()
-        .relative()
-        .flex_1()
-        .h(px(lh))
-        .overflow_hidden()
-        .whitespace_nowrap();
-
-    let mut text_container = div()
-        .absolute()
-        .top_0()
-        .left(-px(scroll_left_px))
-        .h(px(lh))
-        .whitespace_nowrap();
-
-    if pane.view.mode() == Mode::Insert {
-        if let Some(col) = cursor_chunk_col {
-            let (display, caret, preedit) = insert_marker_at(&pane.preedit, col, chunk_text);
-            let width = text_width(config, theme, &display, caret, window);
-
-            let mut line = StyledText::new(display);
-            if let Some(range) = preedit {
-                line = line.with_highlights(vec![(range, cursor_highlight(theme))]);
-            }
-
-            let caret_el = div()
-                .absolute()
-                .top_0()
-                .left(width)
-                .w(px(CARET_WIDTH))
-                .h(px(lh))
-                .bg(theme.editor.caret);
-
-            text_container = text_container.child(line).child(caret_el);
-        } else {
-            text_container = text_container.child(chunk_text.to_string());
-        }
-        return row.child(text_area.child(text_container));
-    }
-
-    if pane.view.mode() == Mode::Normal {
-        if let Some(col) = cursor_chunk_col {
-            let (display, highlight) = cursor_marker_at(None, col, chunk_text);
-            let line = StyledText::new(display)
-                .with_highlights(vec![(highlight, cursor_highlight(theme))]);
-            text_container = text_container.child(line);
-        } else {
-            text_container = text_container.child(chunk_text.to_string());
-        }
-        return row.child(text_area.child(text_container));
-    }
-
-    // Visual modes: Select, SelectLine, SelectBlock
-    if let Some((from, to)) = selection_range {
-        let mut display = chunk_text.to_string();
-        let from_byte = utf16_to_byte(&display, from);
-        let mut to_byte = utf16_to_byte(&display, to);
-
-        if to_byte <= from_byte {
-            display.push(' ');
-            to_byte = display.len();
-        }
-
-        let line = StyledText::new(display)
-            .with_highlights(vec![(from_byte..to_byte, cursor_highlight(theme))]);
-        text_container = text_container.child(line);
-    } else if let Some(col) = cursor_chunk_col {
-        let (display, highlight) = cursor_marker_at(None, col, chunk_text);
-        let line =
-            StyledText::new(display).with_highlights(vec![(highlight, cursor_highlight(theme))]);
-        text_container = text_container.child(line);
-    } else {
-        text_container = text_container.child(chunk_text.to_string());
-    }
-
-    row.child(text_area.child(text_container))
-}
-
-/// Collects all visible lines in one pane.
-pub fn visible_lines(
-    config: &Config,
-    theme: &Theme,
-    pane: &PaneState,
-    document: &DocumentState,
-    gutter_registry: &GutterRegistry,
-    window: &mut Window,
-) -> Vec<Div> {
     let wrap = pane.is_wrap(config);
-    let line_count = document.editor.line_count();
-    let char_w = font_character_width(config, window);
+    let mut visual_rows = Vec::with_capacity(pane.viewport_rows.max(1));
 
     if !wrap {
         let start = pane.scroll_top;
-        let end = (start + pane.viewport_rows.max(1)).min(line_count);
-        let scroll_left_px = pane.scroll_left as f32 * char_w;
-
-        return (start..end)
-            .map(|line| {
-                let text = document.editor.line(line).unwrap_or_default();
-                let len = text.chars().map(|c| c.len_utf16() as u32).sum();
-                render_line(
-                    config,
-                    theme,
-                    pane,
-                    document,
-                    gutter_registry,
-                    line,
-                    0,
-                    1,
-                    &text,
-                    &(0..len as usize),
-                    len,
-                    scroll_left_px,
-                    window,
-                )
-            })
-            .collect();
-    }
-
-    // Wrap mode: breaks lines exceeding viewport_cols into chunks
-    let mut visual_lines = Vec::with_capacity(pane.viewport_rows);
-    let mut line_idx = pane.scroll_top;
-    let mut chunk_idx = pane.scroll_sub_line;
-    let cols = pane.viewport_cols.max(1);
-
-    while line_idx < line_count && visual_lines.len() < pane.viewport_rows {
-        let text = document.editor.line(line_idx).unwrap_or_default();
-        let chunks = chunk_line(&text, cols);
-        let total_chunks = chunks.len();
-        let line_len = text.chars().map(|c| c.len_utf16() as u32).sum();
-
-        while chunk_idx < total_chunks && visual_lines.len() < pane.viewport_rows {
-            let chunk = &chunks[chunk_idx];
-            let chunk_text = &text[chunk.byte_range.clone()];
-            visual_lines.push(render_line(
-                config,
-                theme,
-                pane,
-                document,
-                gutter_registry,
-                line_idx,
-                chunk_idx,
-                total_chunks,
-                chunk_text,
-                &chunk.utf16_range,
-                line_len,
-                0.0,
-                window,
-            ));
-            chunk_idx += 1;
+        let end = (start + pane.viewport_rows.max(1) + 1).min(line_count);
+        for (row_idx, line_idx) in (start..end).enumerate() {
+            let row_y = bounds.top() + px(row_idx as f32 * lh);
+            if row_y >= bounds.bottom() {
+                break;
+            }
+            let text = document.editor.line(line_idx).unwrap_or_default();
+            let len = text.chars().map(|c| c.len_utf16() as u32).sum();
+            visual_rows.push(VisualRow {
+                line_number: line_idx,
+                chunk_index: 0,
+                total_chunks: 1,
+                text,
+                utf16_range: 0..len as usize,
+                line_length: len,
+                y: row_y,
+            });
         }
+    } else {
+        let cols = pane.viewport_cols.max(1);
+        let mut line_idx = pane.scroll_top;
+        let mut chunk_idx = pane.scroll_sub_line;
+        let mut row_idx = 0;
 
-        line_idx += 1;
-        chunk_idx = 0;
+        while line_idx < line_count && row_idx < pane.viewport_rows {
+            let text = document.editor.line(line_idx).unwrap_or_default();
+            let chunks = chunk_line(&text, cols);
+            let total_chunks = chunks.len();
+            let line_len = text.chars().map(|c| c.len_utf16() as u32).sum();
+
+            while chunk_idx < total_chunks && row_idx < pane.viewport_rows {
+                let row_y = bounds.top() + px(row_idx as f32 * lh);
+                if row_y >= bounds.bottom() {
+                    break;
+                }
+                let chunk = &chunks[chunk_idx];
+                let chunk_text = text[chunk.byte_range.clone()].to_string();
+                visual_rows.push(VisualRow {
+                    line_number: line_idx,
+                    chunk_index: chunk_idx,
+                    total_chunks,
+                    text: chunk_text,
+                    utf16_range: chunk.utf16_range.clone(),
+                    line_length: line_len,
+                    y: row_y,
+                });
+                chunk_idx += 1;
+                row_idx += 1;
+            }
+            line_idx += 1;
+            chunk_idx = 0;
+        }
     }
 
-    visual_lines
+    visual_rows
+}
+
+/// Paints the editor pane using GPUI's low-level paint primitives.
+pub fn paint_editor(
+    data: EditorPaintData,
+    bounds: Bounds<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let config = &data.config;
+    let theme = &data.theme;
+    let line_count = data.line_count;
+    let lh = px(line_height(config));
+    let char_w = font_character_width(config, window);
+    let gutter_w = px(gutter_width(config, line_count));
+
+    let content_origin_x = bounds.left() + gutter_w;
+    let content_w = (bounds.size.width - gutter_w).max(px(0.0));
+    let content_bounds = Bounds::new(
+        point(content_origin_x, bounds.top()),
+        size(content_w, bounds.size.height),
+    );
+
+    // 1. Paint pane background
+    window.paint_quad(fill(bounds, theme.editor.background));
+
+    // 2. Paint gutter separator if gutter exists
+    if gutter_w > px(0.0) {
+        let sep_bounds = Bounds::new(
+            point(content_origin_x - px(1.0), bounds.top()),
+            size(px(1.0), bounds.size.height),
+        );
+        window.paint_quad(fill(sep_bounds, theme.border.subtle));
+    }
+
+    // 3. Paint gutter marks and line numbers
+    let cursor_line = data.view.cursor().line as usize;
+    if gutter_w > px(0.0) {
+        let digits = line_number_width(line_count);
+        let font = gpui::font(config.font_family());
+        let font_size = px(config.font_size());
+
+        for row in &data.visual_rows {
+            if row.chunk_index == 0 {
+                if let Some((_, marks)) = data
+                    .gutter_marks
+                    .iter()
+                    .find(|(line, _)| *line == row.line_number)
+                    && let Some(mark) = marks.first()
+                {
+                    let mark_color = mark.color.map_or(theme.editor.gutter, |c| color(theme, c));
+                    let mark_run = TextRun {
+                        len: mark.text.len(),
+                        font: font.clone(),
+                        color: mark_color.into(),
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    let shaped = window.text_system().shape_line(
+                        SharedString::from(mark.text.clone()),
+                        font_size,
+                        &[mark_run],
+                        None,
+                    );
+                    let mark_x = bounds.left() + px(character_width(config) * 0.2);
+                    let _ =
+                        shaped.paint(point(mark_x, row.y), lh, TextAlign::Left, None, window, cx);
+                }
+
+                if let Some(label) = config.line_numbers().label(row.line_number, cursor_line) {
+                    let num_text = format!("{label:>digits$} ");
+                    let num_run = TextRun {
+                        len: num_text.len(),
+                        font: font.clone(),
+                        color: theme.editor.gutter.into(),
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    let shaped = window.text_system().shape_line(
+                        SharedString::from(num_text),
+                        font_size,
+                        &[num_run],
+                        None,
+                    );
+                    let num_x = bounds.left() + px(character_width(config) * 1.4);
+                    let _ =
+                        shaped.paint(point(num_x, row.y), lh, TextAlign::Left, None, window, cx);
+                }
+            }
+        }
+    }
+
+    // 4. Paint editor text and cursor in clipped content bounds
+    window.with_content_mask(
+        Some(ContentMask {
+            bounds: content_bounds,
+        }),
+        |window| {
+            let scroll_left_px = if data.wrap {
+                0.0
+            } else {
+                data.scroll_left as f32 * char_w
+            };
+            let text_origin_x = content_origin_x - px(scroll_left_px);
+            let font = gpui::font(config.font_family());
+            let font_size = px(config.font_size());
+
+            for row in &data.visual_rows {
+                let cursor_chunk_col = cursor_in_chunk(
+                    data.view.cursor(),
+                    row.line_number,
+                    row.chunk_index,
+                    row.total_chunks,
+                    &row.utf16_range,
+                );
+
+                let selection_range = match data.view.mode() {
+                    Mode::SelectBlock => {
+                        let first_line = data.view.anchor().line.min(data.view.head().line);
+                        let last_line = data.view.anchor().line.max(data.view.head().line);
+                        if (row.line_number as u32) >= first_line
+                            && (row.line_number as u32) <= last_line
+                        {
+                            let first_col =
+                                data.view.anchor().character.min(data.view.head().character);
+                            let last_col =
+                                data.view.anchor().character.max(data.view.head().character);
+                            let from = first_col.min(row.line_length);
+                            let to = (last_col + 1).min(row.line_length);
+                            let from_chunk = (from as usize).max(row.utf16_range.start);
+                            let to_chunk = (to as usize).min(row.utf16_range.end);
+                            if from_chunk < to_chunk {
+                                Some((
+                                    (from_chunk - row.utf16_range.start) as u32,
+                                    (to_chunk - row.utf16_range.start) as u32,
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    _ => selection_in_chunk(
+                        data.view.selection(),
+                        row.line_number,
+                        row.chunk_index,
+                        row.total_chunks,
+                        &row.utf16_range,
+                        row.line_length,
+                    ),
+                };
+
+                // Prepare text and preedit insertion if in Insert mode
+                let (display_text, caret_byte, preedit_byte_range) =
+                    if data.view.mode() == Mode::Insert {
+                        if let Some(col) = cursor_chunk_col {
+                            let (d, cb, pb) = insert_marker_at(&data.preedit, col, &row.text);
+                            (d, Some(cb), pb)
+                        } else {
+                            (row.text.clone(), None, None)
+                        }
+                    } else {
+                        (row.text.clone(), None, None)
+                    };
+
+                // Shape line text
+                let run = TextRun {
+                    len: display_text.len(),
+                    font: font.clone(),
+                    color: theme.editor.text.into(),
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let shaped = window.text_system().shape_line(
+                    SharedString::from(display_text.clone()),
+                    font_size,
+                    &[run],
+                    None,
+                );
+
+                // Paint selection highlight
+                if let Some((from_u16, to_u16)) = selection_range {
+                    let from_b = utf16_to_byte(&display_text, from_u16);
+                    let to_b = utf16_to_byte(&display_text, to_u16);
+                    let start_x = text_origin_x + shaped.x_for_index(from_b);
+                    let end_x = text_origin_x + shaped.x_for_index(to_b);
+                    let sel_w = if end_x <= start_x {
+                        px(char_w)
+                    } else {
+                        end_x - start_x
+                    };
+                    let sel_quad = fill(
+                        Bounds::new(point(start_x, row.y), size(sel_w, lh)),
+                        theme.editor.selection,
+                    );
+                    window.paint_quad(sel_quad);
+                }
+
+                // Paint block cursor highlight for Normal mode
+                if data.view.mode() == Mode::Normal
+                    && let Some(col) = cursor_chunk_col
+                {
+                    let from_b = utf16_to_byte(&display_text, col);
+                    let to_b = utf16_to_byte(&display_text, col + 1);
+                    let start_x = text_origin_x + shaped.x_for_index(from_b);
+                    let end_x = text_origin_x + shaped.x_for_index(to_b);
+                    let cur_w = if end_x <= start_x {
+                        px(char_w)
+                    } else {
+                        end_x - start_x
+                    };
+                    let cursor_quad = fill(
+                        Bounds::new(point(start_x, row.y), size(cur_w, lh)),
+                        theme.editor.selection,
+                    );
+                    window.paint_quad(cursor_quad);
+                }
+
+                // Paint text
+                let _ = shaped.paint(
+                    point(text_origin_x, row.y),
+                    lh,
+                    TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
+
+                // Paint Insert mode vertical caret bar
+                if data.view.mode() == Mode::Insert
+                    && let Some(caret_b) = caret_byte
+                {
+                    let caret_x = text_origin_x + shaped.x_for_index(caret_b);
+                    let caret_quad = fill(
+                        Bounds::new(point(caret_x, row.y), size(px(CARET_WIDTH), lh)),
+                        theme.editor.caret,
+                    );
+                    window.paint_quad(caret_quad);
+                }
+
+                // Paint preedit underline
+                if let Some(range) = preedit_byte_range {
+                    let p_start_x = text_origin_x + shaped.x_for_index(range.start);
+                    let p_end_x = text_origin_x + shaped.x_for_index(range.end);
+                    let style = UnderlineStyle {
+                        thickness: px(1.0),
+                        color: Some(theme.editor.caret.into()),
+                        wavy: false,
+                    };
+                    window.paint_underline(
+                        point(p_start_x, row.y + lh - px(2.0)),
+                        p_end_x - p_start_x,
+                        &style,
+                    );
+                }
+            }
+        },
+    );
 }
