@@ -81,7 +81,9 @@ cargo fmt --all --check
   型と宣言は `vy-client-api` に置き、`vy-app` の各 `#[vy_api_namespace]` モジュールは
   ハンドラだけを持ちます。共有する値型は `vy-client-api` に置き、`vy-app` の対応する
   モジュール（`keymap`、`color`、`widget` など）から再エクスポートします
-  （[ADR 0012](./adr/0012-shared-host-api.md)）。
+  （[ADR 0012](./adr/0012-shared-host-api.md)）。名前空間は `#[vy_api_trait]` で
+  trait として宣言し、`HostApi` / `ClientHostApi` の `dispatch` から呼びます
+  （[ADR 0013](./adr/0013-host-api-traits.md)）。
   `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
   `HostEvents.ts`、`packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
   は、宣言が持つ `TypeCollector` から同じテストで生成します。`ts-rs` の自動テストに

@@ -37,3 +37,4 @@ ADR を追加します。古い ADR
 | [0010](./0010-remote-connection.md)              | SSH で接続し、再起動と再同期でセッションを戻す   | 採用                                       |
 | [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす             | 採用（実装は Phase 6）                     |
 | [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く | 採用（`fs` と `workspace` から実装中） |
+| [0013](./0013-host-api-traits.md)                | 名前空間 trait と `HostApi` facade で実装する    | 採用（試作: `workspace` と `notifications`） |
