@@ -67,7 +67,7 @@ impl TypeCollector {
             return;
         }
 
-        let config = Config::from_env();
+        let config = Config::default();
         if let Some(path) = T::output_path()
             && let Ok(body) = T::export_to_string(&config)
         {

@@ -6,7 +6,9 @@
     "types": "index.d.ts",
     "files": [
         "index.d.ts",
+        "docs.d.ts",
         "overrides.d.ts",
+        "types",
         "README.md"
     ]
 }

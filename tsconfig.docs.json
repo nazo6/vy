@@ -8,7 +8,6 @@
         "skipLibCheck": true
     },
     "include": [
-        "packages/vy-api/**/*.d.ts",
-        "packages/vy-api-types/**/*.ts"
+        "packages/vy-api/**/*.ts"
     ]
 }

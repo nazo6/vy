@@ -73,7 +73,7 @@ impl<'a> Namespace<'a> {
 /// Where the generated client declarations are written.
 #[derive(Clone, Debug)]
 pub struct Output {
-    /// Directory for per-type `.ts` files, for example `packages/vy-api-types`.
+    /// Directory for per-type `.ts` files, for example `packages/vy-api/types`.
     pub types_dir: PathBuf,
     /// Directory for the namespace declarations, for example `packages/vy-api`.
     pub api_dir: PathBuf,
@@ -81,17 +81,9 @@ pub struct Output {
 
 impl Output {
     /// The repository's committed output directories.
-    ///
-    /// `TS_RS_EXPORT_DIR` overrides the type directory, as it does for `ts-rs`.
     pub fn packages() -> Self {
-        let types_dir = std::env::var("TS_RS_EXPORT_DIR").map_or_else(
-            |_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/vy-api-types"),
-            PathBuf::from,
-        );
-        let api_dir = types_dir
-            .parent()
-            .map_or_else(|| types_dir.clone(), Path::to_path_buf)
-            .join("vy-api");
+        let api_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/vy-api");
+        let types_dir = api_dir.join("types");
         Self { types_dir, api_dir }
     }
 }
@@ -265,7 +257,7 @@ fn render_api(
         for name in &generated_types {
             output.push_str(&format!("  {name},\n"));
         }
-        output.push_str("} from \"../vy-api-types\";\n\n");
+        output.push_str("} from \"./types\";\n\n");
     }
 
     let sugars: BTreeSet<&str> = namespaces.iter().filter_map(|decl| decl.sugar).collect();
@@ -277,7 +269,7 @@ fn render_api(
         output.push_str("} from \"./overrides\";\n\n");
     }
 
-    output.push_str("export * from \"../vy-api-types\";\n");
+    output.push_str("export * from \"./types\";\n");
     output.push_str("export * from \"./overrides\";\n\n");
 
     output.push_str("/** A registration or event subscription that can be released. */\n");

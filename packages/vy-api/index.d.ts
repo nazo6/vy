@@ -75,13 +75,13 @@ import type {
   ViewsRenderParams,
   WorkspaceFoldersChange,
   WorkspaceInfoReply,
-} from "../vy-api-types";
+} from "./types";
 
 import type {
   CommandsSugar,
 } from "./overrides";
 
-export * from "../vy-api-types";
+export * from "./types";
 export * from "./overrides";
 
 /** A registration or event subscription that can be released. */

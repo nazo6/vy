@@ -86,7 +86,7 @@ fn check_client(expected: &Output) -> Result<(), Box<dyn Error>> {
     let _ = std::fs::remove_dir_all(&root);
 
     let actual = Output {
-        types_dir: root.join("vy-api-types"),
+        types_dir: root.join("vy-api/types"),
         api_dir: root.join("vy-api"),
     };
 

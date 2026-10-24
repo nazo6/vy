@@ -4,7 +4,7 @@
 // declarations in `crates/vy-host-api` and `crates/vy-client-api`. This file
 // only holds the command callback wrapper, which needs a JavaScript function.
 
-import type { CommandId } from "../vy-api-types";
+import type { CommandId } from "./types";
 import type { Disposable } from "./index";
 
 /** Registers command handlers and runs commands by id. */

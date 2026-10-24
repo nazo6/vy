@@ -28,11 +28,22 @@ as a file. Point the TypeScript compiler at this package when you write an
 ```
 
 `index.d.ts` is generated from the `#[vy_api_trait]` declarations in
-`crates/vy-host-api` and `crates/vy-client-api`; do not edit it. The only
-hand-written declaration is the command callback wrapper in `overrides.d.ts`.
-Types shared with the Rust protocol live in
-[`packages/vy-api-types`](../vy-api-types/README.md). Both are refreshed by
-`cargo run -p vy-api-codegen -- client`.
+`crates/vy-host-api` and `crates/vy-client-api`; do not edit it. The per-type
+declarations and the `HostMethods`, `HostEvents`, `CommandId`, and `SettingsKey`
+helpers live in [`types/index.ts`](./types/index.ts). The only hand-written
+declaration is the command callback wrapper in `overrides.d.ts`.
+
+Regenerate the declarations after changing an API type:
+
+```sh
+cargo run -p vy-api-codegen -- client
+```
+
+To verify without writing files:
+
+```sh
+cargo run -p vy-api-codegen -- client --check
+```
 
 ## API reference
 
