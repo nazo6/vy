@@ -350,16 +350,14 @@ impl EditorView {
         let current_doc_id = self.active_document().map(|d| d.id);
         if current_doc_id != self.last_reported_document_id {
             self.last_reported_document_id = current_doc_id;
-            let info = self
-                .document_info()
-                .map(|doc| vy_api_schema::DocumentInfoReply {
-                    id: doc.id,
-                    uri: doc.uri.clone(),
-                    language_id: doc.language_id.clone(),
-                    version: self.editor().version(),
-                    line_count: self.editor().line_count(),
-                    end: self.editor().position_at_utf16(self.editor().len_utf16()),
-                });
+            let info = self.document_info().map(|doc| vy_js::DocumentInfoReply {
+                id: doc.id,
+                uri: doc.uri.clone(),
+                language_id: doc.language_id.clone(),
+                version: self.editor().version(),
+                line_count: self.editor().line_count(),
+                end: self.editor().position_at_utf16(self.editor().len_utf16()),
+            });
             plugin.emit_active_editor_change(info);
         }
 

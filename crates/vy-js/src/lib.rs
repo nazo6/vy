@@ -9,9 +9,11 @@
 //! records they will use.
 
 pub mod api;
+pub mod document;
 pub mod transpile;
 pub mod vm;
 
+pub use document::DocumentInfoReply;
 pub use transpile::{TranspileError, strip_types};
 pub use vm::{
     HostReply, HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, ScriptTask, WorkspaceEnv,

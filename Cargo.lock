@@ -6445,6 +6445,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.21",
+ "ts-rs",
  "vy-api-schema",
  "vy-capabilities",
  "vy-core",
@@ -6486,7 +6487,7 @@ dependencies = [
  "rquickjs",
  "serde",
  "serde_json",
- "vy-api-schema",
+ "ts-rs",
  "vy-core",
 ]
 

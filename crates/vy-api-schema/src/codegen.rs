@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use crate::EventDecl;
 use crate::MethodDecl;
 use crate::NamespaceDecl;
+use crate::TypeCollector;
 
 /// Tokens that are types in the emitted signature rather than imported names.
 const TYPE_KEYWORDS: &[&str] = &[
@@ -73,6 +74,7 @@ impl<'a> Namespace<'a> {
 pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl], events: &[&EventDecl]) {
     let types_dir = export_dir();
     std::fs::create_dir_all(&types_dir).expect("create the TypeScript export directory");
+    write_types(&types_dir, methods, events);
     write_host_methods(&types_dir, methods);
     write_host_events(&types_dir, events);
     write_barrel(&types_dir);
@@ -98,6 +100,32 @@ fn export_dir() -> PathBuf {
     )
 }
 
+/// Writes every type the declarations refer to.
+///
+/// `ts-rs` generates a per-type export test, but the API needs one entry point
+/// that writes all of them. The declarations carry the collector, so a type can
+/// live in any crate and still be generated here.
+fn write_types(directory: &Path, methods: &[&MethodDecl], events: &[&EventDecl]) {
+    let mut collector = TypeCollector::default();
+    for method in methods {
+        if let Some(params) = method.params {
+            (params.collect)(&mut collector);
+        }
+        (method.result.collect)(&mut collector);
+    }
+    for event in events {
+        (event.payload.collect)(&mut collector);
+    }
+
+    for (path, body) in collector.files() {
+        let target = directory.join(path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).expect("create the type directory");
+        }
+        std::fs::write(&target, body).expect("write a generated type");
+    }
+}
+
 fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
     let mut sorted = methods.to_vec();
     sorted.sort_by_key(|method| method.method);
@@ -115,13 +143,13 @@ fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
         push_doc(&mut output, "  ", method.doc);
         let params = method
             .params
-            .map(|params| params())
+            .map(|params| (params.name)())
             .unwrap_or_else(|| "Record<string, never>".to_string());
         output.push_str(&format!(
             "  \"{}\": {{ params: {}; result: {} }};\n",
             method.method,
             params,
-            (method.result)()
+            (method.result.name)()
         ));
     }
     output.push_str("}\n\n");
@@ -136,7 +164,7 @@ fn write_host_events(directory: &Path, events: &[&EventDecl]) {
     sorted.sort_by_key(|event| event.topic);
 
     let mut output = header();
-    let payloads: BTreeSet<String> = sorted.iter().map(|event| (event.payload)()).collect();
+    let payloads: BTreeSet<String> = sorted.iter().map(|event| (event.payload.name)()).collect();
     for name in &payloads {
         let file = type_file(name);
         output.push_str(&format!("import type {{ {name} }} from \"./{file}\";\n"));
@@ -149,7 +177,7 @@ fn write_host_events(directory: &Path, events: &[&EventDecl]) {
         output.push_str(&format!(
             "  \"{}\": {{ payload: {} }};\n",
             event.topic,
-            (event.payload)()
+            (event.payload.name)()
         ));
     }
     output.push_str("}\n\n");
@@ -208,7 +236,7 @@ fn render_api(
         .collect();
     let mut generated_types = used_types(&generated);
     for event in events {
-        generated_types.insert((event.payload)());
+        generated_types.insert((event.payload.name)());
     }
     if !generated_types.is_empty() {
         output.push_str("import type {\n");
@@ -312,7 +340,7 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
         output.push_str(&format!(
             "  {}(listener: (event: {}) => void): Disposable;\n",
             event.name,
-            (event.payload)()
+            (event.payload.name)()
         ));
     }
     output.push_str("}\n");
@@ -330,10 +358,10 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
 fn signature(method: &MethodDecl) -> String {
     let name = method.method.rsplit('.').next().unwrap_or(method.method);
     let params = match method.params {
-        Some(params) => format!("params: {}", params()),
+        Some(params) => format!("params: {}", (params.name)()),
         None => String::new(),
     };
-    let result = (method.result)();
+    let result = (method.result.name)();
     let result = if result == "null" {
         "void".to_string()
     } else {
@@ -380,8 +408,8 @@ fn used_types(methods: &[&MethodDecl]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for method in methods {
         let sources = [
-            method.params.map(|params| params()),
-            Some((method.result)()),
+            method.params.map(|params| (params.name)()),
+            Some((method.result.name)()),
         ];
         for source in sources.into_iter().flatten() {
             for token in source

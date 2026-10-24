@@ -18,6 +18,7 @@ use serde::Serialize;
 use vy_core::Uri;
 
 use crate::api::{VyLoader, VyResolver};
+use crate::document::DocumentInfoReply;
 use crate::transpile::strip_types;
 
 /// Time given to one evaluation of `init.ts`.
@@ -241,10 +242,7 @@ impl ScriptHost {
     }
 
     /// Tells the script that the active editor/document changed.
-    pub fn emit_active_editor_change(
-        &self,
-        document_info: Option<vy_api_schema::DocumentInfoReply>,
-    ) {
+    pub fn emit_active_editor_change(&self, document_info: Option<DocumentInfoReply>) {
         self.emit(
             "editor.onDidChangeActiveDocument",
             serde_json::json!({ "document": document_info }),
@@ -1140,7 +1138,7 @@ ui.hover.hide();
         }
 
         // 2. Active editor change
-        host.emit_active_editor_change(Some(vy_api_schema::DocumentInfoReply {
+        host.emit_active_editor_change(Some(DocumentInfoReply {
             id: 42,
             uri: vy_core::Uri::parse("file:///test.rs").unwrap(),
             language_id: "rust".into(),

@@ -3,12 +3,15 @@
 /// Reads and edits the active document.
 #[vy_api_schema::vy_api_namespace("editor")]
 mod api {
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use ts_rs::TS;
     use vy_api_schema::{
-        ActiveDocumentChange, DocumentInfoReply, EditorEditParams, EditorEditReply,
-        EditorOpenParams, EditorSetModeParams, EditorSetSelectionsParams, Mode, SelectionChange,
+        EditorEditParams, EditorEditReply, EditorOpenParams, EditorSetModeParams,
+        EditorSetSelectionsParams, Mode, SelectionChange,
     };
     use vy_core::Selection;
+    use vy_js::DocumentInfoReply;
 
     use crate::api::{Call, CallError, Reply, document_info};
     use crate::commands::DocumentCommand;
@@ -119,6 +122,12 @@ mod api {
     fn redo(call: &mut Call<'_, '_>) -> Result<Reply<()>, CallError> {
         call.outcome.action = HostAction::Redo;
         Ok(Reply::Value(()))
+    }
+
+    /// Payload of `editor.onDidChangeActiveDocument`.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ActiveDocumentChange {
+        pub document: Option<DocumentInfoReply>,
     }
 
     /// Fires when the document in the focused pane changes.

@@ -3,8 +3,9 @@
 /// Describes the workspace and its open documents.
 #[vy_api_schema::vy_api_namespace("workspace")]
 mod api {
-    use vy_api_schema::{DocumentInfoReply, WorkspaceFoldersChange, WorkspaceInfoReply};
+    use vy_api_schema::{WorkspaceFoldersChange, WorkspaceInfoReply};
     use vy_core::Uri;
+    use vy_js::DocumentInfoReply;
 
     use crate::api::{Call, CallError, Reply, document_info};
 

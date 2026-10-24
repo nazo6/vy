@@ -8,9 +8,10 @@
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use vy_api_schema::{DocumentInfoReply, MethodDecl};
+use vy_api_schema::MethodDecl;
 use vy_capabilities::TrustedStore;
 use vy_core::Uri;
+use vy_js::DocumentInfoReply;
 use vy_js::HostRequest;
 use vy_proto::ErrorCode;
 
@@ -268,36 +269,36 @@ mod tests {
         };
 
         assert!(find("editor.mode").decl.params.is_none());
-        assert_eq!((find("editor.mode").decl.result)(), "Mode");
+        assert_eq!((find("editor.mode").decl.result.name)(), "Mode");
         assert_eq!(
-            (find("editor.activeDocument").decl.result)(),
+            (find("editor.activeDocument").decl.result.name)(),
             "DocumentInfoReply | null"
         );
         assert_eq!(
-            (find("editor.documents").decl.result)(),
+            (find("editor.documents").decl.result.name)(),
             "Array<DocumentInfoReply>"
         );
         assert_eq!(
             find("editor.setMode")
                 .decl
                 .params
-                .map(|params| params())
+                .map(|params| (params.name)())
                 .as_deref(),
             Some("EditorSetModeParams")
         );
-        assert_eq!((find("editor.setMode").decl.result)(), "null");
-        assert_eq!((find("config.get").decl.result)(), "unknown");
+        assert_eq!((find("editor.setMode").decl.result.name)(), "null");
+        assert_eq!((find("config.get").decl.result.name)(), "unknown");
         assert_eq!(find("config.get").decl.typed_key, Some("SettingsMap"));
         assert_eq!(find("commands.execute").decl.typed_args, Some("CommandMap"));
         assert_eq!(
             find("fs.readFile")
                 .decl
                 .params
-                .map(|params| params())
+                .map(|params| (params.name)())
                 .as_deref(),
             Some("FsReadFileParams")
         );
-        assert_eq!((find("fs.readFile").decl.result)(), "FsReadFileReply");
+        assert_eq!((find("fs.readFile").decl.result.name)(), "FsReadFileReply");
 
         let namespaces = namespace_decls();
         assert_eq!(namespaces.len(), 17);
@@ -372,22 +373,22 @@ mod tests {
                 .find(|event| event.topic == topic)
                 .unwrap_or_else(|| panic!("{topic} is missing"))
         };
-        assert_eq!((find("config.onDidChange").payload)(), "ConfigChange");
+        assert_eq!((find("config.onDidChange").payload.name)(), "ConfigChange");
         assert_eq!(
-            (find("editor.onDidChangeActiveDocument").payload)(),
+            (find("editor.onDidChangeActiveDocument").payload.name)(),
             "ActiveDocumentChange"
         );
         assert_eq!(
-            (find("editor.onDidChangeSelection").payload)(),
+            (find("editor.onDidChangeSelection").payload.name)(),
             "SelectionChange"
         );
         assert_eq!(
-            (find("workspace.onDidChangeWorkspaceFolders").payload)(),
+            (find("workspace.onDidChangeWorkspaceFolders").payload.name)(),
             "WorkspaceFoldersChange"
         );
-        assert_eq!((find("process.onStdout").payload)(), "ProcessData");
-        assert_eq!((find("process.onStderr").payload)(), "ProcessData");
-        assert_eq!((find("process.onExit").payload)(), "ProcessExit");
+        assert_eq!((find("process.onStdout").payload.name)(), "ProcessData");
+        assert_eq!((find("process.onStderr").payload.name)(), "ProcessData");
+        assert_eq!((find("process.onExit").payload.name)(), "ProcessExit");
     }
 
     /// Regenerates the TypeScript declarations. The filter `export_bindings`

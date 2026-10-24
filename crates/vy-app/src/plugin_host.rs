@@ -151,10 +151,7 @@ impl PluginHost {
     }
 
     /// Tells the script that the active editor/document changed.
-    pub fn emit_active_editor_change(
-        &self,
-        document_info: Option<vy_api_schema::DocumentInfoReply>,
-    ) {
+    pub fn emit_active_editor_change(&self, document_info: Option<vy_js::DocumentInfoReply>) {
         self.script.emit_active_editor_change(document_info);
     }
 

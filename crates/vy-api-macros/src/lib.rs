@@ -247,7 +247,9 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
 
                 let adapter = format_ident!("__vy_invoke_{}", identifier);
                 let params_ts = format_ident!("__vy_params_ts_{}", identifier);
+                let params_collect = format_ident!("__vy_params_collect_{}", identifier);
                 let result_ts = format_ident!("__vy_result_ts_{}", identifier);
+                let result_collect = format_ident!("__vy_result_collect_{}", identifier);
                 let declaration =
                     format_ident!("__VY_METHOD_{}", identifier.to_string().to_uppercase());
 
@@ -257,8 +259,20 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                             fn #params_ts() -> String {
                                 ::vy_api_schema::ts_name::<#params>()
                             }
+
+                            fn #params_collect(
+                                collector: &mut ::vy_api_schema::TypeCollector,
+                            ) {
+                                ::vy_api_schema::collect::<#params>(collector);
+                            }
                         },
-                        quote! { Some(#params_ts as fn() -> String) },
+                        quote! {
+                            Some(::vy_api_schema::TypeRef {
+                                name: #params_ts as fn() -> String,
+                                collect: #params_collect
+                                    as fn(&mut ::vy_api_schema::TypeCollector),
+                            })
+                        },
                         quote! { let params: #params = crate::api::parse_params(raw)?; },
                         quote! { #identifier(call, params) },
                     ),
@@ -277,6 +291,10 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                         ::vy_api_schema::ts_name::<#value>()
                     }
 
+                    fn #result_collect(collector: &mut ::vy_api_schema::TypeCollector) {
+                        ::vy_api_schema::collect::<#value>(collector);
+                    }
+
                     fn #adapter(
                         call: &mut crate::api::Call<'_, '_>,
                         raw: &::serde_json::Value,
@@ -293,7 +311,11 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                         ::vy_api_schema::MethodDecl {
                             method: #wire,
                             params: #params_field,
-                            result: #result_ts as fn() -> String,
+                            result: ::vy_api_schema::TypeRef {
+                                name: #result_ts as fn() -> String,
+                                collect: #result_collect
+                                    as fn(&mut ::vy_api_schema::TypeCollector),
+                            },
                             doc: #doc,
                             manual: #manual,
                             typed_key: #typed_key,
@@ -339,6 +361,7 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                 let doc = doc_of(&marker.attrs);
                 let payload = event.payload;
                 let payload_fn = format_ident!("__vy_event_payload_{}", identifier);
+                let payload_collect = format_ident!("__vy_event_collect_{}", identifier);
                 let declaration = format_ident!("__VY_EVENT_{}", identifier);
                 let topic_const = format_ident!("{}_TOPIC", identifier);
 
@@ -348,12 +371,21 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                         ::vy_api_schema::ts_name::<#payload>()
                     }
 
+                    #[allow(non_snake_case)]
+                    fn #payload_collect(collector: &mut ::vy_api_schema::TypeCollector) {
+                        ::vy_api_schema::collect::<#payload>(collector);
+                    }
+
                     static #declaration: ::vy_api_schema::EventDecl =
                         ::vy_api_schema::EventDecl {
                             topic: #topic,
                             name: #name,
                             namespace: #event_namespace,
-                            payload: #payload_fn as fn() -> String,
+                            payload: ::vy_api_schema::TypeRef {
+                                name: #payload_fn as fn() -> String,
+                                collect: #payload_collect
+                                    as fn(&mut ::vy_api_schema::TypeCollector),
+                            },
                             doc: #doc,
                         };
 
