@@ -6,16 +6,55 @@ mod api {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use ts_rs::TS;
-    use vy_api_schema::{
-        EditorEditParams, EditorEditReply, EditorOpenParams, EditorSetModeParams,
-        EditorSetSelectionsParams, Mode, SelectionChange,
-    };
-    use vy_core::Selection;
+    use vy_api_schema::Mode;
+    use vy_core::{Selection, TextEdit, Uri};
     use vy_js::DocumentInfoReply;
 
     use crate::api::{Call, CallError, Reply, document_info};
     use crate::commands::DocumentCommand;
     use crate::plugin_host::HostAction;
+
+    /// `editor.setMode` parameters.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct EditorSetModeParams {
+        pub mode: Mode,
+    }
+
+    /// `editor.setSelections` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct EditorSetSelectionsParams {
+        pub selections: Vec<Selection>,
+    }
+
+    /// `editor.edit` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct EditorEditParams {
+        pub edits: Vec<TextEdit>,
+    }
+
+    /// `editor.edit` reply.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct EditorEditReply {
+        #[ts(type = "number")]
+        pub version: u64,
+    }
+
+    /// `editor.open` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct EditorOpenParams {
+        pub uri: Uri,
+        #[serde(default)]
+        #[ts(type = "number")]
+        #[ts(optional = nullable)]
+        pub pane_id: Option<u64>,
+    }
+
+    /// Payload of `editor.onDidChangeSelection`.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct SelectionChange {
+        pub selections: Vec<Selection>,
+    }
 
     /// Returns the editor mode of the focused pane.
     #[vy_api_schema::vy_api_method]
