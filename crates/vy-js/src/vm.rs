@@ -222,6 +222,11 @@ impl ScriptHost {
         self.files.snapshot()
     }
 
+    /// Loaded files whose timestamps changed since they were read.
+    pub fn changed_files(&self) -> Vec<PathBuf> {
+        self.files.changed_files()
+    }
+
     /// Queues an evaluation. Errors arrive as [`ScriptEvent::Error`].
     pub fn evaluate(&self, path: impl Into<PathBuf>, source: impl Into<String>) {
         let path = path.into();
@@ -1343,6 +1348,17 @@ globalThis.__answer = answer + extra;
         assert!(loaded.contains(&std::fs::canonicalize(&init).expect("init")));
         assert!(loaded.contains(&std::fs::canonicalize(root.join("lib/util.ts")).expect("util")));
         assert!(loaded.contains(&std::fs::canonicalize(root.join("lib/index.ts")).expect("index")));
+
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(
+            root.join("lib/util.ts"),
+            "export const answer: number = 41;\n",
+        )
+        .expect("rewrite util");
+        assert!(
+            host.changed_files()
+                .contains(&std::fs::canonicalize(root.join("lib/util.ts")).expect("util"))
+        );
 
         drop(host);
         let _ = std::fs::remove_dir_all(&root);

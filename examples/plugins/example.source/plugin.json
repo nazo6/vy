@@ -1,0 +1,19 @@
+{
+  "id": "example.source",
+  "name": "Source Plugin",
+  "version": "0.1.0",
+  "description": "Loads TypeScript sources without a build step",
+  "engines": {
+    "vy": ">=0.1.0"
+  },
+  "main": "frontend.ts",
+  "activationEvents": ["onStartup", "onCommand:example.source.hello"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "example.source.hello",
+        "title": "Source: Hello"
+      }
+    ]
+  }
+}

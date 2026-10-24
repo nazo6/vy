@@ -6,17 +6,16 @@ use vy_client_api::namespaces::commands::{
 use vy_host_api::{CallError, Reply};
 
 use super::ClientHost;
-use crate::commands::{
-    BuiltinCommand, CommandArgs, DocumentCommand, Owner, PaneCommand, UiCommand,
-};
+use crate::commands::{BuiltinCommand, CommandArgs, DocumentCommand, PaneCommand, UiCommand};
 use crate::plugin_host::HostAction;
 
 impl CommandsApi for ClientHost<'_, '_, '_> {
     fn register_command(&mut self, params: CommandsRegisterParams) -> Result<Reply<()>, CallError> {
+        let owner = self.call.context.owner.clone();
         self.call
             .context
             .commands
-            .register(params.id, Owner::Init)
+            .register(params.id, owner)
             .map_err(|error| CallError::invalid_state(error.to_string()))?;
         Ok(Reply::Value(()))
     }
@@ -45,9 +44,10 @@ impl CommandsApi for ClientHost<'_, '_, '_> {
             let args = command_args(&params.args);
             self.call.outcome.action = self.call.context.editor.execute(command, args).into();
         } else if self.call.context.commands.is_registered(&id) {
-            if let Some(script) = self.call.context.script {
-                script.execute(id.clone(), params.args);
-            }
+            self.call.outcome.action = HostAction::Execute {
+                id,
+                args: params.args.clone(),
+            };
         } else {
             return Err(CallError::invalid_state(format!("unknown command: {id}")));
         }

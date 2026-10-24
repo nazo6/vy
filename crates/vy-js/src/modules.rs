@@ -5,9 +5,10 @@
 //! checked against the root so a script cannot import files outside its
 //! directory.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::{Ctx, Error, Module, Result};
@@ -17,25 +18,46 @@ use crate::transpile::strip_types;
 /// Extensions tried when a relative import has no extension.
 const EXTENSIONS: &[&str] = &[".ts", ".js", ".mjs"];
 
-/// Files loaded by one script runtime, used to detect changes for reloads.
+/// Files loaded by one script runtime and their timestamps at load time.
+///
+/// The timestamps let the host notice a changed helper module without scanning
+/// the whole plugin directory.
 #[derive(Clone, Default)]
 pub(crate) struct ModuleFiles {
-    inner: Arc<Mutex<BTreeSet<PathBuf>>>,
+    inner: Arc<Mutex<BTreeMap<PathBuf, Option<SystemTime>>>>,
 }
 
 impl ModuleFiles {
     pub(crate) fn insert(&self, path: PathBuf) {
+        let stamp = file_stamp(&path);
         if let Ok(mut files) = self.inner.lock() {
-            files.insert(path);
+            files.insert(path, stamp);
         }
     }
 
     pub(crate) fn snapshot(&self) -> Vec<PathBuf> {
         self.inner
             .lock()
-            .map(|files| files.iter().cloned().collect())
+            .map(|files| files.keys().cloned().collect())
             .unwrap_or_default()
     }
+
+    pub(crate) fn changed_files(&self) -> Vec<PathBuf> {
+        let Ok(files) = self.inner.lock() else {
+            return Vec::new();
+        };
+        files
+            .iter()
+            .filter(|(path, recorded)| file_stamp(path) != **recorded)
+            .map(|(path, _)| path.clone())
+            .collect()
+    }
+}
+
+fn file_stamp(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
 }
 
 /// Resolver and loader for one script runtime.

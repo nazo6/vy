@@ -2,7 +2,7 @@
 
 use gpui::ScrollStrategy;
 use vy_app::commands::{
-    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, PaneCommand, UiCommand,
+    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, Owner, PaneCommand, UiCommand,
     ViewCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::editor::{Action, Key};
@@ -584,6 +584,28 @@ impl EditorView {
         }
     }
 
+    /// Runs a registered script command on the runtime that owns it.
+    pub(super) fn execute_script_command(&mut self, id: &str, args: serde_json::Value) {
+        self.activate_plugins_for_command(id);
+        let owner = self.commands.owner_of(id).cloned();
+        match owner {
+            Some(Owner::Plugin(plugin_id)) => {
+                if let Some(runtime) = self.plugin_runtimes.get(&plugin_id) {
+                    runtime.host.execute(id.to_string(), args);
+                } else {
+                    self.status = format!("{id}: plugin {plugin_id} is not running").into();
+                }
+            }
+            _ => {
+                if let Some(plugin) = self.plugin.as_ref() {
+                    plugin.execute(id.to_string(), args);
+                } else {
+                    self.status = format!("{id}: the script host is not running").into();
+                }
+            }
+        }
+    }
+
     /// Runs one command. Returns true when it continues on the script thread.
     pub(super) fn execute_invocation(&mut self, invocation: Invocation) -> bool {
         let id = invocation.id.clone();
@@ -623,22 +645,18 @@ impl EditorView {
         if self.commands.is_registered(&id) {
             // Script commands run on the script thread. Any edits they make come
             // back as host requests.
-            if let Some(plugin) = self.plugin.as_ref() {
-                let args = match &invocation.args {
-                    InvocationArgs::Script(value) => value.clone(),
-                    InvocationArgs::Keymap(args) => serde_json::json!({
-                        "count": args.count,
-                        "register": args.register.map(|register| register.to_string()),
-                    }),
-                    InvocationArgs::Ex { raw } => serde_json::json!({ "raw": raw }),
-                    InvocationArgs::None => serde_json::json!({}),
-                };
-                self.running_command = Some(id.clone());
-                plugin.execute(id.clone(), args);
-                self.status = format!("running {id}").into();
-            } else {
-                self.status = format!("{id}: the script host is not running").into();
-            }
+            let args = match &invocation.args {
+                InvocationArgs::Script(value) => value.clone(),
+                InvocationArgs::Keymap(args) => serde_json::json!({
+                    "count": args.count,
+                    "register": args.register.map(|register| register.to_string()),
+                }),
+                InvocationArgs::Ex { raw } => serde_json::json!({ "raw": raw }),
+                InvocationArgs::None => serde_json::json!({}),
+            };
+            self.running_command = Some(id.clone());
+            self.execute_script_command(&id, args);
+            self.status = format!("running {id}").into();
             return false;
         }
 

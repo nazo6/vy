@@ -77,7 +77,7 @@ Phase 8 で扱います。
     の宣言から生成する
 - [x] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
 - [x] `init.ts` の相対 TypeScript import を実装する
-- [ ] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
+- [x] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`
     とテキストオブジェクトを実装した
@@ -159,8 +159,8 @@ Phase 8 で扱います。
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
 - [x] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
-- [ ] プラグインごとに QuickJS ランタイムを分ける（グローバル `vy` の前提）
-- [ ] ソース形態の TS プラグイン（相対 import、ルート制限、リロード）を実装する
+- [x] プラグインごとに QuickJS ランタイムを分ける（グローバル `vy` の前提）
+- [x] ソース形態の TS プラグイン（相対 import、ルート制限、リロード）を実装する
       （[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
 - [ ] バンドル形態のロード時検証（残った import、サイズ、SHA-256）を実装する
 - [x] 実用プラグインの検証

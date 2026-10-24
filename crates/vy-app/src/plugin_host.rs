@@ -17,7 +17,7 @@ use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 use vy_proto::{ErrorCode, RpcCall};
 
-use crate::commands::{CommandRegistry, DocumentCommand, PaneCommand, UiCommand};
+use crate::commands::{CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand};
 use crate::config::Config;
 use crate::editor::{Action, Editor, Transaction};
 use crate::keymap::Keymap;
@@ -46,7 +46,7 @@ pub struct WorkspaceInfo {
 /// What the script thread owns plus the file stamp used for reloads.
 pub struct PluginHost {
     script: ScriptHost,
-    init_path: PathBuf,
+    entry_path: PathBuf,
     stamp: Option<SystemTime>,
     env: ScriptEnv,
 }
@@ -64,16 +64,21 @@ pub enum InitLoad {
 
 impl PluginHost {
     /// Starts the script thread. The runtime is ready before this returns.
-    pub fn spawn(env: ScriptEnv, init_path: PathBuf) -> Self {
-        let stamp = file_stamp(&init_path);
-        let stored = env.clone();
-        let root = init_path
+    pub fn spawn(env: ScriptEnv, entry_path: PathBuf) -> Self {
+        let root = entry_path
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
+        Self::spawn_in(env, entry_path, root)
+    }
+
+    /// Starts the script thread with an explicit module root.
+    pub fn spawn_in(env: ScriptEnv, entry_path: PathBuf, root: PathBuf) -> Self {
+        let stamp = file_stamp(&entry_path);
+        let stored = env.clone();
         Self {
             script: ScriptHost::spawn(env, root),
-            init_path,
+            entry_path,
             stamp,
             env: stored,
         }
@@ -97,27 +102,27 @@ impl PluginHost {
         &self.script
     }
 
-    pub fn init_path(&self) -> &Path {
-        &self.init_path
+    pub fn entry_path(&self) -> &Path {
+        &self.entry_path
     }
 
-    /// Files loaded by the script runtime, including `init.ts`.
+    /// Files loaded by the script runtime, including the entry point.
     pub fn loaded_files(&self) -> Vec<PathBuf> {
         self.script.loaded_files()
     }
 
     /// Reads and evaluates `init.ts`. Missing files are not an error.
     pub fn evaluate_init(&mut self) -> InitLoad {
-        self.stamp = file_stamp(&self.init_path);
-        match std::fs::read_to_string(&self.init_path) {
+        self.stamp = file_stamp(&self.entry_path);
+        match std::fs::read_to_string(&self.entry_path) {
             Ok(source) => {
-                self.script.evaluate(self.init_path.clone(), source);
+                self.script.evaluate(self.entry_path.clone(), source);
                 InitLoad::Loaded
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => InitLoad::Missing,
             Err(error) => InitLoad::Failed(format!(
                 "could not read {}: {error}",
-                self.init_path.display()
+                self.entry_path.display()
             )),
         }
     }
@@ -134,9 +139,9 @@ impl PluginHost {
         }
     }
 
-    /// Whether `init.ts` was added, removed, or edited since the last load.
+    /// Whether the entry or any imported module changed since it was loaded.
     pub fn changed(&self) -> bool {
-        file_stamp(&self.init_path) != self.stamp
+        file_stamp(&self.entry_path) != self.stamp || !self.script.changed_files().is_empty()
     }
 
     /// Runs a command handler registered by the script.
@@ -210,13 +215,41 @@ pub fn script_env_with_remote(
     remote: RemoteEnv,
 ) -> (ScriptEnv, Vec<String>) {
     let (store, warning) = TrustedStore::load(&paths.trusted_json());
-    // Phase 2 has no manifests; reading the store here keeps a broken file from
-    // going unnoticed and leaves the approval path in place for Phase 3.
+    // Reading the store here keeps a broken file from going unnoticed.
     let _ = store;
 
-    let env = ScriptEnv {
-        plugin_id: "init".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
+    let env = build_env(
+        "init",
+        env!("CARGO_PKG_VERSION"),
+        workspace,
+        remote,
+        Vec::new(),
+    );
+
+    (env, warning.into_iter().collect())
+}
+
+/// Builds the script environment for an activated plugin.
+pub fn plugin_script_env(
+    workspace: &WorkspaceInfo,
+    remote: RemoteEnv,
+    plugin_id: &str,
+    version: &str,
+    capabilities: Vec<String>,
+) -> ScriptEnv {
+    build_env(plugin_id, version, workspace, remote, capabilities)
+}
+
+fn build_env(
+    plugin_id: &str,
+    version: &str,
+    workspace: &WorkspaceInfo,
+    remote: RemoteEnv,
+    capabilities: Vec<String>,
+) -> ScriptEnv {
+    ScriptEnv {
+        plugin_id: plugin_id.to_string(),
+        version: version.to_string(),
         workspace: WorkspaceEnv {
             root_uri: workspace
                 .root_uri
@@ -230,11 +263,9 @@ pub fn script_env_with_remote(
                 .collect(),
             trusted: true,
         },
-        capabilities: Vec::new(),
+        capabilities,
         remote,
-    };
-
-    (env, warning.into_iter().collect())
+    }
 }
 
 /// What the view must do after a request was answered.
@@ -268,6 +299,10 @@ pub enum HostAction {
         call: RpcCall,
         request: vy_js::HostRequest,
     },
+    Execute {
+        id: String,
+        args: Value,
+    },
 }
 
 impl From<Action> for HostAction {
@@ -292,6 +327,7 @@ pub struct RequestContext<'a> {
     pub paths: &'a Paths,
     pub script: Option<&'a ScriptHost>,
     pub env: &'a ScriptEnv,
+    pub owner: Owner,
     pub statusline: Option<&'a mut Statusline>,
     pub gutter: Option<&'a mut GutterRegistry>,
     pub hover: Option<&'a mut Option<HoverState>>,
@@ -344,7 +380,7 @@ fn file_stamp(path: &Path) -> Option<SystemTime> {
 mod tests {
     use super::*;
     use crate::color::ThemeColor;
-    use crate::commands::CommandArgs;
+    use crate::commands::{CommandArgs, Owner};
     use crate::keymap::KeyContext;
     use crate::statusline::StatuslineAlignment;
     use serde_json::json;
@@ -376,6 +412,7 @@ mod tests {
             paths,
             script: None,
             env: test_env(),
+            owner: Owner::Init,
             statusline: None,
             gutter: None,
             hover: None,
@@ -563,6 +600,7 @@ vy.commands.registerCommand("user.hello", async () => {
                     paths: &paths,
                     script: Some(host.script()),
                     env: test_env(),
+                    owner: Owner::Init,
                     statusline: None,
                     gutter: None,
                     hover: None,
@@ -589,6 +627,160 @@ vy.commands.registerCommand("user.hello", async () => {
 
         drop(host);
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn plugin_runtimes_keep_their_own_source_and_owner() {
+        let base = std::env::temp_dir().join(format!("vy-plugin-runtimes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let plugin_a = base.join("plugin-a");
+        let plugin_b = base.join("plugin-b");
+        std::fs::create_dir_all(plugin_a.join("lib")).expect("create a");
+        std::fs::create_dir_all(&plugin_b).expect("create b");
+        std::fs::write(
+            plugin_a.join("lib/value.ts"),
+            "export const value: string = \"a\";\n",
+        )
+        .expect("write helper");
+        std::fs::write(
+            plugin_a.join("frontend.ts"),
+            "import { value } from \"./lib/value\";\nvy.commands.registerCommand(\"a.one\", async () => value);\n",
+        )
+        .expect("write a");
+        std::fs::write(
+            plugin_b.join("frontend.ts"),
+            "vy.commands.registerCommand(\"b.one\", async () => \"b\");\n",
+        )
+        .expect("write b");
+
+        let workspace = WorkspaceInfo::default();
+        let remote = RemoteEnv::default();
+        let env_a = plugin_script_env(&workspace, remote.clone(), "a.plugin", "0.1.0", Vec::new());
+        let env_b = plugin_script_env(&workspace, remote, "b.plugin", "0.1.0", Vec::new());
+        let a_main = plugin_a.join("frontend.ts");
+        let b_main = plugin_b.join("frontend.ts");
+        let mut host_a = PluginHost::spawn_in(env_a, a_main.clone(), plugin_a.clone());
+        let mut host_b = PluginHost::spawn_in(env_b, b_main.clone(), plugin_b);
+
+        assert_eq!(host_a.evaluate_file(a_main), InitLoad::Loaded);
+        assert_eq!(host_b.evaluate_file(b_main), InitLoad::Loaded);
+
+        let mut state = PluginTestState::new(&base);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let (mut a_done, mut b_done) = (false, false);
+
+        while std::time::Instant::now() < deadline && (!a_done || !b_done) {
+            state.drain(&host_a, Owner::Plugin("a.plugin".into()));
+            state.drain(&host_b, Owner::Plugin("b.plugin".into()));
+            for event in drain_plugin_events(&host_a) {
+                match event {
+                    ScriptEvent::Evaluated => a_done = true,
+                    ScriptEvent::Error { message } => panic!("{message}"),
+                    _ => {}
+                }
+            }
+            for event in drain_plugin_events(&host_b) {
+                match event {
+                    ScriptEvent::Evaluated => b_done = true,
+                    ScriptEvent::Error { message } => panic!("{message}"),
+                    _ => {}
+                }
+            }
+            std::thread::yield_now();
+        }
+
+        assert!(a_done && b_done, "both plugins should evaluate");
+        assert_eq!(
+            state.commands.owner_of("a.one"),
+            Some(&Owner::Plugin("a.plugin".into()))
+        );
+        assert_eq!(
+            state.commands.owner_of("b.one"),
+            Some(&Owner::Plugin("b.plugin".into()))
+        );
+
+        host_a.execute("a.one".to_string(), json!(null));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut result = None;
+        while std::time::Instant::now() < deadline {
+            state.drain(&host_a, Owner::Plugin("a.plugin".into()));
+            if let Some(event) = drain_plugin_events(&host_a)
+                .into_iter()
+                .find(|event| matches!(event, ScriptEvent::CommandFinished { .. }))
+            {
+                result = match event {
+                    ScriptEvent::CommandFinished { result, .. } => Some(result),
+                    _ => None,
+                };
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert_eq!(result, Some(json!("a")));
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(
+            base.join("plugin-a/lib/value.ts"),
+            "export const value: string = \"changed\";\n",
+        )
+        .expect("rewrite helper");
+        assert!(host_a.changed());
+
+        drop(host_a);
+        drop(host_b);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    struct PluginTestState {
+        editor: Editor,
+        config: Config,
+        keymap: Keymap,
+        commands: CommandRegistry,
+        workspace: WorkspaceInfo,
+        paths: Paths,
+    }
+
+    impl PluginTestState {
+        fn new(base: &Path) -> Self {
+            Self {
+                editor: Editor::with_text("hello\n", 1),
+                config: Config::with_defaults(),
+                keymap: Keymap::new(std::time::Duration::from_millis(1000)),
+                commands: CommandRegistry::new(),
+                workspace: WorkspaceInfo::default(),
+                paths: Paths::under(base),
+            }
+        }
+
+        fn drain(&mut self, host: &PluginHost, owner: Owner) {
+            while let Ok(request) = host.requests().try_recv() {
+                let context = RequestContext {
+                    editor: &mut self.editor,
+                    config: &mut self.config,
+                    keymap: &mut self.keymap,
+                    commands: &mut self.commands,
+                    document: None,
+                    workspace: &self.workspace,
+                    paths: &self.paths,
+                    script: Some(host.script()),
+                    env: host.env(),
+                    owner: owner.clone(),
+                    statusline: None,
+                    gutter: None,
+                    hover: None,
+                };
+                let _ = handle_request(context, request);
+            }
+        }
+    }
+
+    fn drain_plugin_events(host: &PluginHost) -> Vec<ScriptEvent> {
+        let events = host.events();
+        let mut drained = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            drained.push(event);
+        }
+        drained
     }
 
     #[test]

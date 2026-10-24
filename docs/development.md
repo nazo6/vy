@@ -75,6 +75,8 @@ pnpm check:types
   のホストは画面なしで動きます。
 - `init.ts` の相対 import は `cargo test -p vy-js` で、拡張子の補完、
   `index.*`、循環 import、ルート脱出、裸の specifier を確認します。
+- プラグインのランタイム分離と所有者は `cargo test -p vy-app --lib` の
+  `plugin_runtimes_keep_their_own_source_and_owner` で確認します。
 - プラグイン API の型は `pnpm check:types` で確かめます。
   `type-tests/commands.ts` が `Vy.CommandMap` の宣言マージ、
   `vy.commands.registerCommand`、`vy.commands.execute`、`vy.keymap.bind`

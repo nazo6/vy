@@ -97,10 +97,11 @@ impl EditorView {
     fn handle_disconnect(&mut self, cx: &mut Context<Self>) {
         self.client = None;
         for (_, pending) in self.pending.drain() {
-            if let Pending::HostCall { request } = pending {
+            if let Pending::HostCall { request, .. } = pending {
                 request.respond_error("RemoteDisconnected", "the connection to the core closed");
             }
         }
+        self.stream_owners.clear();
         self.status = format!(
             "lost the connection to {}; reconnecting",
             self.connection_name
@@ -194,7 +195,7 @@ impl EditorView {
 
         match result {
             RpcResult::Err { code, message, .. } => match pending {
-                Pending::HostCall { request } => {
+                Pending::HostCall { request, .. } => {
                     request.respond_error(&code.to_string(), message);
                 }
                 _ => {
@@ -202,9 +203,16 @@ impl EditorView {
                 }
             },
             RpcResult::Ok { value } => match pending {
-                Pending::HostCall { request } => {
+                Pending::HostCall { request, runtime } => {
                     let json_val = decode_value::<serde_json::Value>(&value)
                         .unwrap_or(serde_json::Value::Null);
+                    if let Some(pid) = json_val
+                        .get("pid")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|pid| pid as u32)
+                    {
+                        self.stream_owners.insert(pid, runtime);
+                    }
                     request.respond_value(json_val);
                 }
                 Pending::Initialize => {
@@ -249,9 +257,7 @@ impl EditorView {
 
     fn handle_stream(&mut self, stream_id: u64, payload: vy_proto::StreamPayload) {
         let pid = stream_id as u32;
-        let Some(plugin) = self.plugin.as_ref() else {
-            return;
-        };
+        let owner = self.stream_owners.get(&pid).cloned();
         match payload {
             vy_proto::StreamPayload::Chunk(val) => {
                 let json =
@@ -267,13 +273,9 @@ impl EditorView {
                     .to_string();
                 let payload = vy_host_api::process::ProcessData { pid, data };
                 if channel == "stderr" {
-                    plugin
-                        .script()
-                        .emit_event::<vy_host_api::process::OnStderr>(&payload);
+                    self.emit_process_event::<vy_host_api::process::OnStderr>(&owner, &payload);
                 } else {
-                    plugin
-                        .script()
-                        .emit_event::<vy_host_api::process::OnStdout>(&payload);
+                    self.emit_process_event::<vy_host_api::process::OnStdout>(&owner, &payload);
                 }
             }
             vy_proto::StreamPayload::End { summary } => {
@@ -281,19 +283,22 @@ impl EditorView {
                     .and_then(|s| decode_value::<serde_json::Value>(&s))
                     .and_then(|s| s.get("exit_code").and_then(|v| v.as_i64()))
                     .unwrap_or(0) as i32;
-                plugin.script().emit_event::<vy_host_api::process::OnExit>(
+                self.emit_process_event::<vy_host_api::process::OnExit>(
+                    &owner,
                     &vy_host_api::process::ProcessExit { pid, exit_code },
                 );
+                self.stream_owners.remove(&pid);
             }
             vy_proto::StreamPayload::Error { message, .. } => {
-                plugin
-                    .script()
-                    .emit_event::<vy_host_api::process::OnStderr>(
-                        &vy_host_api::process::ProcessData { pid, data: message },
-                    );
-                plugin.script().emit_event::<vy_host_api::process::OnExit>(
+                self.emit_process_event::<vy_host_api::process::OnStderr>(
+                    &owner,
+                    &vy_host_api::process::ProcessData { pid, data: message },
+                );
+                self.emit_process_event::<vy_host_api::process::OnExit>(
+                    &owner,
                     &vy_host_api::process::ProcessExit { pid, exit_code: -1 },
                 );
+                self.stream_owners.remove(&pid);
             }
         }
     }

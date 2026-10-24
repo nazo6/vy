@@ -143,6 +143,15 @@ impl PluginManager {
         warnings
     }
 
+    /// Returns the capabilities approved for a plugin.
+    pub fn capabilities(&self, plugin_id: &str) -> Vec<String> {
+        self.trusted_store
+            .granted(plugin_id)
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
     /// Returns the next pending approval request, if any.
     pub fn next_approval_request(&self) -> Option<&PluginApprovalRequest> {
         self.approval_queue.front()

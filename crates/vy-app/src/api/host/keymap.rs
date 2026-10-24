@@ -6,20 +6,15 @@ use vy_client_api::namespaces::keymap::{
 use vy_host_api::{CallError, Reply};
 
 use super::ClientHost;
-use crate::commands::Owner;
 use crate::when;
 
 impl KeymapApi for ClientHost<'_, '_, '_> {
     fn bind(&mut self, params: KeymapBindParams) -> Result<Reply<()>, CallError> {
+        let owner = self.call.context.owner.clone();
         self.call
             .context
             .keymap
-            .bind(
-                &params.keys,
-                params.command,
-                params.when.as_deref(),
-                Owner::Init,
-            )
+            .bind(&params.keys, params.command, params.when.as_deref(), owner)
             .map_err(|error| CallError::invalid_state(error.to_string()))?;
         Ok(Reply::Value(()))
     }

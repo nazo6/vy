@@ -6,7 +6,6 @@
 
 use serde_json::Value;
 use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
-use vy_capabilities::TrustedStore;
 use vy_core::Uri;
 use vy_js::DocumentInfoReply;
 use vy_js::HostRequest;
@@ -37,12 +36,17 @@ pub(crate) fn document_info(editor: &Editor, document: &DocumentInfo) -> Documen
 
 /// Validates the capability a file or process operation asks for.
 ///
-/// Phase 2 has no manifests, so this only rejects malformed capability names.
+/// `init.ts` is always trusted. Plugins may only use the capabilities recorded
+/// in `trusted.json`, which the view passes through `ScriptEnv`.
 pub(crate) fn check_capability(
     context: &RequestContext<'_>,
     kind: &str,
     target: Option<&str>,
 ) -> Result<(), CallError> {
+    if context.owner == crate::commands::Owner::Init {
+        return Ok(());
+    }
+
     let request = match target {
         Some(target) => {
             // Capability patterns use paths (`${workspace}/**`), while the API
@@ -75,8 +79,14 @@ pub(crate) fn check_capability(
         dirs::home_dir(),
     );
 
-    let (store, _) = TrustedStore::load(&context.paths.trusted_json());
-    let _ = (store, roots, requested);
+    let granted = vy_capabilities::CapabilitySet::from_declarations(&context.env.capabilities)
+        .map_err(|error| CallError::invalid_params(error.to_string()))?;
+    if !granted.has(&requested, &roots) {
+        return Err(CallError::new(
+            vy_proto::ErrorCode::CapabilityDenied,
+            format!("capability denied: {requested}"),
+        ));
+    }
     Ok(())
 }
 

@@ -3,12 +3,13 @@
 use std::time::Duration;
 
 use gpui::Context;
-use vy_app::commands::Invocation;
+use vy_app::commands::{Invocation, Owner};
+use vy_app::plugin::DiscoveredPlugin;
 use vy_app::plugin_host::{self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext};
 use vy_core::Uri;
 use vy_js::{HostRequest, ScriptEvent};
 
-use super::{EditorView, Pending};
+use super::{EditorView, Pending, PluginRuntime};
 
 impl EditorView {
     pub(super) fn start_script(&mut self, cx: &mut Context<Self>) {
@@ -50,6 +51,89 @@ impl EditorView {
         .detach();
     }
 
+    /// Polls for plugin runtimes that were created outside a GPUI task and
+    /// starts their event and request pumps.
+    pub(super) fn start_plugin_supervisor(&self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                let updated = this.update(cx, |this, cx| this.start_pending_plugins(cx));
+                if updated.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn start_pending_plugins(&mut self, cx: &mut Context<Self>) {
+        let pending: Vec<String> = self
+            .plugin_runtimes
+            .iter()
+            .filter(|(_, runtime)| !runtime.started)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for plugin_id in pending {
+            if let Some(runtime) = self.plugin_runtimes.get_mut(&plugin_id) {
+                runtime.started = true;
+            }
+            self.start_plugin_script(&plugin_id, cx);
+        }
+    }
+
+    fn start_plugin_script(&mut self, plugin_id: &str, cx: &mut Context<Self>) {
+        let Some(runtime) = self.plugin_runtimes.get(plugin_id) else {
+            return;
+        };
+        let events = runtime.host.events();
+        let requests = runtime.host.requests();
+        let generation = runtime.generation;
+
+        let id = plugin_id.to_string();
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = events.recv().await {
+                let id = id.clone();
+                let updated = this.update(cx, |this, cx| {
+                    let active = this
+                        .plugin_runtimes
+                        .get(&id)
+                        .is_some_and(|runtime| runtime.generation == generation);
+                    if active {
+                        this.handle_plugin_script_event(&id, event);
+                        cx.notify();
+                    }
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+
+        let id = plugin_id.to_string();
+        cx.spawn(async move |this, cx| {
+            while let Ok(request) = requests.recv().await {
+                let id = id.clone();
+                let updated = this.update(cx, |this, cx| {
+                    let active = this
+                        .plugin_runtimes
+                        .get(&id)
+                        .is_some_and(|runtime| runtime.generation == generation);
+                    if active {
+                        this.handle_plugin_host_request(&id, request);
+                        cx.notify();
+                    }
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
     /// Starts a fresh runtime and evaluates `init.ts`. Registrations from the
     /// previous runtime are dropped first.
     pub(super) fn reload_init(&mut self, cx: &mut Context<Self>) {
@@ -72,6 +156,24 @@ impl EditorView {
         self.script_generation += 1;
         self.start_script(cx);
         self.evaluate_init();
+    }
+
+    /// Replaces one plugin runtime after its source changed.
+    pub(super) fn reload_plugin(&mut self, plugin_id: &str) {
+        let Some(plugin) = self
+            .plugin_manager
+            .state(plugin_id)
+            .map(|state| state.plugin().clone())
+        else {
+            return;
+        };
+        let owner = Owner::Plugin(plugin_id.to_string());
+        self.commands.unregister_owner(&owner);
+        self.keymap.unbind_owner(&owner);
+        self.plugin_runtimes.remove(plugin_id);
+        self.plugin_manager.mark_active(plugin_id);
+        self.register_contributed_commands();
+        self.evaluate_discovered_plugin(&plugin);
     }
 
     /// Hands `init.ts` to the script thread. Missing files are not an error.
@@ -173,24 +275,80 @@ impl EditorView {
         }
     }
 
-    /// Evaluates a single discovered plugin's frontend entry point.
-    pub(super) fn evaluate_discovered_plugin(&mut self, plugin: &vy_app::plugin::DiscoveredPlugin) {
+    /// Creates a runtime for one plugin and evaluates its frontend entry point.
+    pub(super) fn evaluate_discovered_plugin(&mut self, plugin: &DiscoveredPlugin) {
         let Some(main) = plugin.main_path() else {
             return;
         };
-        let Some(host) = self.plugin.as_mut() else {
+        let plugin_id = plugin.manifest.id.clone();
+        if self.plugin_runtimes.contains_key(&plugin_id) {
             return;
-        };
+        }
+
+        let env = plugin_host::plugin_script_env(
+            &self.workspace_info(),
+            self.remote_env(),
+            &plugin_id,
+            &plugin.manifest.version,
+            self.plugin_manager.capabilities(&plugin_id),
+        );
+        let mut host = PluginHost::spawn_in(env, main.clone(), plugin.dir.clone());
 
         match host.evaluate_file(main) {
             InitLoad::Loaded => {
-                eprintln!("vy: loaded plugin '{}'", plugin.manifest.id);
+                eprintln!("vy: loaded plugin '{plugin_id}'");
             }
             InitLoad::Missing => {
-                eprintln!("vy: plugin '{}' main entry not found", plugin.manifest.id);
+                eprintln!("vy: plugin '{plugin_id}' main entry not found");
+                self.plugin_manager
+                    .mark_failed(&plugin_id, "main entry not found".to_string());
+                return;
             }
-            InitLoad::Failed(msg) => {
-                eprintln!("vy: plugin '{}' failed: {msg}", plugin.manifest.id);
+            InitLoad::Failed(message) => {
+                eprintln!("vy: plugin '{plugin_id}' failed: {message}");
+                self.plugin_manager.mark_failed(&plugin_id, message);
+                return;
+            }
+        }
+
+        self.next_plugin_generation += 1;
+        let generation = self.next_plugin_generation;
+        self.plugin_runtimes.insert(
+            plugin_id,
+            PluginRuntime {
+                host,
+                generation,
+                started: false,
+            },
+        );
+    }
+
+    pub(super) fn handle_plugin_script_event(&mut self, plugin_id: &str, event: ScriptEvent) {
+        match event {
+            ScriptEvent::Evaluated => {
+                self.status = format!("plugin {plugin_id} loaded").into();
+            }
+            ScriptEvent::EvalFinished { result } => {
+                self.status = result.into();
+            }
+            ScriptEvent::CommandFinished { id, .. } => {
+                if self.frame_log {
+                    eprintln!("vy: command {id} finished");
+                }
+                if self.running_command.as_deref() == Some(id.as_str()) {
+                    self.running_command = None;
+                    self.drain_command_queue();
+                }
+            }
+            ScriptEvent::Error { message } => {
+                eprintln!("vy: plugin {plugin_id}: {message}");
+                self.status = format!("plugin {plugin_id}: {message}").into();
+                if self.running_command.take().is_some() {
+                    self.drain_command_queue();
+                }
+            }
+            ScriptEvent::Stopped => {
+                self.status = format!("plugin {plugin_id} stopped").into();
             }
         }
     }
@@ -233,12 +391,38 @@ impl EditorView {
 
     /// Answers a call from the shim with the current client state.
     pub(super) fn handle_host_request(&mut self, request: HostRequest) {
+        self.handle_host_request_for(None, request);
+    }
+
+    pub(super) fn handle_plugin_host_request(&mut self, plugin_id: &str, request: HostRequest) {
+        self.handle_host_request_for(Some(plugin_id), request);
+    }
+
+    fn handle_host_request_for(&mut self, plugin_id: Option<&str>, request: HostRequest) {
         self.activate_active_view();
         let document = self.document_info();
         let workspace = self.workspace_info();
-        let Some(plugin) = self.plugin.as_ref() else {
-            request.respond_error("RemoteDisconnected", "the script host is not running");
-            return;
+
+        let (script, env, owner) = match plugin_id {
+            Some(plugin_id) => {
+                let Some(runtime) = self.plugin_runtimes.get(plugin_id) else {
+                    request
+                        .respond_error("RemoteDisconnected", "the plugin runtime is not running");
+                    return;
+                };
+                (
+                    runtime.host.script(),
+                    runtime.host.env(),
+                    Owner::Plugin(plugin_id.to_string()),
+                )
+            }
+            None => {
+                let Some(plugin) = self.plugin.as_ref() else {
+                    request.respond_error("RemoteDisconnected", "the script host is not running");
+                    return;
+                };
+                (plugin.script(), plugin.env(), Owner::Init)
+            }
         };
 
         let editor = {
@@ -256,8 +440,9 @@ impl EditorView {
             document,
             workspace: &workspace,
             paths: &self.paths,
-            script: Some(plugin.script()),
-            env: plugin.env(),
+            script: Some(script),
+            env,
+            owner,
             statusline: Some(&mut self.statusline),
             gutter: Some(&mut self.gutter),
             hover: Some(&mut self.hover),
@@ -269,7 +454,7 @@ impl EditorView {
         }
 
         if !outcome.config_changed.is_empty() {
-            plugin.emit_config_change(outcome.config_changed.clone());
+            self.emit_config_change_to_scripts(outcome.config_changed.clone());
             let idle = Duration::from_millis(self.config.transaction_idle_ms());
             let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
             self.set_transaction_idle(idle);
@@ -322,11 +507,60 @@ impl EditorView {
                     return;
                 };
                 let id = client.request_call(call);
-                self.pending.insert(id, Pending::HostCall { request });
+                self.pending.insert(
+                    id,
+                    Pending::HostCall {
+                        request,
+                        runtime: plugin_id.map(str::to_string),
+                    },
+                );
             }
+            HostAction::Execute { id, args } => self.execute_script_command(&id, args),
         }
 
         self.ensure_cursor_visible();
+    }
+
+    /// Sends a config change to every script runtime.
+    pub(super) fn emit_config_change_to_scripts(&self, keys: Vec<String>) {
+        if let Some(plugin) = self.plugin.as_ref() {
+            plugin.emit_config_change(keys.clone());
+        }
+        for runtime in self.plugin_runtimes.values() {
+            runtime.host.emit_config_change(keys.clone());
+        }
+    }
+
+    /// Sends one typed event to every script runtime.
+    pub(super) fn emit_to_scripts<E: vy_host_api::HostEvent>(&self, payload: &E::Payload) {
+        if let Some(plugin) = self.plugin.as_ref() {
+            plugin.script().emit_event::<E>(payload);
+        }
+        for runtime in self.plugin_runtimes.values() {
+            runtime.host.script().emit_event::<E>(payload);
+        }
+    }
+
+    /// Sends a process event to the runtime that spawned the process. A stream
+    /// without a recorded owner falls back to every runtime.
+    pub(super) fn emit_process_event<E: vy_host_api::HostEvent>(
+        &self,
+        owner: &Option<Option<String>>,
+        payload: &E::Payload,
+    ) {
+        match owner {
+            Some(Some(plugin_id)) => {
+                if let Some(runtime) = self.plugin_runtimes.get(plugin_id) {
+                    runtime.host.script().emit_event::<E>(payload);
+                }
+            }
+            Some(None) => {
+                if let Some(plugin) = self.plugin.as_ref() {
+                    plugin.script().emit_event::<E>(payload);
+                }
+            }
+            None => self.emit_to_scripts::<E>(payload),
+        }
     }
 
     pub(super) fn document_info(&self) -> Option<DocumentInfo> {
@@ -339,12 +573,9 @@ impl EditorView {
         })
     }
 
-    /// Checks if active editor or selections changed and emits events to the script thread.
+    /// Checks if active editor or selections changed and emits events to every
+    /// script runtime.
     pub(super) fn check_and_emit_editor_events(&mut self) {
-        let Some(plugin) = self.plugin.as_ref() else {
-            return;
-        };
-
         // 1. Check active document change
         let current_doc_id = self.active_document().map(|d| d.id);
         if current_doc_id != self.last_reported_document_id {
@@ -357,14 +588,26 @@ impl EditorView {
                 line_count: self.editor().line_count(),
                 end: self.editor().position_at_utf16(self.editor().len_utf16()),
             });
-            plugin.emit_active_editor_change(info);
+            if let Some(plugin) = self.plugin.as_ref() {
+                plugin.emit_active_editor_change(info.clone());
+            }
+            for runtime in self.plugin_runtimes.values() {
+                runtime.host.emit_active_editor_change(info.clone());
+            }
         }
 
         // 2. Check selections change
         let current_selections = self.editor().selections().to_vec();
         if self.last_reported_selections.as_ref() != Some(&current_selections) {
             self.last_reported_selections = Some(current_selections.clone());
-            plugin.emit_selection_change(current_selections);
+            if let Some(plugin) = self.plugin.as_ref() {
+                plugin.emit_selection_change(current_selections.clone());
+            }
+            for runtime in self.plugin_runtimes.values() {
+                runtime
+                    .host
+                    .emit_selection_change(current_selections.clone());
+            }
         }
     }
 }

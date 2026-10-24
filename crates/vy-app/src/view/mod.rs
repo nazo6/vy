@@ -48,7 +48,17 @@ pub(super) enum Pending {
     Focus,
     EditorOpen,
     Save,
-    HostCall { request: vy_js::HostRequest },
+    HostCall {
+        request: vy_js::HostRequest,
+        runtime: Option<String>,
+    },
+}
+
+/// One plugin runtime and the generation used to stop its old pumps.
+pub(super) struct PluginRuntime {
+    pub(super) host: PluginHost,
+    pub(super) generation: u64,
+    pub(super) started: bool,
 }
 
 pub struct EditorView {
@@ -76,6 +86,10 @@ pub struct EditorView {
     plugin_manager: PluginManager,
     /// The script thread and `init.ts` bookkeeping.
     plugin: Option<PluginHost>,
+    /// Script runtimes for active plugins, keyed by plugin id.
+    plugin_runtimes: HashMap<String, PluginRuntime>,
+    /// Bumped for every plugin runtime so old pumps stop.
+    next_plugin_generation: u64,
     /// Bumped whenever the script thread is replaced, so old pumps stop.
     script_generation: u64,
     /// Whether `init.ts` was evaluated since the last document load.
@@ -119,6 +133,8 @@ pub struct EditorView {
     last_reported_selections: Option<Vec<vy_core::Selection>>,
     pub(super) pending_view_for_next_open: Option<String>,
     pub(super) view_widget_trees: HashMap<String, vy_app::widget::WidgetNode>,
+    /// Which runtime spawned each process, so stream events go to its owner.
+    pub(super) stream_owners: HashMap<u32, Option<String>>,
 }
 
 impl EditorView {
@@ -193,6 +209,8 @@ impl EditorView {
             commands: CommandRegistry::new(),
             plugin_manager,
             plugin,
+            plugin_runtimes: HashMap::new(),
+            next_plugin_generation: 0,
             script_generation: 0,
             init_evaluated: false,
             initial_uri: uri,
@@ -224,6 +242,7 @@ impl EditorView {
             last_reported_selections: None,
             pending_view_for_next_open: None,
             view_widget_trees: HashMap::new(),
+            stream_owners: HashMap::new(),
         };
 
         if let Some(warning) = warnings.last() {
@@ -232,6 +251,7 @@ impl EditorView {
         view.connect(cx);
         view.start_config_watch(cx);
         view.start_script(cx);
+        view.start_plugin_supervisor(cx);
         view
     }
 
@@ -413,6 +433,15 @@ impl EditorView {
                     if this.plugin.as_ref().is_some_and(PluginHost::changed) {
                         this.reload_init(cx);
                     }
+                    let reload_plugins: Vec<String> = this
+                        .plugin_runtimes
+                        .iter()
+                        .filter(|(_, runtime)| runtime.host.changed())
+                        .map(|(id, _)| id.clone())
+                        .collect();
+                    for plugin_id in reload_plugins {
+                        this.reload_plugin(&plugin_id);
+                    }
                     if config_changed {
                         cx.notify();
                     }
@@ -450,10 +479,8 @@ impl EditorView {
         if let Some(key) = changed.last().cloned() {
             self.status = format!("settings: {key} changed").into();
         }
-        if !changed.is_empty()
-            && let Some(plugin) = self.plugin.as_ref()
-        {
-            plugin.emit_config_change(changed);
+        if !changed.is_empty() {
+            self.emit_config_change_to_scripts(changed);
         }
         true
     }
