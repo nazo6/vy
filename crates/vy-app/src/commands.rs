@@ -641,6 +641,10 @@ impl CommandRegistry {
         }
         if let Some(existing_owner) = self.scripts.get(id.as_str()) {
             match (existing_owner, &owner) {
+                (Owner::Plugin(_), Owner::Init) => {
+                    // Allowed: script runtime implementing a contributed command
+                    return Ok(());
+                }
                 (Owner::Plugin(p1), Owner::Plugin(p2)) if p1 == p2 => {
                     // Allowed: plugin implementing its own contributed command
                 }
@@ -958,6 +962,27 @@ mod tests {
         ));
         assert!(registry.is_registered("vy.history.undo"));
         assert!(registry.is_registered("user.first"));
+    }
+
+    #[test]
+    fn allows_contributed_command_handler_registration() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_contributed(
+                "example.tree.toggle",
+                "File Explorer: Toggle",
+                "example.tree",
+            )
+            .expect("contribute");
+        assert!(registry.is_registered("example.tree.toggle"));
+
+        // Script runtime registers implementation handler
+        assert!(
+            registry
+                .register("example.tree.toggle", Owner::Init)
+                .is_ok()
+        );
+        assert!(registry.is_registered("example.tree.toggle"));
     }
 
     #[test]

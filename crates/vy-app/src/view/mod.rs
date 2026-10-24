@@ -101,6 +101,7 @@ pub struct EditorView {
     last_reported_document_id: Option<u64>,
     last_reported_selections: Option<Vec<vy_core::Selection>>,
     pub(super) pending_view_for_next_open: Option<String>,
+    pub(super) view_widget_trees: HashMap<String, vy_app::widget::WidgetNode>,
 }
 
 impl EditorView {
@@ -190,6 +191,7 @@ impl EditorView {
             last_reported_document_id: None,
             last_reported_selections: None,
             pending_view_for_next_open: None,
+            view_widget_trees: HashMap::new(),
         };
 
         match Client::spawn() {

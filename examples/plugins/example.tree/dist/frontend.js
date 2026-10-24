@@ -18,8 +18,10 @@ async function loadDirectory(dirUri) {
     const entries = await fs.readDir(dirUri);
     // Sort: directories first, then alphabetical by name
     entries.sort((a, b) => {
-      if (a.is_directory !== b.is_directory) {
-        return a.is_directory ? -1 : 1;
+      const aDir = Boolean(a.is_directory || a.isDirectory);
+      const bDir = Boolean(b.is_directory || b.isDirectory);
+      if (aDir !== bDir) {
+        return aDir ? -1 : 1;
       }
       return a.name.localeCompare(b.name);
     });
@@ -48,7 +50,8 @@ function renderTree(dirUri, depth = 0) {
 
   for (const entry of entries) {
     const indent = "  ".repeat(depth);
-    if (entry.is_directory) {
+    const isDir = Boolean(entry.is_directory || entry.isDirectory);
+    if (isDir) {
       const isExpanded = expandedDirs.has(entry.uri);
       const icon = isExpanded ? "▾ 📁 " : "▸ 📁 ";
       nodes.push(

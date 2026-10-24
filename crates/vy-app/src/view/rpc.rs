@@ -228,6 +228,7 @@ impl EditorView {
                 let pane = entry.get_mut();
                 pane.document_id = Some(document_id);
                 if let Some(view_type) = self.pending_view_for_next_open.take() {
+                    pane.widget_tree = self.view_widget_trees.get(&view_type).cloned();
                     pane.view_type = view_type;
                 }
             }
@@ -236,6 +237,7 @@ impl EditorView {
                 pane.view = inherited;
                 pane.scroll_top = inherited_scroll;
                 if let Some(view_type) = self.pending_view_for_next_open.take() {
+                    pane.widget_tree = self.view_widget_trees.get(&view_type).cloned();
                     pane.view_type = view_type;
                 }
                 entry.insert(pane);

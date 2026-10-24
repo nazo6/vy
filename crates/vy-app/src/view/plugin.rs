@@ -297,21 +297,12 @@ impl EditorView {
             }
             HostAction::RenderWidgetTree { view_id, tree } => {
                 self.activate_plugins_for_view(&view_id);
-                let mut updated = false;
                 for pane in self.panes.values_mut() {
-                    if pane.view_type == view_id || pane.view_type == "ui" {
-                        pane.view_type = view_id.clone();
+                    if pane.view_type == view_id {
                         pane.widget_tree = Some(tree.clone());
-                        updated = true;
                     }
                 }
-                if !updated
-                    && let Some(pane_id) = self.active_pane
-                    && let Some(pane) = self.panes.get_mut(&pane_id)
-                {
-                    pane.view_type = view_id;
-                    pane.widget_tree = Some(tree);
-                }
+                self.view_widget_trees.insert(view_id, tree);
             }
             HostAction::ShowPicker {
                 id,
