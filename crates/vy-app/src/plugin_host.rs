@@ -152,6 +152,24 @@ impl PluginHost {
         self.script.emit_config_change(keys);
     }
 
+    /// Tells the script that the active editor's selections changed.
+    pub fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
+        self.script.emit_selection_change(selections);
+    }
+
+    /// Tells the script that the active editor/document changed.
+    pub fn emit_active_editor_change(
+        &self,
+        document_info: Option<vy_api_schema::DocumentInfoReply>,
+    ) {
+        self.script.emit_active_editor_change(document_info);
+    }
+
+    /// Tells the script that workspace folders changed.
+    pub fn emit_workspace_folders_change(&self, folders: Vec<String>) {
+        self.script.emit_workspace_folders_change(folders);
+    }
+
     pub fn is_running(&self) -> bool {
         self.script.is_running()
     }

@@ -63,6 +63,8 @@ impl EditorView {
         if let Some(pane) = self.active_pane_state_mut() {
             pane.scroll_top = next;
         }
+
+        self.check_and_emit_editor_events();
     }
 
     pub(super) fn clamp_scroll(&mut self) {
@@ -84,6 +86,8 @@ impl EditorView {
         if let Some(pane) = self.active_pane_state_mut() {
             pane.scroll_top = next;
         }
+
+        self.check_and_emit_editor_events();
     }
 }
 

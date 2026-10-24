@@ -320,6 +320,37 @@ impl EditorView {
             language_id,
         })
     }
+
+    /// Checks if active editor or selections changed and emits events to the script thread.
+    pub(super) fn check_and_emit_editor_events(&mut self) {
+        let Some(plugin) = self.plugin.as_ref() else {
+            return;
+        };
+
+        // 1. Check active document change
+        let current_doc_id = self.active_document().map(|d| d.id);
+        if current_doc_id != self.last_reported_document_id {
+            self.last_reported_document_id = current_doc_id;
+            let info = self
+                .document_info()
+                .map(|doc| vy_api_schema::DocumentInfoReply {
+                    id: doc.id,
+                    uri: doc.uri.clone(),
+                    language_id: doc.language_id.clone(),
+                    version: self.editor().version(),
+                    line_count: self.editor().line_count(),
+                    end: self.editor().position_at_utf16(self.editor().len_utf16()),
+                });
+            plugin.emit_active_editor_change(info);
+        }
+
+        // 2. Check selections change
+        let current_selections = self.editor().selections().to_vec();
+        if self.last_reported_selections.as_ref() != Some(&current_selections) {
+            self.last_reported_selections = Some(current_selections.clone());
+            plugin.emit_selection_change(current_selections);
+        }
+    }
 }
 
 /// Detects a basic language identifier from a file URI or path extension.

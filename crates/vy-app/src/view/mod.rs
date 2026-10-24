@@ -97,6 +97,8 @@ pub struct EditorView {
     gutter: GutterRegistry,
     /// Hover popup currently displayed, if any.
     hover: Option<HoverState>,
+    last_reported_document_id: Option<u64>,
+    last_reported_selections: Option<Vec<vy_core::Selection>>,
 }
 
 impl EditorView {
@@ -183,6 +185,8 @@ impl EditorView {
             statusline: Statusline::new(),
             gutter: GutterRegistry::new(),
             hover: None,
+            last_reported_document_id: None,
+            last_reported_selections: None,
         };
 
         match Client::spawn() {

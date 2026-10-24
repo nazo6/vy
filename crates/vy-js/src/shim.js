@@ -163,6 +163,46 @@ keymap.bind = (keys, command, options) => {
 // --- config -----------------------------------------------------------------
 
 const configListeners = [];
+const activeDocumentListeners = [];
+const selectionListeners = [];
+const workspaceFolderListeners = [];
+
+// Called by the host when the active editor/document changes.
+globalThis.__vy_emit_active_editor_change = (docJson) => {
+  const info = docJson ? JSON.parse(docJson) : null;
+  const doc = info ? makeDocument(info) : null;
+  for (const listener of activeDocumentListeners) {
+    try {
+      listener(doc);
+    } catch (error) {
+      console.error(`editor.onDidChangeActiveEditor listener failed: ${error}`);
+    }
+  }
+};
+
+// Called by the host when selections in the active editor change.
+globalThis.__vy_emit_selection_change = (selectionsJson) => {
+  const selections = JSON.parse(selectionsJson);
+  for (const listener of selectionListeners) {
+    try {
+      listener({ selections });
+    } catch (error) {
+      console.error(`editor.onDidChangeSelection listener failed: ${error}`);
+    }
+  }
+};
+
+// Called by the host when workspace folders change.
+globalThis.__vy_emit_workspace_folders_change = (foldersJson) => {
+  const folders = JSON.parse(foldersJson);
+  for (const listener of workspaceFolderListeners) {
+    try {
+      listener({ folders });
+    } catch (error) {
+      console.error(`workspace.onDidChangeWorkspaceFolders listener failed: ${error}`);
+    }
+  }
+};
 
 // Called by the host after a settings reload. Prefixes match nested keys.
 globalThis.__vy_emit_config_change = (keysJson) => {
@@ -229,9 +269,41 @@ editor.edit = (input) => {
   return call("editor.edit", { edits: input || [] });
 };
 
+editor.onDidChangeActiveDocument = (listener) => {
+  activeDocumentListeners.push(listener);
+  return {
+    dispose() {
+      const index = activeDocumentListeners.indexOf(listener);
+      if (index >= 0) activeDocumentListeners.splice(index, 1);
+    },
+  };
+};
+editor.onDidChangeActiveEditor = editor.onDidChangeActiveDocument;
+
+editor.onDidChangeSelection = (listener) => {
+  selectionListeners.push(listener);
+  return {
+    dispose() {
+      const index = selectionListeners.indexOf(listener);
+      if (index >= 0) selectionListeners.splice(index, 1);
+    },
+  };
+};
+
 // --- workspace --------------------------------------------------------------
 
 workspace.textDocuments = async () => call("workspace.textDocuments", {}).map(makeDocument);
+
+workspace.onDidChangeWorkspaceFolders = (listener) => {
+  workspaceFolderListeners.push(listener);
+  return {
+    dispose() {
+      const index = workspaceFolderListeners.indexOf(listener);
+      if (index >= 0) workspaceFolderListeners.splice(index, 1);
+    },
+  };
+};
+workspace.onDidChangeFolders = workspace.onDidChangeWorkspaceFolders;
 
 // --- notifications, logs ----------------------------------------------------
 

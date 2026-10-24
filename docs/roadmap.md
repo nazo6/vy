@@ -138,7 +138,7 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
 
 - [x] 外部プラグインのマニフェスト読み込みと初回の承認 UI（`trusted.json` の対話的承認）
 - [x] `activationEvents` による遅延読み込み（`onView:xxx`、`onCommand:xxx`）
-- [ ] エディタとワークスペースのイベント通知 API
+- [x] エディタとワークスペースのイベント通知 API
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
 - [ ] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）

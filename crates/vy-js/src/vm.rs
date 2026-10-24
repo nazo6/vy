@@ -76,6 +76,18 @@ pub enum ScriptTask {
     EmitConfigChange {
         keys: Vec<String>,
     },
+    /// Tells the script that selections in the active editor changed.
+    EmitSelectionChange {
+        selections: Vec<vy_core::Selection>,
+    },
+    /// Tells the script that the active editor or document changed.
+    EmitActiveEditorChange {
+        document_info: Option<vy_api_schema::DocumentInfoReply>,
+    },
+    /// Tells the script that workspace folders changed.
+    EmitWorkspaceFoldersChange {
+        folders: Vec<String>,
+    },
     /// Evaluates a JavaScript/TypeScript expression or script in the global context.
     Eval {
         source: String,
@@ -222,6 +234,30 @@ impl ScriptHost {
         let _ = self
             .tasks
             .send_blocking(ScriptTask::EmitConfigChange { keys });
+    }
+
+    /// Tells the script that the active editor's selections changed.
+    pub fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
+        let _ = self
+            .tasks
+            .send_blocking(ScriptTask::EmitSelectionChange { selections });
+    }
+
+    /// Tells the script that the active editor/document changed.
+    pub fn emit_active_editor_change(
+        &self,
+        document_info: Option<vy_api_schema::DocumentInfoReply>,
+    ) {
+        let _ = self
+            .tasks
+            .send_blocking(ScriptTask::EmitActiveEditorChange { document_info });
+    }
+
+    /// Tells the script that workspace folders changed.
+    pub fn emit_workspace_folders_change(&self, folders: Vec<String>) {
+        let _ = self
+            .tasks
+            .send_blocking(ScriptTask::EmitWorkspaceFoldersChange { folders });
     }
 
     /// Evaluates a JavaScript/TypeScript code snippet in the script context.
@@ -428,16 +464,36 @@ fn run_task(
         }
         ScriptTask::EmitConfigChange { keys } => {
             let json = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string());
-            let result = with_deadline(deadline, EVALUATION_TIMEOUT, || {
-                let function: Function = ctx.globals().get("__vy_emit_config_change")?;
-                let value: JsValue = function.call((json,))?;
-                if let Some(promise) = value.as_promise() {
-                    promise.finish::<()>()?;
-                }
-                drain_jobs(&ctx);
-                Ok(())
-            });
-            if let Err(error) = result {
+            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_config_change", json) {
+                let _ = events.send_blocking(ScriptEvent::Error {
+                    message: describe_error(&ctx, error),
+                });
+            }
+        }
+        ScriptTask::EmitSelectionChange { selections } => {
+            let json = serde_json::to_string(&selections).unwrap_or_else(|_| "[]".to_string());
+            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_selection_change", json)
+            {
+                let _ = events.send_blocking(ScriptEvent::Error {
+                    message: describe_error(&ctx, error),
+                });
+            }
+        }
+        ScriptTask::EmitActiveEditorChange { document_info } => {
+            let json = serde_json::to_string(&document_info).unwrap_or_else(|_| "null".to_string());
+            if let Err(error) =
+                call_global_emit(&ctx, deadline, "__vy_emit_active_editor_change", json)
+            {
+                let _ = events.send_blocking(ScriptEvent::Error {
+                    message: describe_error(&ctx, error),
+                });
+            }
+        }
+        ScriptTask::EmitWorkspaceFoldersChange { folders } => {
+            let json = serde_json::to_string(&folders).unwrap_or_else(|_| "[]".to_string());
+            if let Err(error) =
+                call_global_emit(&ctx, deadline, "__vy_emit_workspace_folders_change", json)
+            {
                 let _ = events.send_blocking(ScriptEvent::Error {
                     message: describe_error(&ctx, error),
                 });
@@ -499,6 +555,23 @@ fn with_deadline<T>(
     let result = body();
     deadline.store(0, Ordering::Relaxed);
     result
+}
+
+fn call_global_emit(
+    ctx: &Ctx<'_>,
+    deadline: &Arc<AtomicU64>,
+    function_name: &str,
+    json: String,
+) -> rquickjs::Result<()> {
+    with_deadline(deadline, EVALUATION_TIMEOUT, || {
+        let function: Function = ctx.globals().get(function_name)?;
+        let value: JsValue = function.call((json,))?;
+        if let Some(promise) = value.as_promise() {
+            promise.finish::<()>()?;
+        }
+        drain_jobs(ctx);
+        Ok(())
+    })
 }
 
 fn drain_jobs(ctx: &Ctx<'_>) {
@@ -1056,5 +1129,106 @@ ui.hover.hide();
         }
 
         assert_eq!(eval_result, Some("has_register".to_string()));
+    }
+
+    #[test]
+    fn editor_and_workspace_event_listeners() {
+        let host = ScriptHost::spawn(test_env());
+
+        // Set up listeners in the script environment
+        host.eval(
+            r#"
+            globalThis.__test_selection_count = 0;
+            globalThis.__test_active_doc_id = 0;
+            globalThis.__test_folders_count = 0;
+
+            globalThis.selSub = vy.editor.onDidChangeSelection((e) => {
+                globalThis.__test_selection_count = e.selections.length;
+            });
+
+            globalThis.docSub = vy.editor.onDidChangeActiveEditor((doc) => {
+                globalThis.__test_active_doc_id = doc ? doc.id : -1;
+            });
+
+            globalThis.wsSub = vy.workspace.onDidChangeWorkspaceFolders((e) => {
+                globalThis.__test_folders_count = e.folders.length;
+            });
+            "#,
+        );
+
+        // Wait for setup
+        let setup_event = host.events.recv_blocking();
+        assert!(
+            matches!(setup_event, Ok(ScriptEvent::EvalFinished { .. })),
+            "setup eval failed: {setup_event:?}"
+        );
+
+        // 1. Selection change
+        host.emit_selection_change(vec![
+            vy_core::Selection::caret(vy_core::Position::new(0, 5)),
+            vy_core::Selection::caret(vy_core::Position::new(1, 5)),
+        ]);
+
+        host.eval("globalThis.__test_selection_count");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "2");
+        } else {
+            panic!("failed to get selection count");
+        }
+
+        // 2. Active editor change
+        host.emit_active_editor_change(Some(vy_api_schema::DocumentInfoReply {
+            id: 42,
+            uri: vy_core::Uri::parse("file:///test.rs").unwrap(),
+            language_id: "rust".into(),
+            version: 1,
+            line_count: 10,
+            end: vy_core::Position::new(10, 0),
+        }));
+
+        host.eval("globalThis.__test_active_doc_id");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "42");
+        } else {
+            panic!("failed to get active doc id");
+        }
+
+        // 3. Workspace folders change
+        host.emit_workspace_folders_change(vec![
+            "/workspace/one".into(),
+            "/workspace/two".into(),
+            "/workspace/three".into(),
+        ]);
+
+        host.eval("globalThis.__test_folders_count");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "3");
+        } else {
+            panic!("failed to get folders count");
+        }
+
+        // 4. Test dispose
+        host.eval(
+            r#"
+            globalThis.selSub.dispose();
+            globalThis.__test_selection_count = 0;
+            "#,
+        );
+        let dispose_event = host.events.recv_blocking();
+        assert!(
+            matches!(dispose_event, Ok(ScriptEvent::EvalFinished { .. })),
+            "dispose eval failed: {dispose_event:?}"
+        );
+
+        host.emit_selection_change(vec![vy_core::Selection::caret(vy_core::Position::new(
+            0, 1,
+        ))]);
+
+        host.eval("globalThis.__test_selection_count");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "0", "listener should not have fired after dispose");
+        } else {
+            panic!("failed to verify dispose");
+        }
     }
 }

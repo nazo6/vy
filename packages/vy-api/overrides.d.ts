@@ -164,6 +164,12 @@ export interface EditorSugar {
   edit(
     edits: TextEdit[] | ((builder: EditorEditBuilder) => void),
   ): Promise<{ version: number }>;
+  /** Calls `listener` when the active document/editor changes. */
+  onDidChangeActiveDocument(listener: (document: Document | null) => void): Disposable;
+  /** Calls `listener` when the active document/editor changes (alias). */
+  onDidChangeActiveEditor(listener: (document: Document | null) => void): Disposable;
+  /** Calls `listener` when selections in the active editor change. */
+  onDidChangeSelection(listener: (event: { selections: Selection[] }) => void): Disposable;
 }
 
 /** Describes the workspace and its open documents. */
@@ -178,6 +184,10 @@ export interface WorkspaceSugar {
   folders(): Uri[];
   /** Returns the open text documents. */
   textDocuments(): Promise<Document[]>;
+  /** Calls `listener` when workspace folders change. */
+  onDidChangeWorkspaceFolders(listener: (event: { folders: string[] }) => void): Disposable;
+  /** Calls `listener` when workspace folders change (alias). */
+  onDidChangeFolders(listener: (event: { folders: string[] }) => void): Disposable;
 }
 
 /** Shows notifications to the user. */
