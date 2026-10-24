@@ -2,7 +2,8 @@
 
 - 状態: 採用（メソッド宣言と dispatch は
   [0008](./0008-declare-plugin-api-with-macros.md)、型の置き場所は
-  [0009](./0009-api-types-live-with-handlers.md) で置き換え）
+  [0009](./0009-api-types-live-with-handlers.md) で置き換え。API の入口と
+  `CommandMap` の拡張点は [0019](./0019-global-vy-api.md) で変更）
 - 日付: 2026-10-23
 
 ## 文脈

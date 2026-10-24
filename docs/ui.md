@@ -61,8 +61,8 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 | `webviewFocus` | `true` か `false`                  | UI ホスト    |
 
 ```typescript
-keymap.bind("normal", "j", "vy.ui.next", { when: "uiRole == 'list'" });
-keymap.bind("normal", "r", "example.chat.retry", {
+vy.keymap.bind("normal", "j", "vy.ui.next", { when: "uiRole == 'list'" });
+vy.keymap.bind("normal", "r", "example.chat.retry", {
   when: "uiFocus == 'messages'",
 });
 ```
@@ -125,13 +125,13 @@ normal モードで `Esc`
 プラグインは、状態から木を作る関数を登録します。ホストは前回の木と差分を取り、変わったノードだけを描きます。
 
 ```typescript
-views.register("example.greeting.view", {
+vy.views.register("example.greeting.view", {
   kind: "ui",
   title: "Greeting",
   render: () =>
-    ui.column({ gap: "sm" }, [
-      ui.text({ id: "message", text: "こんにちは" }),
-      ui.button({
+    vy.ui.column({ gap: "sm" }, [
+      vy.ui.text({ id: "message", text: "こんにちは" }),
+      vy.ui.button({
         id: "close",
         label: "閉じる",
         command: "example.greeting.close",
@@ -183,7 +183,7 @@ views.register("example.greeting.view", {
 も一緒に変わるようにするためです。
 
 ```typescript
-ui.text({
+vy.ui.text({
   id: "error",
   text: "接続に失敗しました",
   color: "danger",
@@ -300,7 +300,7 @@ Webview を使う場合の規則は次のとおりです。
 ```typescript
 let messages: Message[] = [];
 
-views.register("example.chat.view", {
+vy.views.register("example.chat.view", {
   kind: "ui",
   title: "Chat",
   singleton: true,
@@ -308,20 +308,20 @@ views.register("example.chat.view", {
     messages = state?.messages ?? [];
   },
   render: () =>
-    ui.column({ gap: "sm" }, [
-      ui.scroll(
+    vy.ui.column({ gap: "sm" }, [
+      vy.ui.scroll(
         { id: "messages", grow: 1 },
-        messages.map((m) => ui.markdown({ id: m.id, text: m.text })),
+        messages.map((m) => vy.ui.markdown({ id: m.id, text: m.text })),
       ),
-      ui.row({ gap: "sm" }, [
-        ui.textInput({
+      vy.ui.row({ gap: "sm" }, [
+        vy.ui.textInput({
           id: "prompt",
           grow: 1,
           multiline: true,
           mode: "insertOnFocus",
           placeholder: "質問を入力",
         }),
-        ui.button({
+        vy.ui.button({
           id: "send",
           label: "送信",
           command: "example.chat.send",
@@ -335,14 +335,14 @@ views.register("example.chat.view", {
   },
 });
 
-commands.registerCommand("example.chat.send", async () => {
+vy.commands.registerCommand("example.chat.send", async () => {
   // 送信し、応答のチャンクごとに ui.update を呼ぶ
 });
 
-await panes.open({
+await vy.panes.open({
   view: "example.chat.view",
   placement: {
-    target: await panes.activePane(),
+    target: await vy.panes.activePane(),
     direction: "right",
     ratio: 0.35,
   },

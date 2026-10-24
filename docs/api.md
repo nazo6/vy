@@ -7,8 +7,12 @@ Phase に分けます。
 
 ## 1. 設計方針
 
-- 入口は名前空間の import
-  にします（`import { editor, workspace } from "vy-api"`）。
+- 入口はグローバル `vy` にします（`vy.editor.open(...)`）。`vy-api` という
+  仮想モジュールは持ちません。型は `packages/vy-api` が ambient 宣言として
+  提供し、`import type {} from "vy-api"` を1回読み込むと `vy` と
+  `Vy.CommandMap` が見えます（[ADR 0019](./adr/0019-global-vy-api.md)）。
+- 以下の表では名前空間のパスだけを書きます。呼び出しは `vy.commands.execute(...)`
+  のように `vy.` を付けます。
 - 状態の読み取りも Promise
   を返します。リモート接続でも同じ書き方にするためです。同期の get
   は用意しません。
@@ -271,32 +275,35 @@ Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_lef
 にあります。
 
 ```typescript
-keymap.bind({
+vy.keymap.bind({
   keys: "space f f",
   command: "vy.editor.open",
   when: "normalMode",
 });
 
-await commands.execute({
+await vy.commands.execute({
   id: "vy.editor.open",
   args: { uri: "src/main.rs" },
 });
 ```
 
-独自コマンドは `CommandMap` を拡張すると引数まで型付けされます。
+独自コマンドは `Vy.CommandMap` を拡張すると引数まで型付けされます。
 
 ```typescript
-declare module "vy-api" {
-  interface CommandMap {
-    "user.greet": { name: string };
+declare global {
+  namespace Vy {
+    interface CommandMap {
+      "user.greet": { name: string };
+    }
   }
 }
+export {};
 
-commands.registerCommand("user.greet", (args) => {
+vy.commands.registerCommand("user.greet", (args) => {
   // args は { name: string }
 });
 
-await commands.execute({
+await vy.commands.execute({
   id: "user.greet",
   args: { name: "Ada" },
 });
@@ -600,11 +607,11 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 
 ## 21. Phase 2 の実装状況
 
-Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しました。型は
+Phase 2 では `vy` から呼べる範囲を次のとおり実装しました。型は
 [`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)、
 [`packages/vy-api/api-base.d.ts`](../packages/vy-api/api-base.d.ts)、
 [`packages/vy-api/types`](../packages/vy-api/types) に生成され、引数の形は
-§2.1 のとおりです。
+§2.1 のとおりです。表の名前は `vy.` を省いています。
 
 | 名前空間                            | 実装済み                                                                                                |
 | :---------------------------------- | :------------------------------------------------------------------------------------------------------ |

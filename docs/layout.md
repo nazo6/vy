@@ -84,7 +84,8 @@ OS ごとの既定の場所は次のとおりです。
     <workspace-hash>.json
 ```
 
-`bundles/` には、プラグインの TypeScript を変換した結果を置きます。`queries/`
+`bundles/` は、ホストがソースを変換した結果をキャッシュする場所です。配布用の
+バンドルはプラグインの `dist/` に置き、ここには置きません。`queries/`
 には、コンパイルした tree-sitter
 のクエリを置きます。どちらも削除しても再生成できます。
 
@@ -119,15 +120,18 @@ crates/
   vy-core/           文書、バッファ、ワークスペース、LSP、Git、検索、設定の解決
   vy-server/         ヘッドレスのバイナリ。RPC の受け口とセッション管理
   vy-proto/          RPC の型とバージョン
-  vy-js/             QuickJS のホスト。モジュール解決、API の束縛、イベントループ
+  vy-js/             QuickJS のホスト。グローバル `vy` の束縛、相対モジュールの
+                     解決、イベントループ
                      lib.rs / vm.rs / transpile.rs / api.rs / shim.ts
                      shim.js は shim.ts から生成する
   vy-capabilities/   ケイパビリティの定義、承認の記録、検査
 
 packages/
-  vy-api/            プラグイン API の型パッケージ。types/ と api-base.d.ts は
+  vy-api/            プラグイン API の型パッケージ。ambient な `vy` と
+                     `Vy.CommandMap` を宣言する。types/ と api-base.d.ts は
                      Rust から、shim.d.ts は vy-js の shim.ts から生成する
-  vy-cli/            プラグインのビルド、インストール、doctor
+  vy-cli/            任意の補助ツール。verify、doctor、install を持ち、
+                     ビルドは持たない
   create-vy-plugin/  雛形の生成
 
 assets/
@@ -162,13 +166,18 @@ docs/
   plugin.json
   frontend.ts
   backend.ts
+  env.d.ts
   package.json
   tsconfig.json
   README.md
+  dist/
+    frontend.js
+    backend.js
 ```
 
 `plugin.json` は Vy が読むマニフェストです。`package.json`
-はビルド時の依存解決にだけ使います。
+はビルド時の依存解決にだけ使います。`env.d.ts` には
+`import type {} from "vy-api";` を置き、`vy` の型を有効にします。
 
 ```json
 {
@@ -186,8 +195,25 @@ docs/
 }
 ```
 
-配布するときは `frontend.ts` と `backend.ts` をバンドルし、`dist/`
-だけを含めます。利用者の環境で `node_modules` を解決しません。
+バンドル形態で配布するときは `frontend.ts` と `backend.ts` をバンドルし、
+`dist/` だけを含めます。利用者の環境で `node_modules` を解決しません。ソース
+形態はソースのまま配布できますが、外部依存は使えません。
+
+プラグインには2つの形態があります（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
+
+- **ソース形態**: `main` が `frontend.ts` を指し、相対 import だけで書きます。
+  外部依存は使えません。ビルドなしで動きます。
+- **バンドル形態**: `main` が `dist/frontend.js` を指し、外部依存をすべて
+  同梱します。
+
+どちらも `vy` グローバルを使い、`vy-api` からの import は書きません
+（[ADR 0019](./adr/0019-global-vy-api.md)）。型は `env.d.ts` などで
+`import type {} from "vy-api"` を1回読み込みます。
+
+バンドルは esbuild、tsup、rolldown-vite など一般の JS ツールチェーンで作ります。
+Vy はバンドラも `vy plugin build` も提供しません。
+
+`backend.ts` はリモートへ1ファイルで送るため、常にバンドルします。
 
 ## 6. 解決順序
 

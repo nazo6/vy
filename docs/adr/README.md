@@ -35,11 +35,13 @@ ADR を追加します。古い ADR
 | [0008](./0008-declare-plugin-api-with-macros.md) | プラグイン API を宣言マクロで一本化する                | 置き換え済み（0013）                       |
 | [0009](./0009-api-types-live-with-handlers.md)   | API の型はハンドラの隣に置き、生成を集約する           | 採用                                       |
 | [0010](./0010-remote-connection.md)              | SSH で接続し、再起動と再同期でセッションを戻す         | 採用                                       |
-| [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす                   | 採用（実装は Phase 6）                     |
+| [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす                   | 採用（実装は Phase 6。型の分割は 0019 で延期） |
 | [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く   | 採用（型の置き場所。宣言方法は 0013）      |
 | [0013](./0013-host-api-traits.md)                | 名前空間 trait と `HostApi` facade で実装する          | 採用（すべての名前空間）                   |
 | [0014](./0014-api-codegen-cli.md)                | API バインディングの生成を CLI に分離する              | 採用（出力レイアウトは 0015 で置き換え）   |
 | [0015](./0015-api-output-layout.md)              | API の生成物は `packages/vy-api` にまとめる            | 採用（一部は 0016 で置き換え）             |
-| [0016](./0016-command-types-and-ts-shim.md)      | コマンド型を分離し、JS API の型を TS shim から生成する | 採用                                       |
+| [0016](./0016-command-types-and-ts-shim.md)      | コマンド型を分離し、JS API の型を TS shim から生成する | 採用（API の入口は 0019 で変更）           |
 | [0017](./0017-cli-parsing-with-usage-rs.md)      | CLI 引数の解析に usage-rs を使う                       | 採用                                       |
 | [0018](./0018-typed-rpc.md)                      | クライアント・コア間の RPC は型付き marker で送る      | 採用                                       |
+| [0019](./0019-global-vy-api.md)                  | プラグイン API はグローバル `vy` に統一する            | 採用（実装はこれから）                     |
+| [0020](./0020-plugin-source-and-bundles.md)      | プラグインはソース形態とバンドル形態の2つを許す        | 採用（実装はこれから）                     |

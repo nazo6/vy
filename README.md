@@ -134,23 +134,26 @@ cargo run -p vy-app -- README.md
 
 ```typescript
 // ~/.config/vy/init.ts
-import { commands, config, editor, notifications } from "vy-api";
+import type {} from "vy-api";
 
-config.set({ "ui.fontSize": 16, "ui.lineNumbers": "relative" });
+vy.config.set({ "ui.fontSize": 16, "ui.lineNumbers": "relative" });
 
-commands.registerCommand("user.uppercase-document", async () => {
-  const document = await editor.activeDocument();
+vy.commands.registerCommand("user.uppercase-document", async () => {
+  const document = await vy.editor.activeDocument();
   if (!document) return;
   const text = await document.getText();
-  await editor.edit((builder) => {
+  await vy.editor.edit((builder) => {
     builder.replace(document.fullRange(), text.toUpperCase());
   });
-  await notifications.show("Uppercased the document");
+  await vy.notifications.show("Uppercased the document");
 });
 ```
 
-`keymap.bind("space u", "user.uppercase-document", { when: "normalMode" })`
-のようにキーを割り当てられます。評価できる API は [`docs/api.md`](./docs/api.md)
+`vy.keymap.bind("space u", "user.uppercase-document", { when: "normalMode" })`
+のようにキーを割り当てられます。`vy` はホストがインストールするグローバルで、
+`vy-api` からの import は書きません（[ADR 0019](./docs/adr/0019-global-vy-api.md)）。
+`import type {} from "vy-api"` は型を有効にするための1行で、実行時には消えます。
+評価できる API は [`docs/api.md`](./docs/api.md)
 の「Phase 2 の実装状況」にまとめました。型定義は
 [`packages/vy-api/index.d.ts`](./packages/vy-api/index.d.ts) にあり、プロトコル
 とプラグイン境界の型は [`packages/vy-api/types`](./packages/vy-api/types) に Rust

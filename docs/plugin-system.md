@@ -21,9 +21,9 @@ ID の重複を防ぐためです。
 
 ```typescript
 // ~/.config/vy/init.ts
-import { commands, config, document, editor, keymap } from "vy-api";
+import type {} from "vy-api";
 
-config.set({
+vy.config.set({
   values: {
     "ui.fontFamily": "JetBrains Mono",
     "ui.fontSize": 14,
@@ -31,17 +31,17 @@ config.set({
   },
 });
 
-keymap.bind({
+vy.keymap.bind({
   keys: "space u",
   command: "user.uppercase-selection",
   when: "normalMode",
 });
 
-commands.registerCommand("user.uppercase-selection", async () => {
-  const active = await editor.activeDocument();
+vy.commands.registerCommand("user.uppercase-selection", async () => {
+  const active = await vy.editor.activeDocument();
   if (!active) return;
-  const text = await document.getText({ documentId: active.id });
-  await editor.edit({
+  const text = await vy.document.getText({ documentId: active.id });
+  await vy.editor.edit({
     edits: [
       {
         range: {
@@ -55,8 +55,12 @@ commands.registerCommand("user.uppercase-selection", async () => {
 });
 ```
 
-`vy-api` の型定義は `packages/vy-api` が提供します。Rust の型から
-`packages/vy-api/types` を生成するため、プロトコルの変更と型定義がずれません。
+`vy` はホストがインストールするグローバルで、import は不要です
+（[ADR 0019](./adr/0019-global-vy-api.md)）。`vy-api` は型専用のパッケージで、
+`import type {} from "vy-api"` を1回置くと `vy` と `Vy.CommandMap` が見えます。
+`vy-api` から値を import することはできません。型定義は `packages/vy-api` が
+提供し、Rust の型から `packages/vy-api/types` を生成するため、プロトコルの変更と
+型定義がずれません。
 
 ### 1.2 settings.json
 
@@ -198,6 +202,9 @@ version が手元より新しいときだけ表示を更新します。
 `permissions` と `contributes` は起動前に読みます。承認が済むまで `activate`
 を呼ばないためです。
 
+ソース形態では `main` に `frontend.ts` を指定します。`backend` は常にバンドル
+（`dist/backend.js`）を指します。
+
 ### 3.2 ライフサイクル
 
 プラグインは `activate(ctx)` を公開します。`deactivate()` は省略できます。
@@ -252,16 +259,36 @@ ID とバージョンの組で `trusted.json`
 
 ### 3.4 モジュール解決と配布
 
-`import { editor } from "vy-api"` の `vy-api`
-は、ホストが提供する仮想モジュールです。ファイルとして存在しません。
+プラグインには2つの形態があります（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
 
-相対パスの import は、開発中だけ許可します。配布するプラグインは `frontend.ts`
-と `backend.ts` を1ファイルにバンドルし、`dist/` に置きます。利用者の環境で
-`node_modules` を解決しないためです。バンドルは `vy plugin build`
-が行い、変換には oxc を使います。
+| 形態 | エントリ | import | 外部依存 |
+| :--- | :--- | :--- | :--- |
+| ソース | `frontend.ts` | 相対のみ | なし（型だけの import は可） |
+| バンドル | `dist/frontend.js` | なし | ビルド時に同梱 |
 
-QuickJS のモジュールは ESM として読み込みます。CommonJS の `require`
-は提供しません。
+`vy` はグローバルなので、どちらの形態でも import は不要です。
+
+ソース形態では、プラグインのディレクトリをルートとして相対 import を解決します。
+`./` と `../` だけを許可し、`.ts`、`.tsx`、`.js`、`.mjs`、ディレクトリの
+`index.*` を探します。ルート外への脱出、`node_modules`、`node:*`、`.json`、
+WASM、`require` は許可しません。裸の specifier（`vy-api` を含む）は
+「バンドルしてください」とエラーにします。
+
+外部依存を使うプラグインは、`frontend.ts` を1ファイルの ESM にバンドルし、
+`dist/` に置きます。バンドルは esbuild、tsup、rolldown-vite など一般の JS
+ツールチェーンで作ります。Vy はバンドラも `vy plugin build` も持ちません。
+利用者の環境で `node_modules` を解決しないためです。
+
+```sh
+esbuild frontend.ts --bundle --format=esm --platform=browser --target=es2022 \
+  --outfile=dist/frontend.js
+```
+
+`backend.ts` はリモートへ1ファイルで送るため、常にバンドルします。
+
+QuickJS のモジュールは ESM として読み込みます。CommonJS の `require` は提供
+しません。バンドルはロード時にサイズと SHA-256 を計算し、import が残っていない
+ことを確認します。
 
 配布は当面、ディレクトリを `plugins/` に置く方法だけにします。レジストリと
 `vy plugin install` は Phase 4 以降に回します。
@@ -279,7 +306,7 @@ QuickJS のモジュールは ESM として読み込みます。CommonJS の `re
 
 ```typescript
 // frontend.ts
-const worker = backend.connect("search");
+const worker = vy.backend.connect("search");
 worker.onMessage((chunk) => {
   render(chunk);
 });
@@ -290,8 +317,8 @@ worker.postMessage({ query: "main", maxResults: 100 });
 // backend.ts
 export function activate(ctx: BackendContext) {
   ctx.subscriptions.push(
-    backend.registerHandler("search", async (message, req) => {
-      for await (const chunk of workspace.grep(message.query, {
+    vy.backend.registerHandler("search", async (message, req) => {
+      for await (const chunk of vy.workspace.grep(message.query, {
         signal: req.signal,
       })) {
         req.postMessage(chunk);
@@ -317,11 +344,14 @@ export function activate(ctx: BackendContext) {
 ## 5. リロードと隔離
 
 プラグインは、他のプラグインと別の QuickJS
-コンテキストで動きます。グローバル変数を共有しません。
+コンテキストで動きます。グローバル変数を共有しません。`vy` もランタイムごとに
+別で、そのプラグインのケイパビリティに結び付きます。
 
 リロードは、そのプラグインのコンテキストを作り直します。`deactivate`
 を呼び、登録を破棄し、`activate`
-を呼び直します。開発中はファイルの変更で自動的にリロードします。
+を呼び直します。開発中はファイルの変更で自動的にリロードします。ソース形態の
+プラグインは、loader が読み込んだファイルを記録し、どれかが変わったときに
+ランタイムを作り直します。
 
 Phase 2 の `init.ts` も同じ扱いです。ファイルの mtime が変わると QuickJS
 のランタイムごと作り直し、`init.ts`

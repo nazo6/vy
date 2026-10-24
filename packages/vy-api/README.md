@@ -1,31 +1,31 @@
 # vy-api
 
-Type definitions for the module `init.ts` imports:
+Type definitions for the global `vy` object used by `init.ts` and plugins.
 
 ```typescript
-import { commands, config, editor, keymap } from "vy-api";
-```
+// ~/.config/vy/init.ts
+import type {} from "vy-api";
 
-The API is available globally as `vy` at runtime, or can be imported from
-`vy-api`:
-
-```typescript
 vy.config.set({ values: { "ui.fontSize": 14 } });
 ```
 
-The module itself is provided by the QuickJS host at runtime; it does not exist
-as a file. Point the TypeScript compiler at this package when you write an
-`init.ts`:
+`vy` is installed by the QuickJS host before a script runs. This package contains
+only type declarations; the runtime API is the global `vy`. The type-only import
+above makes `vy` and `Vy.CommandMap` visible to TypeScript and is erased at build
+time.
 
-```json
-{
-    "compilerOptions": {
-        "moduleDetection": "force",
-        "paths": { "vy-api": ["./packages/vy-api/index.d.ts"] }
-    },
-    "include": ["init.ts", "./packages/vy-api/index.d.ts"]
-}
+## Setup
+
+Install the package as a development dependency and include it once in the
+program:
+
+```typescript
+// env.d.ts
+import type {} from "vy-api";
 ```
+
+In this repository, `tsconfig.json` maps `vy-api` to
+[`index.d.ts`](./index.d.ts).
 
 `api-base.d.ts` and [`types/index.ts`](./types/index.ts) are generated from the
 `#[vy_api_trait]` declarations in `crates/vy-host-api` and `crates/vy-client-api`.
@@ -63,21 +63,25 @@ Open `target/docs/vy-api/index.html`. `pnpm docs:api:serve` builds the site and
 serves it at <http://localhost:8000>. The output is generated into `target/` and
 is not committed. `docs.d.ts` is the TypeDoc entry point.
 
-To type the arguments of your own commands, augment `CommandMap`:
+To type the arguments of your own commands, augment `Vy.CommandMap`:
 
 ```typescript
-declare module "vy-api" {
-    interface CommandMap {
-        "user.greet": { name: string };
+declare global {
+    namespace Vy {
+        interface CommandMap {
+            "user.greet": { name: string };
+        }
     }
 }
+export {};
 ```
 
-`commands.registerCommand("user.greet", (args) => ...)` and
-`commands.execute({ id: "user.greet", args: { name: "Ada" } })` then complete and
-check the argument object. Commands with no arguments can use `undefined` as the
-map value.
+`vy.commands.registerCommand("user.greet", (args) => ...)` and
+`vy.commands.execute({ id: "user.greet", args: { name: "Ada" } })` then complete
+and check the argument object. Commands with no arguments can use `undefined` as
+the map value. Add `export {}` when the file has no other import or export, so
+that `declare global` is allowed.
 
 Built-in command ids are generated separately in `BuiltinCommandMap`. They are
-valid for `commands.execute` and `keymap.bind`, but not for
-`commands.registerCommand`; the host reserves ids starting with `vy.`.
+valid for `vy.commands.execute` and `vy.keymap.bind`, but not for
+`vy.commands.registerCommand`; the host reserves ids starting with `vy.`.

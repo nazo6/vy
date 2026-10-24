@@ -71,10 +71,12 @@ Phase 8 で扱います。
 - [x] `~/.config/vy/init.ts` と `settings.json` の読み込みと反映
   - `settings.json` の 4 層（既定値、ユーザー、プロジェクト、メモリ）と
     `init.ts` の評価・再評価を実装した
-- [x] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
+- [x] プラグイン API のシムを作り、型を Rust の型から生成する
   - シムは `crates/vy-js/src/shim.ts` から生成した `generated/shim.js`。プロトコル境界の型は ts-rs で
     `packages/vy-api/types` に生成し、名前空間の API は `#[vy_api_trait]`
     の宣言から生成する
+- [ ] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
+- [ ] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`
     とテキストオブジェクトを実装した
@@ -92,8 +94,8 @@ Phase 8 で扱います。
   非依存にした
 - 2B: `paths` と `config`（4 層、`ui.*` の反映、mtime 監視）
 - 2C: `keymap`（キー列、`when`、カウント、レジスタ、タイムアウト）と `commands`
-- 2D: `vy-js`（QuickJS の専用スレッド、Oxc による型の除去、`vy-api`
-  シム、`init.ts` の評価と再評価）と `vy-capabilities`
+- 2D: `vy-js`（QuickJS の専用スレッド、Oxc による型の除去、API シム、
+  `init.ts` の評価と再評価）と `vy-capabilities`
 - 2E: `y` / `Y`、演算子 `d` /
   `y`、テキストオブジェクト、行単位レジスタ、単語クラス
 - 2F: ts-rs による `packages/vy-api/types` の生成、
@@ -156,6 +158,10 @@ Phase 8 で扱います。
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
 - [x] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
+- [ ] プラグインごとに QuickJS ランタイムを分ける（グローバル `vy` の前提）
+- [ ] ソース形態の TS プラグイン（相対 import、ルート制限、リロード）を実装する
+      （[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
+- [ ] バンドル形態のロード時検証（残った import、サイズ、SHA-256）を実装する
 - [x] 実用プラグインの検証
   - サイドバー的なツリービューペイン（`views.register` と `ui`
     ウィジェット木を用いた `nvim-tree`
@@ -186,7 +192,8 @@ Phase 8 で扱います。
 - [ ] `backend.connect` と `backend.registerHandler` を実装する
 - [ ] `workspace`、文書、`fs`、`process`、`config`、`log` のコア側 API を実装する
 - [ ] コア側でケイパビリティを検査し、実行時間とメモリを制限する
-- [ ] `vy-api/backend` の型を生成し、UI 系の API を出さない
+- [ ] backend 用の型を分け、UI 系の API を出さない（[ADR 0019](./adr/0019-global-vy-api.md)
+      で延期した分）
 - [ ] 検索プラグインを参照実装として動かす
 
 ### Phase 7: 実用エディタ化と言語機能拡充
@@ -223,7 +230,9 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                          | [`panes.md`](./panes.md)                                                           |
 | プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                                | [`plugin-system.md`](./plugin-system.md)                                           |
 | 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                    | [`plugin-system.md`](./plugin-system.md)                                           |
-| API の形               | 名前空間の import と async ファースト                                               | [`api.md`](./api.md)                                                               |
+| API の形               | グローバル `vy` と async ファースト                                                 | [ADR 0019](./adr/0019-global-vy-api.md)                                            |
+| プラグインの形態       | ソース（相対 TS のみ、依存なし）とバンドル（単一 ESM、依存同梱）                    | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
+| プラグインのビルド     | esbuild などの JS ツールチェーンに任せ、Vy はロード時に検証する                     | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
 | ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                              | [`layout.md`](./layout.md)                                                         |
 | 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                          | [`protocol.md`](./protocol.md)                                                     |
 | プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る               | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                   |
@@ -239,8 +248,9 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す                | [`keymap.md`](./keymap.md)                                                         |
 | レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                            | [`keymap.md`](./keymap.md)                                                         |
 | 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                     | [`keymap.md`](./keymap.md)                                                         |
-| JS の実行              | クライアントの専用スレッド 1 本。`vy-api` は仮想モジュール。UI とは要求と応答で通信 | [`architecture.md`](./architecture.md) と [`plugin-system.md`](./plugin-system.md) |
+| JS の実行              | プラグインごとの専用ランタイム。API はグローバル `vy`。UI とは要求と応答で通信      | [ADR 0019](./adr/0019-global-vy-api.md)                                            |
 | TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
+| モジュール解決         | ソース形態は相対 import のみ。外部依存はバンドルし、実行時に `node_modules` を解決しない | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
 | `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./plugin-system.md)                                           |
 | 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
 | Ex コマンド            | パレットと同じ実行層を使い、`:` はオーバーレイ。Ex 名は明示的な別名で解決する       | [`ex-commands.md`](./ex-commands.md)                                               |
@@ -269,3 +279,8 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 7. **Ex コマンドの細部**
    - 最後のペインでの `:q`、プラグインの別名、履歴の永続化などは
      [`ex-commands.md`](./ex-commands.md) の「未決定事項」にまとめました。
+8. **Web API のプリミティブ**
+   - `console`、`TextEncoder`、`setTimeout` などをどこまで提供するか。外部
+     ライブラリの互換性に直結するため、ソース形態とバンドル形態の運用が固まって
+     から決めます。`console` だけは listener の例外処理で使っているため、先に
+     最低限の修正を行います。
