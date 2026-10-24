@@ -162,7 +162,8 @@ Phase 8 で扱います。
 - [x] プラグインごとに QuickJS ランタイムを分ける（グローバル `vy` の前提）
 - [x] ソース形態の TS プラグイン（相対 import、ルート制限、リロード）を実装する
       （[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
-- [ ] バンドル形態のロード時検証（残った import、サイズ、SHA-256）を実装する
+- [x] バンドル形態のロード時検証（残った import、サイズ、SHA-256）を実装する
+      （[ADR 0021](./adr/0021-bundle-validation.md)）
 - [x] 実用プラグインの検証
   - サイドバー的なツリービューペイン（`views.register` と `ui`
     ウィジェット木を用いた `nvim-tree`

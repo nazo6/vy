@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 async-channel.workspace = true
 oxc_allocator = "0.155"
+oxc_ast = "0.155"
+oxc_ast_visit = "0.155"
 oxc_codegen = "0.155"
 oxc_diagnostics = "0.155"
 oxc_parser = "0.155"

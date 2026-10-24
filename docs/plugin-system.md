@@ -274,6 +274,12 @@ ID とバージョンの組で `trusted.json`
 脱出、`node_modules`、`node:*`、`.json`、WASM、`require` は許可しません。裸の
 specifier（`vy-api` を含む）は「バンドルしてください」とエラーにします。
 
+エントリの形態は拡張子で決めます。`main` が `.ts` ならソース、`.js` / `.mjs`
+ならバンドルです。`backend` は `.js` / `.mjs` のバンドルだけを許可し、`.ts` は
+拒否します。`main` と `backend` はプラグインのディレクトリ内の相対パスに限り、
+絶対パス、`.`、`..`、ルート外へ出るシンボリックリンクを拒否します。エントリは
+存在するファイルでなければなりません。
+
 外部依存を使うプラグインは、`frontend.ts` を1ファイルの ESM にバンドルし、
 `dist/` に置きます。バンドルは esbuild、tsup、rolldown-vite など一般の JS
 ツールチェーンで作ります。Vy はバンドラも `vy plugin build` も持ちません。
@@ -287,8 +293,13 @@ esbuild frontend.ts --bundle --format=esm --platform=browser --target=es2022 \
 `backend.ts` はリモートへ1ファイルで送るため、常にバンドルします。
 
 QuickJS のモジュールは ESM として読み込みます。CommonJS の `require` は提供
-しません。バンドルはロード時にサイズと SHA-256 を計算し、import が残っていない
-ことを確認します。
+しません。バンドルはロード時に UTF-8 の JavaScript として解析し、静的 import、
+`export ... from`、動的 `import()`、`require()` が残っていないことを確認します。
+TypeScript と JSX の構文も拒否します。サイズ上限は 4 MiB で、サイズと SHA-256 を
+計算して `PluginEntry` に保存します。バンドルはリロード時にもう一度検証します。
+
+`engines.vy` はマニフェストの読み込み時に semver の範囲として解析し、現在の Vy と
+一致しないプラグインは警告を出して読み込みません。
 
 配布は当面、ディレクトリを `plugins/` に置く方法だけにします。レジストリと
 `vy plugin install` は Phase 4 以降に回します。

@@ -43,5 +43,6 @@ ADR を追加します。古い ADR
 | [0016](./0016-command-types-and-ts-shim.md)      | コマンド型を分離し、JS API の型を TS shim から生成する | 採用（API の入口は 0019 で変更）           |
 | [0017](./0017-cli-parsing-with-usage-rs.md)      | CLI 引数の解析に usage-rs を使う                       | 採用                                       |
 | [0018](./0018-typed-rpc.md)                      | クライアント・コア間の RPC は型付き marker で送る      | 採用                                       |
-| [0019](./0019-global-vy-api.md)                  | プラグイン API はグローバル `vy` に統一する            | 採用（実装はこれから）                     |
-| [0020](./0020-plugin-source-and-bundles.md)      | プラグインはソース形態とバンドル形態の2つを許す        | 採用（実装はこれから）                     |
+| [0019](./0019-global-vy-api.md)                  | プラグイン API はグローバル `vy` に統一する            | 採用（実装済み）                           |
+| [0020](./0020-plugin-source-and-bundles.md)      | プラグインはソース形態とバンドル形態の2つを許す        | 採用（実装済み。検証の詳細は 0021）        |
+| [0021](./0021-bundle-validation.md)              | バンドルとエントリをロード時に検証する                 | 採用                                       |

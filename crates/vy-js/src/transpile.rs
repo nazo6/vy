@@ -87,7 +87,7 @@ pub fn strip_types(path: &Path, source: &str) -> Result<String, TranspileError> 
     Ok(Codegen::new().build(&program).code)
 }
 
-fn diagnostic_offset(diagnostic: &OxcDiagnostic) -> usize {
+pub(crate) fn diagnostic_offset(diagnostic: &OxcDiagnostic) -> usize {
     diagnostic
         .labels
         .first()
@@ -96,7 +96,7 @@ fn diagnostic_offset(diagnostic: &OxcDiagnostic) -> usize {
 }
 
 /// Converts a byte offset to a one-based line and a zero-based column.
-fn position(source: &str, offset: usize) -> (Option<u32>, Option<u32>) {
+pub(crate) fn position(source: &str, offset: usize) -> (Option<u32>, Option<u32>) {
     if offset > source.len() {
         return (None, None);
     }

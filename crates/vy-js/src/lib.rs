@@ -9,11 +9,13 @@
 //! records they will use.
 
 pub mod api;
+pub mod bundle;
 pub mod document;
 mod modules;
 pub mod transpile;
 pub mod vm;
 
+pub use bundle::{BundleSyntaxError, validate_esm};
 pub use document::DocumentInfoReply;
 pub use transpile::{TranspileError, strip_types};
 pub use vm::{

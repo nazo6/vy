@@ -277,12 +277,34 @@ impl EditorView {
 
     /// Creates a runtime for one plugin and evaluates its frontend entry point.
     pub(super) fn evaluate_discovered_plugin(&mut self, plugin: &DiscoveredPlugin) {
-        let Some(main) = plugin.main_path() else {
-            return;
-        };
         let plugin_id = plugin.manifest.id.clone();
         if self.plugin_runtimes.contains_key(&plugin_id) {
             return;
+        }
+
+        // Discovery validated the entry at startup. Revalidate here because a
+        // reload can pick up an edited bundle.
+        let plugin = match plugin.revalidate() {
+            Ok(plugin) => plugin,
+            Err(error) => {
+                eprintln!("vy: plugin '{plugin_id}' validation failed: {error}");
+                self.plugin_manager.mark_failed(&plugin_id, error);
+                return;
+            }
+        };
+        let Some(main) = plugin.main_path() else {
+            return;
+        };
+        if self.frame_log
+            && let Some(bundle) = plugin
+                .main_entry
+                .as_ref()
+                .and_then(|entry| entry.bundle.as_ref())
+        {
+            eprintln!(
+                "vy: plugin '{plugin_id}' bundle {} bytes sha256 {}",
+                bundle.size, bundle.sha256
+            );
         }
 
         let env = plugin_host::plugin_script_env(

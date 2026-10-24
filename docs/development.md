@@ -77,6 +77,8 @@ pnpm check:types
   `index.*`、循環 import、ルート脱出、裸の specifier を確認します。
 - プラグインのランタイム分離と所有者は `cargo test -p vy-app --lib` の
   `plugin_runtimes_keep_their_own_source_and_owner` で確認します。
+- バンドルの import、サイズ、ハッシュ、パス制限、`engines.vy` は
+  `cargo test -p vy-app --lib plugin::` で確認します。
 - プラグイン API の型は `pnpm check:types` で確かめます。
   `type-tests/commands.ts` が `Vy.CommandMap` の宣言マージ、
   `vy.commands.registerCommand`、`vy.commands.execute`、`vy.keymap.bind`

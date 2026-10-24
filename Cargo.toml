@@ -37,7 +37,9 @@ ropey = "1"
 # Client
 async-channel = "2"
 dirs = "5"
+semver = "1"
 serde_json = "1"
+sha2 = "0.10"
 # TypeScript types for the plugin API
 ts-rs = "12"
 

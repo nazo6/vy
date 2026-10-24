@@ -23,6 +23,8 @@ pub enum PluginManifestError {
     EmptyVersion,
     #[error("invalid capability '{value}': {reason}")]
     InvalidCapability { value: String, reason: String },
+    #[error("invalid engines.vy '{value}': {reason}")]
+    InvalidEngine { value: String, reason: String },
     #[error(
         "invalid activation event '{0}': format must be 'onStartup', 'onCommand:<id>', 'onView:<id>', 'onLanguage:<id>', or 'onWorkspaceContains:<glob>'"
     )]
@@ -111,6 +113,18 @@ impl PluginManifest {
                     reason: err.to_string(),
                 });
             }
+        }
+
+        if let Some(requirement) = self
+            .engines
+            .as_ref()
+            .and_then(|engines| engines.vy.as_deref())
+            && let Err(error) = semver::VersionReq::parse(requirement)
+        {
+            return Err(PluginManifestError::InvalidEngine {
+                value: requirement.to_string(),
+                reason: error.to_string(),
+            });
         }
 
         for event in &self.activation_events {
@@ -204,5 +218,19 @@ mod tests {
             "activationEvents": ["randomEvent"]
         }"#;
         assert!(PluginManifest::parse(json).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_engine_requirement() {
+        let json = r#"{
+            "id": "example.hello",
+            "name": "Hello",
+            "version": "0.1.0",
+            "engines": { "vy": "not a version" }
+        }"#;
+        assert!(matches!(
+            PluginManifest::parse(json),
+            Err(PluginManifestError::InvalidEngine { .. })
+        ));
     }
 }
