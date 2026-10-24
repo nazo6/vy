@@ -65,6 +65,8 @@ pub fn vy_api_registry(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct NamespaceArgs {
     path: Option<LitStr>,
     sugar: Option<LitStr>,
+    /// A shared declaration module that owns the namespace and method metadata.
+    shared: Option<syn::Path>,
 }
 
 impl Parse for NamespaceArgs {
@@ -87,6 +89,10 @@ impl Parse for NamespaceArgs {
                 "sugar" => {
                     let name: Ident = input.parse()?;
                     args.sugar = Some(LitStr::new(&name.to_string(), name.span()));
+                }
+                "shared" => {
+                    let path: syn::Path = input.parse()?;
+                    args.shared = Some(path);
                 }
                 other => {
                     return Err(syn::Error::new(
@@ -185,6 +191,7 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
 
     let mut module: ItemMod = syn::parse2(item)?;
     let namespace_doc = doc_of(&module.attrs);
+    let shared = args.shared.as_ref();
     let Some((_, items)) = module.content.as_mut() else {
         return Err(syn::Error::new_spanned(
             &module,
@@ -231,6 +238,48 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                 let params = params_type(&function)?;
                 let value = reply_value_type(&function.sig.output)?;
                 let identifier = function.sig.ident.clone();
+                let adapter = format_ident!("__vy_invoke_{}", identifier);
+
+                let (parse_params, invoke) = match &params {
+                    Some(params) => (
+                        quote! { let params: #params = crate::api::parse_params(raw)?; },
+                        quote! { #identifier(call, params) },
+                    ),
+                    None => (quote! { let _ = raw; }, quote! { #identifier(call) }),
+                };
+
+                let adapter_item = quote! {
+                    fn #adapter(
+                        call: &mut crate::api::Call<'_, '_>,
+                        raw: &::serde_json::Value,
+                    ) -> ::core::result::Result<
+                        crate::api::Reply<::serde_json::Value>,
+                        crate::api::CallError,
+                    > {
+                        #parse_params
+                        let reply = #invoke?;
+                        crate::api::erase_reply(reply)
+                    }
+                };
+
+                if let Some(shared) = shared {
+                    let declaration = format_ident!("{}", identifier.to_string().to_uppercase());
+                    generated_items.push(adapter_item);
+                    entries.push(quote! {
+                        crate::api::HandlerDecl {
+                            decl: &#shared::#declaration,
+                            handler: #adapter,
+                        }
+                    });
+                    arms.push(quote! {
+                        _ if method == #shared::#declaration.method => {
+                            Some(#adapter(call, params))
+                        }
+                    });
+                    retained.push(Item::Fn(function));
+                    continue;
+                }
+
                 let wire = method.name.map(|name| name.value()).unwrap_or_else(|| {
                     format!("{namespace}.{}", camel_case(&identifier.to_string()))
                 });
@@ -245,7 +294,6 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                     None => quote! { None },
                 };
 
-                let adapter = format_ident!("__vy_invoke_{}", identifier);
                 let params_ts = format_ident!("__vy_params_ts_{}", identifier);
                 let params_collect = format_ident!("__vy_params_collect_{}", identifier);
                 let result_ts = format_ident!("__vy_result_ts_{}", identifier);
@@ -253,7 +301,7 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                 let declaration =
                     format_ident!("__VY_METHOD_{}", identifier.to_string().to_uppercase());
 
-                let (params_ts_item, params_field, parse_params, invoke) = match &params {
+                let (params_ts_item, params_field) = match &params {
                     Some(params) => (
                         quote! {
                             fn #params_ts() -> String {
@@ -273,15 +321,8 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                                     as fn(&mut ::vy_api_schema::TypeCollector),
                             })
                         },
-                        quote! { let params: #params = crate::api::parse_params(raw)?; },
-                        quote! { #identifier(call, params) },
                     ),
-                    None => (
-                        quote! {},
-                        quote! { None },
-                        quote! { let _ = raw; },
-                        quote! { #identifier(call) },
-                    ),
+                    None => (quote! {}, quote! { None }),
                 };
 
                 generated_items.push(quote! {
@@ -295,17 +336,7 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                         ::vy_api_schema::collect::<#value>(collector);
                     }
 
-                    fn #adapter(
-                        call: &mut crate::api::Call<'_, '_>,
-                        raw: &::serde_json::Value,
-                    ) -> ::core::result::Result<
-                        crate::api::Reply<::serde_json::Value>,
-                        crate::api::CallError,
-                    > {
-                        #parse_params
-                        let reply = #invoke?;
-                        crate::api::erase_reply(reply)
-                    }
+                    #adapter_item
 
                     static #declaration: ::vy_api_schema::MethodDecl =
                         ::vy_api_schema::MethodDecl {
@@ -343,6 +374,12 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
                     continue;
                 };
                 let attribute = marker.attrs.remove(position);
+                if shared.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        &marker,
+                        "declare events in the shared namespace, not in a module that uses `shared = ...`",
+                    ));
+                }
                 let event = parse_event_args(&attribute)?;
                 let topic = event.topic.value();
                 let (event_namespace, name) = topic.rsplit_once('.').ok_or_else(|| {
@@ -404,22 +441,31 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
         None => quote! { None },
     };
 
+    let metadata = match shared {
+        Some(shared) => quote! {
+            pub use #shared::{EVENTS, NAMESPACE};
+        },
+        None => quote! {
+            /// Every event declared by this namespace.
+            pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
+
+            /// JSDoc and sugar metadata for this namespace.
+            pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
+                ::vy_api_schema::NamespaceDecl {
+                    path: #namespace,
+                    doc: #namespace_doc,
+                    sugar: #sugar,
+                };
+        },
+    };
+
     let generated = quote! {
         #(#generated_items)*
 
         /// Every method declared by this namespace.
         pub static METHODS: &[crate::api::HandlerDecl] = &[#(#entries),*];
 
-        /// Every event declared by this namespace.
-        pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
-
-        /// JSDoc and sugar metadata for this namespace.
-        pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
-            ::vy_api_schema::NamespaceDecl {
-                path: #namespace,
-                doc: #namespace_doc,
-                sugar: #sugar,
-            };
+        #metadata
 
         /// Answers a call declared by this namespace.
         pub fn dispatch(
