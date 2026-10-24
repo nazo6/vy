@@ -122,6 +122,9 @@ API から外します。状態を持つハンドルは、ホストが id で管
 
 ### 4. 生成物はコミットし、テストで再生成する
 
+> 追記: 生成の入口は [0014](./0014-api-codegen-cli.md) で
+> `cargo run -p vy-api-codegen -- client` に移しました。
+
 `cargo test --workspace export_bindings` が次のすべてを書き出します。
 
 - `packages/vy-api-types/*.ts`（ts-rs。既存）

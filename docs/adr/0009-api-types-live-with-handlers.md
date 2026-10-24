@@ -1,7 +1,8 @@
 # ADR 0009: API の型はハンドラの隣に置き、生成は codegen に集める
 
 - 状態: 採用（[0007](./0007-rust-typed-plugin-api.md) の決定 1 と
-  [0008](./0008-declare-plugin-api-with-macros.md) の型の置き場所を置き換え）
+  [0008](./0008-declare-plugin-api-with-macros.md) の型の置き場所を置き換え。
+  生成の実行方法は [0014](./0014-api-codegen-cli.md) に移行）
 - 日付: 2026-10-24
 
 ## 文脈

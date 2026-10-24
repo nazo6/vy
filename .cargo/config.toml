@@ -1,4 +1,5 @@
 [env]
-# ts-rs writes one file per exported type here. `cargo test -p vy-core -p
-# vy-proto export_bindings` regenerates them; CI checks `git diff --exit-code`.
+# vy-api-codegen writes one file per exported type here.
+# Regenerate with `cargo run -p vy-api-codegen -- client`; CI checks
+# `cargo run -p vy-api-codegen -- client --check` and `git diff --exit-code`.
 TS_RS_EXPORT_DIR = { value = "packages/vy-api-types", relative = true }

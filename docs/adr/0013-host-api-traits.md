@@ -224,4 +224,5 @@ API は `file:` URI を渡します。そのままでは glob が一致しない
 
 - `CoreHost` を実際のプラグインホストへ接続する（Phase 6）。
 - `&mut dyn HostApi` を使うか、generic のままにするか。
-- `backend.d.ts` と `vy-api-codegen` の分離。
+- `backend.d.ts` の出力（`vy-api-codegen` の追加は
+  [0014](./0014-api-codegen-cli.md) で完了）。

@@ -73,25 +73,27 @@ cargo fmt --all --check
   で確かめます。キーマップ、設定、コマンド、`init.ts`
   のホストは画面なしで動きます。
 - プロトコル境界とプラグイン境界の型を変えたら、
-  `cargo test --workspace export_bindings` を実行し、`packages/vy-api-types` を
-  一緒にコミットします。CI では生成後に `git diff --exit-code packages`
-  で差分がないことを確かめます。生成先は `.cargo/config.toml` の
-  `TS_RS_EXPORT_DIR` です。クライアントとコアで共有する API の params / reply /
-  イベント payload 型とメソッド宣言は `vy-host-api` に置きます。クライアント専用の
-  型と宣言は `vy-client-api` に置きます。名前空間は `#[vy_api_trait]` で trait として
-  宣言し、`vy-app` / `vy-server` が実装します。共有する値型は `vy-client-api` に置き、
-  `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）から
-  再エクスポートします（[ADR 0012](./adr/0012-shared-host-api.md)）。`host_api!` が
-  生成する `HostApi` / `ClientHostApi` の `dispatch` から名前空間を呼びます。
-  イベントは trait 内の `#[vy_api_event]` 関連定数で宣言します
+  `cargo run -p vy-api-codegen -- client` を実行し、`packages/vy-api-types` と
+  `packages/vy-api` を一緒にコミットします。CI では
+  `cargo run -p vy-api-codegen -- client --check` と
+  `git diff --exit-code packages` で差分がないことを確かめます。生成先は
+  `.cargo/config.toml` の `TS_RS_EXPORT_DIR` です。クライアントとコアで共有する
+  API の params / reply / イベント payload 型とメソッド宣言は `vy-host-api` に
+  置きます。クライアント専用の型と宣言は `vy-client-api` に置きます。名前空間は
+  `#[vy_api_trait]` で trait として宣言し、`vy-app` / `vy-server` が実装します。
+  共有する値型は `vy-client-api` に置き、`vy-app` の対応するモジュール（`keymap`、
+  `color`、`widget` など）から再エクスポートします
+  （[ADR 0012](./adr/0012-shared-host-api.md)）。`host_api!` が生成する
+  `HostApi` / `ClientHostApi` の `dispatch` から名前空間を呼びます。イベントは
+  trait 内の `#[vy_api_event]` 関連定数で宣言します
   （[ADR 0013](./adr/0013-host-api-traits.md)）。
   `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
   `HostEvents.ts`、`packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
-  は、宣言が持つ `TypeCollector` から同じテストで生成します。`ts-rs` の自動テストに
-  頼らず、型ファイルも `codegen::export` が書きます。手で書くのは糖衣の
-  `packages/vy-api/overrides.d.ts`
-  だけです。`CommandId.ts` と `SettingsKey.ts` は `vy-app`
-  のテストが生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
+  は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`ts-rs` の
+  自動テストに頼らず、型ファイルも `codegen::export_to` が書きます。手で書くのは
+  糖衣の `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と
+  `SettingsKey.ts` も同じ CLI が生成します。生成はテストではなく
+  [ADR 0014](./adr/0014-api-codegen-cli.md) のコマンドで行います。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
@@ -104,7 +106,7 @@ cargo fmt --all --check
 
 ```sh
 pnpm install --frozen-lockfile
-cargo test --workspace export_bindings
+cargo run -p vy-api-codegen -- client
 pnpm docs:api
 ```
 
@@ -115,9 +117,9 @@ pnpm docs:api
 - 入口は `packages/vy-api/docs.d.ts` です。`index.d.ts`
   を再エクスポートし、糖衣の interface も TypeDoc に見せます。公開パッケージの
   export 面は変えません。
-- メソッドの説明は、各 `crates/vy-app/src/api/namespaces/*.rs` のハンドラの doc
-  コメントが正です。`cargo test --workspace export_bindings` で `index.d.ts` に JSDoc
-  として出ます。
+- メソッドの説明は、`crates/vy-host-api` / `crates/vy-client-api` の trait の doc
+  コメントが正です。`cargo run -p vy-api-codegen -- client` で `index.d.ts` に
+  JSDoc として出ます。
 - 糖衣（`Document`、`editor.edit`、statusline、picker、views、widget builder）の
   説明は `packages/vy-api/overrides.d.ts` に書きます。
 - 型の説明は Rust の doc コメントから `ts-rs` が JSDoc として出します。params

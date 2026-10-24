@@ -89,6 +89,9 @@ wire 名は既定で「名前空間パス + camelCase(関数名)」です。例�
 の生成物はコミットし、CI で `git diff --exit-code` を検査します。生成の入り口は
 `cargo test --workspace export_bindings` です。
 
+> 追記: 生成の入口は [0014](./0014-api-codegen-cli.md) で
+> `cargo run -p vy-api-codegen -- client` に移しました。
+
 ## 帰結
 
 ### 良い面

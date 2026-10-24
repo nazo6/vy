@@ -1,7 +1,8 @@
 # ADR 0012: 共有するホスト API の型と宣言は `vy-host-api` に置く
 
 - 状態: 採用（型の置き場所は有効。宣言の共有方法は
-  [0013](./0013-host-api-traits.md) の trait に置き換え）
+  [0013](./0013-host-api-traits.md) の trait に置き換え。生成の分離は
+  [0014](./0014-api-codegen-cli.md) で実装）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -64,13 +65,13 @@ facade と dispatch を生成します。詳細は
 
 ### 4. 型生成の入口
 
-現在は `vy-app` の `export_bindings` テストが、共有宣言を参照するクライアントの
-`methods()` と、クライアント専用名前空間の宣言をまとめて
-`packages/vy-api` と `packages/vy-api-types` に書きます。
+現在は `vy-api-codegen` が、共有宣言を参照するクライアントの `methods()` と、
+クライアント専用名前空間の宣言をまとめて `packages/vy-api` と
+`packages/vy-api-types` に書きます（[0014](./0014-api-codegen-cli.md)）。
 
-バックエンド用の `backend.d.ts` を出す段階で、`vy-host-api` の宣言と
-バックエンド専用宣言をまとめる `vy-api-codegen` を追加します。実行時には
-誰も `vy-api-codegen` に依存しません。
+バックエンド用の `backend.d.ts` を出す段階でも、同じ `codegen::export_to` に
+`vy-host-api` の宣言とバックエンド専用宣言を渡します。実行時には誰も
+`vy-api-codegen` に依存しません。
 
 ### 5. バックエンド実装
 
@@ -92,7 +93,8 @@ API 宣言の切り出しを完了しました。
 - `vy-app` の各 namespace はハンドラだけを持つ
 - 生成される TypeScript の型名とワイヤー名は変えない
 
-`vy-api-codegen` と `backend.d.ts` は次の段階です。
+`vy-api-codegen` は [0014](./0014-api-codegen-cli.md) で追加しました。
+`backend.d.ts` は次の段階です。
 
 ## 帰結
 
@@ -112,7 +114,7 @@ API 宣言の切り出しを完了しました。
 ### 緩和策
 
 - 共有宣言の名前はハンドラ関数名の大文字（`read_file` → `READ_FILE`）に揃える。
-- 生成物の差分がないことを `cargo test --workspace export_bindings` で確認する。
+- 生成物の差分がないことを `cargo run -p vy-api-codegen -- client --check` で確認する。
 - 将来、共有宣言からハンドラの型を検査するテストを足す。
 
 ## 見直しの条件
@@ -124,6 +126,5 @@ API 宣言の切り出しを完了しました。
 
 ## 関連する未決定事項
 
-- `vy-api-codegen` の置き場所と、`CommandId.ts` の生成をどう分けるか。
 - 共有宣言とハンドラの型の一致をどこまで静的に検査するか。
 - `vy-api-macros` を declarative なハンドラ表に置き換えるか。
