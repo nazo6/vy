@@ -76,6 +76,7 @@ Phase 8 で扱います。
     `packages/vy-api/types` に生成し、名前空間の API は `#[vy_api_trait]`
     の宣言から生成する
 - [x] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
+- [x] `init.ts` の相対 TypeScript import を実装する
 - [ ] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`

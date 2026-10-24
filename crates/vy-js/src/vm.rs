@@ -18,6 +18,7 @@ use serde::Serialize;
 use vy_core::Uri;
 
 use crate::api::SHIM_SOURCE;
+use crate::modules::{ModuleFiles, ModuleLoader};
 use crate::transpile::strip_types;
 
 /// Time given to one evaluation of `init.ts`.
@@ -169,20 +170,34 @@ pub struct ScriptHost {
     events: async_channel::Receiver<ScriptEvent>,
     requests: async_channel::Receiver<HostRequest>,
     thread: Option<std::thread::JoinHandle<()>>,
+    files: ModuleFiles,
 }
 
 impl ScriptHost {
     /// Starts the thread and installs the shim. The runtime is ready before this
-    /// returns; evaluation waits for [`ScriptHost::evaluate`].
-    pub fn spawn(env: ScriptEnv) -> Self {
+    /// returns; evaluation waits for [`ScriptHost::evaluate`]. `root` bounds the
+    /// files that relative imports may load.
+    pub fn spawn(env: ScriptEnv, root: impl Into<PathBuf>) -> Self {
         let (task_sender, task_receiver) = async_channel::unbounded();
         let (event_sender, event_receiver) = async_channel::unbounded();
         let (request_sender, request_receiver) = async_channel::unbounded();
         let env_json = serde_json::to_string(&env).unwrap_or_else(|_| "{}".to_string());
+        let root = root.into();
+        let files = ModuleFiles::default();
+        let thread_files = files.clone();
 
         let thread = std::thread::Builder::new()
             .name("vy-js".to_string())
-            .spawn(move || run(env_json, task_receiver, event_sender, request_sender))
+            .spawn(move || {
+                run(
+                    env_json,
+                    root,
+                    thread_files,
+                    task_receiver,
+                    event_sender,
+                    request_sender,
+                )
+            })
             .ok();
 
         Self {
@@ -190,6 +205,7 @@ impl ScriptHost {
             events: event_receiver,
             requests: request_receiver,
             thread,
+            files,
         }
     }
 
@@ -201,10 +217,18 @@ impl ScriptHost {
         self.requests.clone()
     }
 
+    /// Files loaded by this runtime, including the entry module.
+    pub fn loaded_files(&self) -> Vec<PathBuf> {
+        self.files.snapshot()
+    }
+
     /// Queues an evaluation. Errors arrive as [`ScriptEvent::Error`].
     pub fn evaluate(&self, path: impl Into<PathBuf>, source: impl Into<String>) {
+        let path = path.into();
+        let tracked = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        self.files.insert(tracked);
         let _ = self.tasks.send_blocking(ScriptTask::Evaluate {
-            path: path.into(),
+            path,
             source: source.into(),
         });
     }
@@ -268,6 +292,8 @@ impl Drop for ScriptHost {
 /// Runs the thread until the task channel closes.
 fn run(
     env_json: String,
+    root: PathBuf,
+    files: ModuleFiles,
     tasks: async_channel::Receiver<ScriptTask>,
     events: async_channel::Sender<ScriptEvent>,
     requests: async_channel::Sender<HostRequest>,
@@ -283,6 +309,9 @@ fn run(
     };
 
     runtime.set_memory_limit(MEMORY_LIMIT);
+
+    let loader = ModuleLoader::new(root, files);
+    runtime.set_loader(loader.clone(), loader);
 
     let deadline = Arc::new(AtomicU64::new(0));
     let interrupt_deadline = deadline.clone();
@@ -361,7 +390,8 @@ fn run_task(
                 }
             };
 
-            let name = path.to_string_lossy().to_string();
+            let module_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            let name = module_path.to_string_lossy().into_owned();
             let result = with_deadline(deadline, EVALUATION_TIMEOUT, || {
                 let promise = Module::evaluate(ctx.clone(), name.as_str(), code)?;
                 promise.finish::<()>()?;
@@ -658,6 +688,38 @@ mod tests {
     use serde::Serialize;
     use serde_json::json;
 
+    fn temp_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("vy-js-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp root");
+        root
+    }
+
+    fn eval_string(host: &ScriptHost, source: &str) -> String {
+        host.eval(source);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            match host.events.recv_blocking() {
+                Ok(ScriptEvent::EvalFinished { result }) => return result,
+                Ok(ScriptEvent::Error { message }) => panic!("{message}"),
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        panic!("eval timed out");
+    }
+
+    fn evaluation_error(host: &ScriptHost, path: PathBuf, source: &str) -> String {
+        host.evaluate(path, source);
+        host.wait_for_evaluation()
+            .into_iter()
+            .find_map(|event| match event {
+                ScriptEvent::Error { message } => Some(message),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected an evaluation error"))
+    }
+
     #[derive(Serialize)]
     struct SelectionPayload {
         selections: Vec<vy_core::Selection>,
@@ -684,7 +746,7 @@ mod tests {
 
     #[test]
     fn runs_a_module_and_answers_config_calls() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -729,7 +791,7 @@ export const answer: number = 42;
 
     #[test]
     fn reports_a_syntax_error_with_a_position() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(PathBuf::from("init.ts"), "const value: = 1;\n");
         let events = host.wait_for_evaluation();
         assert!(
@@ -739,7 +801,7 @@ export const answer: number = 42;
 
     #[test]
     fn generated_forwarders_keep_the_object_shape() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -807,7 +869,7 @@ vy.commands.registerCommand("user.check", async () => {
 
     #[test]
     fn stops_an_infinite_loop() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(PathBuf::from("init.ts"), "while (true) {}\n");
         let events = host.wait_for_evaluation();
         assert!(matches!(events[0], ScriptEvent::Error { .. }));
@@ -815,7 +877,7 @@ vy.commands.registerCommand("user.check", async () => {
 
     #[test]
     fn runs_a_registered_command_handler() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -864,7 +926,7 @@ vy.commands.registerCommand("user.hello", async () => {
 
     #[test]
     fn executes_registered_command_from_script_and_returns_value() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -909,7 +971,7 @@ vy.commands.registerCommand("user.compute", async () => {
 
     #[test]
     fn ui_picker_returns_the_selected_id() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -962,7 +1024,7 @@ vy.commands.registerCommand("user.pick", async () => {
 
     #[test]
     fn ui_gutter_and_hover_apis() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
@@ -1005,7 +1067,7 @@ vy.ui.hover.hide();
 
     #[test]
     fn evals_typescript_expression_and_returns_result() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.eval("const x: number = 20; x * 2");
 
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -1027,7 +1089,7 @@ vy.ui.hover.hide();
 
     #[test]
     fn evals_top_level_await_expression() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.eval("await Promise.resolve('hello world')");
 
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -1049,7 +1111,7 @@ vy.ui.hover.hide();
 
     #[test]
     fn evals_global_vy() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
         host.eval("vy.commands.registerCommand ? 'has_register' : 'no'");
 
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -1071,7 +1133,7 @@ vy.ui.hover.hide();
 
     #[test]
     fn editor_and_workspace_event_listeners() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
 
         // Set up listeners in the script environment
         host.eval(
@@ -1180,7 +1242,7 @@ vy.ui.hover.hide();
 
     #[test]
     fn fs_and_process_calls() {
-        let host = ScriptHost::spawn(test_env());
+        let host = ScriptHost::spawn(test_env(), std::env::temp_dir());
 
         // Test fs.readTextFile
         host.eval(
@@ -1242,5 +1304,118 @@ vy.ui.hover.hide();
         } else {
             panic!("failed to verify process.exec stdout");
         }
+    }
+
+    #[test]
+    fn loads_relative_typescript_modules() {
+        let root = temp_root("relative");
+        std::fs::create_dir_all(root.join("lib")).expect("create lib");
+        std::fs::write(
+            root.join("lib/util.ts"),
+            "export const answer: number = 40;\n",
+        )
+        .expect("write util");
+        std::fs::write(
+            root.join("lib/index.ts"),
+            "export const extra: number = 2;\n",
+        )
+        .expect("write index");
+
+        let source = r#"
+import type { Missing } from "zod";
+import { answer } from "./lib/util";
+import { extra } from "./lib";
+globalThis.__answer = answer + extra;
+"#;
+        let init = root.join("init.ts");
+        std::fs::write(&init, source).expect("write init");
+
+        let host = ScriptHost::spawn(test_env(), &root);
+        host.evaluate(&init, source);
+        let events = host.wait_for_evaluation();
+        assert!(
+            matches!(events.last(), Some(ScriptEvent::Evaluated)),
+            "{events:?}"
+        );
+        assert_eq!(eval_string(&host, "globalThis.__answer"), "42");
+
+        let loaded = host.loaded_files();
+        assert!(loaded.contains(&std::fs::canonicalize(&init).expect("init")));
+        assert!(loaded.contains(&std::fs::canonicalize(root.join("lib/util.ts")).expect("util")));
+        assert!(loaded.contains(&std::fs::canonicalize(root.join("lib/index.ts")).expect("index")));
+
+        drop(host);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn loads_circular_relative_modules() {
+        let root = temp_root("circular");
+        std::fs::write(
+            root.join("a.ts"),
+            "import { b } from \"./b\";\nexport const a = b + 1;\n",
+        )
+        .expect("write a");
+        std::fs::write(
+            root.join("b.ts"),
+            "import { a } from \"./a\";\nexport const b = 1;\n",
+        )
+        .expect("write b");
+
+        let source = "import { a } from \"./a\";\nglobalThis.__a = a;\n";
+        let init = root.join("init.ts");
+        std::fs::write(&init, source).expect("write init");
+
+        let host = ScriptHost::spawn(test_env(), &root);
+        host.evaluate(&init, source);
+        let events = host.wait_for_evaluation();
+        assert!(
+            matches!(events.last(), Some(ScriptEvent::Evaluated)),
+            "{events:?}"
+        );
+        assert_eq!(eval_string(&host, "globalThis.__a"), "2");
+
+        drop(host);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_bare_imports_without_special_cases() {
+        for specifier in ["zod", "vy-api"] {
+            let root = temp_root(&format!("bare-{}", specifier.replace('-', "_")));
+            let source = format!("import \"{specifier}\";\n");
+            let init = root.join("init.ts");
+            std::fs::write(&init, &source).expect("write init");
+
+            let host = ScriptHost::spawn(test_env(), &root);
+            let message = evaluation_error(&host, init, &source);
+            assert!(
+                message.contains("only relative imports are supported"),
+                "{specifier}: {message}"
+            );
+
+            drop(host);
+            let _ = std::fs::remove_dir_all(&root);
+        }
+    }
+
+    #[test]
+    fn rejects_modules_outside_the_root() {
+        let base = temp_root("escape");
+        let root = base.join("plugin");
+        std::fs::create_dir_all(&root).expect("create plugin");
+        std::fs::write(base.join("outside.ts"), "export const value = 1;\n")
+            .expect("write outside");
+
+        let source = "import { value } from \"../outside\";\nglobalThis.__value = value;\n";
+        let init = root.join("init.ts");
+        std::fs::write(&init, source).expect("write init");
+
+        let host = ScriptHost::spawn(test_env(), &root);
+        let message = evaluation_error(&host, init, source);
+        assert!(message.contains("escapes the plugin root"), "{message}");
+
+        drop(host);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

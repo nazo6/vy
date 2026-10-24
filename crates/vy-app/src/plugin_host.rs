@@ -67,8 +67,12 @@ impl PluginHost {
     pub fn spawn(env: ScriptEnv, init_path: PathBuf) -> Self {
         let stamp = file_stamp(&init_path);
         let stored = env.clone();
+        let root = init_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
         Self {
-            script: ScriptHost::spawn(env),
+            script: ScriptHost::spawn(env, root),
             init_path,
             stamp,
             env: stored,
@@ -95,6 +99,11 @@ impl PluginHost {
 
     pub fn init_path(&self) -> &Path {
         &self.init_path
+    }
+
+    /// Files loaded by the script runtime, including `init.ts`.
+    pub fn loaded_files(&self) -> Vec<PathBuf> {
+        self.script.loaded_files()
     }
 
     /// Reads and evaluates `init.ts`. Missing files are not an error.

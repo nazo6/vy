@@ -10,6 +10,7 @@
 
 pub mod api;
 pub mod document;
+mod modules;
 pub mod transpile;
 pub mod vm;
 

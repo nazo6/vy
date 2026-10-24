@@ -41,8 +41,10 @@ interop、TypeScript の path alias、symlink、dynamic import、アセットを
 
 - `plugin.json` の `main` は `.ts` を指せます（例: `frontend.ts`）。
 - 相対 import だけを許可します（`./`、`../`）。
-- 探索順は、指定パス、`.ts`、`.tsx`、`.js`、`.mjs`、ディレクトリなら
+- 探索順は、指定パス、`.ts`、`.js`、`.mjs`、ディレクトリなら
   `index.ts` / `index.js` です。
+- JSX と `.tsx` は扱いません。QuickJS に JSX のランタイムがなく、UI は
+  ウィジェット木で作るためです。
 - `vy` はグローバルなので import は不要です。
 - 裸の specifier（`vy-api` を含む）、`node:*`、`node_modules`、`.json`、WASM、
   `require` は許可しません。裸の specifier には「バンドルしてください」と返します。

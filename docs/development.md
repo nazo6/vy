@@ -73,6 +73,8 @@ pnpm check:types
 - クライアントの GPUI に依存しない部分は `cargo test -p vy-app --lib`
   で確かめます。キーマップ、設定、コマンド、`init.ts`
   のホストは画面なしで動きます。
+- `init.ts` の相対 import は `cargo test -p vy-js` で、拡張子の補完、
+  `index.*`、循環 import、ルート脱出、裸の specifier を確認します。
 - プラグイン API の型は `pnpm check:types` で確かめます。
   `type-tests/commands.ts` が `Vy.CommandMap` の宣言マージ、
   `vy.commands.registerCommand`、`vy.commands.execute`、`vy.keymap.bind`

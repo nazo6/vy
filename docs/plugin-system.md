@@ -269,10 +269,10 @@ ID とバージョンの組で `trusted.json`
 `vy` はグローバルなので、どちらの形態でも import は不要です。
 
 ソース形態では、プラグインのディレクトリをルートとして相対 import を解決します。
-`./` と `../` だけを許可し、`.ts`、`.tsx`、`.js`、`.mjs`、ディレクトリの
-`index.*` を探します。ルート外への脱出、`node_modules`、`node:*`、`.json`、
-WASM、`require` は許可しません。裸の specifier（`vy-api` を含む）は
-「バンドルしてください」とエラーにします。
+`./` と `../` だけを許可し、`.ts`、`.js`、`.mjs`、ディレクトリなら
+`index.ts` / `index.js` を探します。JSX と `.tsx` は扱いません。ルート外への
+脱出、`node_modules`、`node:*`、`.json`、WASM、`require` は許可しません。裸の
+specifier（`vy-api` を含む）は「バンドルしてください」とエラーにします。
 
 外部依存を使うプラグインは、`frontend.ts` を1ファイルの ESM にバンドルし、
 `dist/` に置きます。バンドルは esbuild、tsup、rolldown-vite など一般の JS
