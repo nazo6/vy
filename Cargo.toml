@@ -6,6 +6,7 @@ members = [
   "crates/vy-app",
   "crates/vy-capabilities",
   "crates/vy-core",
+  "crates/vy-host-api",
   "crates/vy-js",
   "crates/vy-proto",
   "crates/vy-server",
@@ -60,6 +61,7 @@ vy-api-macros = { path = "crates/vy-api-macros" }
 vy-api-schema = { path = "crates/vy-api-schema" }
 vy-capabilities = { path = "crates/vy-capabilities" }
 vy-core = { path = "crates/vy-core" }
+vy-host-api = { path = "crates/vy-host-api" }
 vy-js = { path = "crates/vy-js" }
 vy-proto = { path = "crates/vy-proto" }
 

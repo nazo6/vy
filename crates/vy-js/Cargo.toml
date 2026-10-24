@@ -19,3 +19,4 @@ serde.workspace = true
 serde_json.workspace = true
 ts-rs.workspace = true
 vy-core.workspace = true
+vy-host-api.workspace = true

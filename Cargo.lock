@@ -6446,6 +6446,7 @@ dependencies = [
  "vy-api-schema",
  "vy-capabilities",
  "vy-core",
+ "vy-host-api",
  "vy-js",
  "vy-proto",
 ]
@@ -6470,6 +6471,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vy-host-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "vy-api-schema",
+ "vy-core",
+ "vy-proto",
+]
+
+[[package]]
 name = "vy-js"
 version = "0.1.0"
 dependencies = [
@@ -6486,6 +6499,7 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "vy-core",
+ "vy-host-api",
 ]
 
 [[package]]
