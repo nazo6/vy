@@ -1,17 +1,11 @@
-//! The client implementation of the shared and client-only host traits.
+//! Client implementation of the `workspace` host trait.
 
-use vy_client_api::ClientHostApi;
-use vy_client_api::namespaces::notifications::{NotificationsApi, NotificationsShowParams};
 use vy_core::Uri;
 use vy_host_api::DocumentInfoReply;
 use vy_host_api::workspace::{WorkspaceApi, WorkspaceInfoReply};
 
-use crate::api::{Call, CallError, Reply, document_info};
-
-/// Mutable client state exposed to one host call.
-pub struct ClientHost<'a, 'b, 'c> {
-    pub call: &'a mut Call<'b, 'c>,
-}
+use super::ClientHost;
+use crate::api::{CallError, Reply, document_info};
 
 impl WorkspaceApi for ClientHost<'_, '_, '_> {
     fn info(&mut self) -> Result<Reply<WorkspaceInfoReply>, CallError> {
@@ -42,14 +36,3 @@ impl WorkspaceApi for ClientHost<'_, '_, '_> {
         Ok(Reply::Value(documents))
     }
 }
-
-impl NotificationsApi for ClientHost<'_, '_, '_> {
-    fn show(&mut self, params: NotificationsShowParams) -> Result<Reply<()>, CallError> {
-        self.call.outcome.status = Some(params.message);
-        Ok(Reply::Value(()))
-    }
-}
-
-impl vy_host_api::HostApi for ClientHost<'_, '_, '_> {}
-
-impl ClientHostApi for ClientHost<'_, '_, '_> {}
