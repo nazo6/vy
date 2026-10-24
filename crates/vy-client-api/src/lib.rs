@@ -29,9 +29,11 @@ vy_host_api::host_api! {
 }
 
 pub mod color;
+pub mod command;
 pub mod keymap;
 pub mod namespaces;
 pub mod palette;
+pub mod settings;
 pub mod statusline;
 pub mod widget;
 
