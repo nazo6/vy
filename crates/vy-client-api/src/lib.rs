@@ -6,37 +6,20 @@
 
 pub use vy_host_api::{event_decl, method_decl};
 
-use vy_host_api::{CallError, Reply};
-
-/// The client host surface: shared APIs plus the client-only namespaces.
-pub trait ClientHostApi:
-    vy_host_api::HostApi
-    + namespaces::commands::CommandsApi
-    + namespaces::config::ConfigApi
-    + namespaces::notifications::NotificationsApi
-    + namespaces::views::ViewsApi
-{
-    fn dispatch(
-        &mut self,
-        method: &str,
-        params: &serde_json::Value,
-    ) -> Option<Result<Reply<serde_json::Value>, CallError>> {
-        if let Some(result) = <Self as vy_host_api::HostApi>::dispatch(self, method, params) {
-            return Some(result);
-        }
-        if let Some(result) = namespaces::commands::dispatch(self, method, params) {
-            return Some(result);
-        }
-        if let Some(result) = namespaces::config::dispatch(self, method, params) {
-            return Some(result);
-        }
-        if let Some(result) = namespaces::notifications::dispatch(self, method, params) {
-            return Some(result);
-        }
-        if let Some(result) = namespaces::views::dispatch(self, method, params) {
-            return Some(result);
-        }
-        None
+vy_host_api::host_api! {
+    trait ClientHostApi: vy_host_api::HostApi {
+        base_methods_fn = vy_host_api::host_api_methods;
+        base_namespaces_fn = vy_host_api::host_api_namespaces;
+        base_events_fn = vy_host_api::host_api_events;
+        traits = [
+            commands => CommandsApi,
+            config => ConfigApi,
+            notifications => NotificationsApi,
+            views => ViewsApi,
+        ];
+        methods_fn = client_host_api_methods;
+        namespaces_fn = client_host_api_namespaces;
+        events_fn = client_host_api_events;
     }
 }
 
@@ -47,6 +30,8 @@ pub mod palette;
 pub mod statusline;
 pub mod widget;
 
+pub use namespaces::{commands, config, notifications, views};
+
 pub use color::ThemeColor;
 pub use palette::PickerItem;
 pub use statusline::StatuslineAlignment;
@@ -55,6 +40,7 @@ pub use widget::WidgetNode;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vy_host_api::{CallError, Reply};
 
     #[test]
     fn editor_declares_client_state_methods_and_events() {
@@ -269,6 +255,7 @@ mod tests {
         }
     }
 
+    impl vy_host_api::HostRoot for TestHost {}
     impl vy_host_api::HostApi for TestHost {}
     impl ClientHostApi for TestHost {}
 

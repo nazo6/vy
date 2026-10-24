@@ -517,10 +517,74 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
 
     let mut generated_items = Vec::new();
     let mut declarations = Vec::new();
+    let mut event_entries = Vec::new();
     let mut arms = Vec::new();
     let mut retained = Vec::new();
 
     for item in std::mem::take(&mut trait_item.items) {
+        let item = match item {
+            TraitItem::Const(mut marker)
+                if marker
+                    .attrs
+                    .iter()
+                    .any(|attribute| is_attribute(attribute, "vy_api_event")) =>
+            {
+                let position = marker
+                    .attrs
+                    .iter()
+                    .position(|attribute| is_attribute(attribute, "vy_api_event"))
+                    .expect("checked above");
+                let attribute = marker.attrs.remove(position);
+                let event = parse_event_args(&attribute)?;
+                let topic = event.topic.value();
+                let (event_namespace, name) = topic.rsplit_once('.').ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &event.topic,
+                        "an event topic must be `<namespace>.<name>`",
+                    )
+                })?;
+                if !name.starts_with("on") {
+                    return Err(syn::Error::new_spanned(
+                        &event.topic,
+                        "an event name must start with `on`",
+                    ));
+                }
+                let identifier = marker.ident.clone();
+                let doc = doc_of(&marker.attrs);
+                let payload = event.payload;
+                let payload_fn = format_ident!("__vy_event_payload_{}", identifier);
+                let payload_collect = format_ident!("__vy_event_collect_{}", identifier);
+                let declaration = format_ident!("__VY_EVENT_{}", identifier);
+
+                generated_items.push(quote! {
+                    #[allow(non_snake_case)]
+                    fn #payload_fn() -> String {
+                        ::vy_api_schema::ts_name::<#payload>()
+                    }
+
+                    #[allow(non_snake_case)]
+                    fn #payload_collect(collector: &mut ::vy_api_schema::TypeCollector) {
+                        ::vy_api_schema::collect::<#payload>(collector);
+                    }
+
+                    static #declaration: ::vy_api_schema::EventDecl =
+                        ::vy_api_schema::EventDecl {
+                            topic: #topic,
+                            name: #name,
+                            namespace: #event_namespace,
+                            payload: ::vy_api_schema::TypeRef {
+                                name: #payload_fn as fn() -> String,
+                                collect: #payload_collect
+                                    as fn(&mut ::vy_api_schema::TypeCollector),
+                            },
+                            doc: #doc,
+                        };
+                });
+                event_entries.push(quote! { #declaration });
+                continue;
+            }
+            other => other,
+        };
         let TraitItem::Fn(mut method) = item else {
             retained.push(item);
             continue;
@@ -669,6 +733,9 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
 
         /// Every method declared by this trait.
         pub static METHODS: &[::vy_api_schema::MethodDecl] = &[#(#declarations),*];
+
+        /// Every event declared by this trait.
+        pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
 
         /// JSDoc and sugar metadata for the namespace.
         pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =

@@ -130,37 +130,21 @@ pub fn dispatch(
 
 /// Every declared method, including the trait-based namespaces.
 pub fn declarations() -> Vec<&'static MethodDecl> {
-    let mut declarations = Vec::new();
-    declarations.extend(vy_client_api::namespaces::commands::METHODS.iter());
-    declarations.extend(vy_host_api::config::METHODS.iter());
-    declarations.extend(vy_client_api::namespaces::config::METHODS.iter());
-    declarations.extend(vy_host_api::fs::METHODS.iter());
-    declarations.extend(vy_host_api::workspace::METHODS.iter());
-    declarations.extend(vy_client_api::namespaces::notifications::METHODS.iter());
-    declarations.extend(vy_client_api::namespaces::views::METHODS.iter());
+    let mut declarations = vy_client_api::client_host_api_methods();
     declarations.extend(methods().iter().map(|entry| entry.decl));
     declarations
 }
 
 /// Every declared namespace, including the trait-based namespaces.
 pub fn all_namespace_decls() -> Vec<&'static NamespaceDecl> {
-    let mut decls = vec![
-        &vy_client_api::namespaces::commands::NAMESPACE,
-        &vy_host_api::config::NAMESPACE,
-        &vy_host_api::fs::NAMESPACE,
-        &vy_host_api::workspace::NAMESPACE,
-        &vy_client_api::namespaces::notifications::NAMESPACE,
-        &vy_client_api::namespaces::views::NAMESPACE,
-    ];
+    let mut decls = vy_client_api::client_host_api_namespaces();
     decls.extend(namespace_decls());
     decls
 }
 
 /// Every declared event, including the trait-based namespaces.
 pub fn all_events() -> Vec<&'static EventDecl> {
-    let mut events: Vec<&'static EventDecl> = Vec::new();
-    events.extend(vy_host_api::config::EVENTS.iter());
-    events.extend(vy_host_api::workspace::EVENTS.iter());
+    let mut events = vy_client_api::client_host_api_events();
     events.extend(namespaces::events());
     events
 }

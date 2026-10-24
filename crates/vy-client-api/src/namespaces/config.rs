@@ -9,7 +9,7 @@ use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 pub use vy_host_api::config::{
-    ConfigChange, ConfigGetParams, ConfigInspectParams, ConfigInspectReply, EVENTS, GET, INSPECT,
+    ConfigChange, ConfigGetParams, ConfigInspectParams, ConfigInspectReply, GET, INSPECT,
 };
 
 /// `config.set` parameters.

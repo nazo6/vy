@@ -5,9 +5,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, Json};
+use vy_api_schema::Json;
 
-use crate::event_decl;
 use crate::{CallError, Reply};
 
 /// `config.get` parameters.
@@ -59,16 +58,8 @@ pub trait ConfigReadApi {
         &mut self,
         params: ConfigInspectParams,
     ) -> Result<Reply<ConfigInspectReply>, CallError>;
+
+    /// Fires when the effective value of a setting key changes.
+    #[vy_api_schema::vy_api_event("config.onDidChange", payload = ConfigChange)]
+    const ON_DID_CHANGE: ();
 }
-
-event_decl!(
-    ON_DID_CHANGE,
-    "config.onDidChange",
-    "config",
-    "onDidChange",
-    ConfigChange,
-    "Fires when the effective value of a setting key changes."
-);
-
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[ON_DID_CHANGE];

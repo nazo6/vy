@@ -19,6 +19,8 @@ pub struct ClientHost<'a, 'b, 'c> {
     pub call: &'a mut Call<'b, 'c>,
 }
 
+impl vy_host_api::HostRoot for ClientHost<'_, '_, '_> {}
+
 impl vy_host_api::HostApi for ClientHost<'_, '_, '_> {}
 
 impl ClientHostApi for ClientHost<'_, '_, '_> {}

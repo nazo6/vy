@@ -258,6 +258,8 @@ impl FsApi for CoreHost<'_> {
     }
 }
 
+impl vy_host_api::HostRoot for CoreHost<'_> {}
+
 impl HostApi for CoreHost<'_> {}
 
 #[cfg(test)]
