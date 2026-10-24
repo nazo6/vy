@@ -198,6 +198,12 @@ impl EditorView {
                 Pending::HostCall { request, .. } => {
                     request.respond_error(&code.to_string(), message);
                 }
+                Pending::Sync => {
+                    self.status = format!("{code}: {message}").into();
+                    // The session could not be restored, but the frontend
+                    // settings from `init.ts` still have to apply.
+                    self.ensure_init_evaluated();
+                }
                 _ => {
                     self.status = format!("{code}: {message}").into();
                 }
@@ -407,6 +413,9 @@ impl EditorView {
         let mut documents = std::collections::HashMap::new();
         for info in result.panes {
             let mut pane = PaneState::new(info.pane_id, None);
+            // The core saves only the view id. The tree is client state, so put
+            // back the last one a script rendered for this view.
+            pane.widget_tree = self.view_widget_trees.get(&info.view).cloned();
             pane.view_type = info.view;
             if let Some(document_id) = info.document_id {
                 if let std::collections::hash_map::Entry::Vacant(entry) =
@@ -448,6 +457,7 @@ impl EditorView {
 
         if documents.is_empty() {
             self.status = "reconnected; there are no open documents".into();
+            self.ensure_init_evaluated();
             return;
         }
 
@@ -502,8 +512,27 @@ impl EditorView {
                     },
                     Pending::EditorOpen,
                 );
+                // `init.ts` reads the active document, so wait for the snapshot
+                // of the startup file. A restored session has no snapshot of
+                // its own.
+                return;
             }
         }
+
+        self.ensure_init_evaluated();
+    }
+
+    /// Evaluates `init.ts` once the client has a document to read.
+    ///
+    /// A session restored from the core has no first snapshot, so the sync reply
+    /// is the point where `init.ts` can run. Later reconnects keep the
+    /// registrations from the first evaluation.
+    fn ensure_init_evaluated(&mut self) {
+        if self.init_evaluated {
+            return;
+        }
+        self.init_evaluated = true;
+        self.evaluate_init();
     }
 
     fn opened(&mut self, opened: PaneOpenResult) {
@@ -657,10 +686,7 @@ impl EditorView {
 
         // `init.ts` reads documents and settings, so it runs after the first
         // snapshot and before any user command.
-        if !self.init_evaluated {
-            self.init_evaluated = true;
-            self.evaluate_init();
-        }
+        self.ensure_init_evaluated();
     }
 
     fn received_history(&mut self, history: HistoryResult) {
