@@ -1,7 +1,8 @@
 # ADR 0007: プラグイン境界の型は Rust を正とする
 
 - 状態: 採用（メソッド宣言と dispatch は
-  [0008](./0008-declare-plugin-api-with-macros.md) で置き換え）
+  [0008](./0008-declare-plugin-api-with-macros.md)、型の置き場所は
+  [0009](./0009-api-types-live-with-handlers.md) で置き換え）
 - 日付: 2026-10-23
 
 ## 文脈

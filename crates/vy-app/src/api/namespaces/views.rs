@@ -3,10 +3,10 @@
 /// Registers and looks up pane views.
 #[vy_api_schema::vy_api_namespace("views")]
 mod api {
+    use crate::widget::WidgetNode;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use ts_rs::TS;
-    use crate::widget::WidgetNode;
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::UiCommand;

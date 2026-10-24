@@ -1,7 +1,7 @@
 //! Maps semantic color tokens to GPUI colors.
 
-use gpui::Rgba;
 use crate::theme::ThemeColor;
+use gpui::Rgba;
 
 use crate::theme::Theme;
 

@@ -33,3 +33,4 @@ ADR を追加します。古い ADR
 | [0006](./0006-user-controlled-ui-and-slots.md)   | ユーザー制御 UI とスロットによるステータスライン | 採用                                       |
 | [0007](./0007-rust-typed-plugin-api.md)          | プラグイン境界の型は Rust を正とする             | 採用（メソッド表の一部は 0008 で置き換え） |
 | [0008](./0008-declare-plugin-api-with-macros.md) | プラグイン API を宣言マクロで一本化する          | 採用                                       |
+| [0009](./0009-api-types-live-with-handlers.md)   | API の型はハンドラの隣に置き、生成を集約する     | 採用                                       |

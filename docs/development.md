@@ -76,13 +76,16 @@ cargo fmt --all --check
   `cargo test --workspace export_bindings` を実行し、`packages/vy-api-types` を
   一緒にコミットします。CI では生成後に `git diff --exit-code packages`
   で差分がないことを確かめます。生成先は `.cargo/config.toml` の
-  `TS_RS_EXPORT_DIR` です。プラグイン API の型は `crates/vy-api-schema`
-  が持ち、メソッドとイベントの宣言は `vy-app` の `#[vy_api_namespace]`
-  モジュールが持ちます。`HostMethods.ts`、`HostEvents.ts`、
-  `packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
-  も同じテストで生成します。手で書くのは糖衣の `packages/vy-api/overrides.d.ts`
+  `TS_RS_EXPORT_DIR` です。プラグイン API の params / reply / イベント payload
+  型は、それぞれの `#[vy_api_namespace]` モジュールでハンドラの隣に置きます。共有する
+  値型は `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）に置きます。
+  `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
+  `HostEvents.ts`、`packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
+  は、宣言が持つ `TypeCollector` から同じテストで生成します。`ts-rs` の自動テストに
+  頼らず、型ファイルも `codegen::export` が書きます。手で書くのは糖衣の
+  `packages/vy-api/overrides.d.ts`
   だけです。`CommandId.ts` と `SettingsKey.ts` は `vy-app`
-  のテストが生成します（[ADR 0008](./adr/0008-declare-plugin-api-with-macros.md)）。
+  のテストが生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
@@ -106,8 +109,8 @@ pnpm docs:api
 - 入口は `packages/vy-api/docs.d.ts` です。`index.d.ts`
   を再エクスポートし、糖衣の interface も TypeDoc に見せます。公開パッケージの
   export 面は変えません。
-- メソッドの説明は `crates/vy-api-schema/src/calls.rs` の `MethodSpec.doc`
-  が正です。`cargo test --workspace export_bindings` で `index.d.ts` に JSDoc
+- メソッドの説明は、各 `crates/vy-app/src/api/namespaces/*.rs` のハンドラの doc
+  コメントが正です。`cargo test --workspace export_bindings` で `index.d.ts` に JSDoc
   として出ます。
 - 糖衣（`Document`、`editor.edit`、statusline、picker、views、widget builder）の
   説明は `packages/vy-api/overrides.d.ts` に書きます。

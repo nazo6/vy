@@ -22,9 +22,7 @@ Phase に分けます。
   は、マニフェストの宣言と初回の承認を必要とします。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
-- 境界の型は Rust を正とします。`crates/vy-api-schema` がメソッド表と params /
-  reply 型を持ち、`packages/vy-api` と `packages/vy-api-types`
-  の宣言はそこから生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
+- 境界の型は Rust を正とします。params / reply / イベント payload 型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は `vy-app` の対応するモジュールに置きます。`packages/vy-api` と `packages/vy-api-types` の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
 
 ## 2. 表記の約束
 

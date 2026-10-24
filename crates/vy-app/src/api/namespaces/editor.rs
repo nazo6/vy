@@ -3,10 +3,10 @@
 /// Reads and edits the active document.
 #[vy_api_schema::vy_api_namespace("editor")]
 mod api {
+    use crate::keymap::Mode;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use ts_rs::TS;
-    use crate::keymap::Mode;
     use vy_core::{Selection, TextEdit, Uri};
     use vy_js::DocumentInfoReply;
 

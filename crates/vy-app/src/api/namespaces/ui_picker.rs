@@ -5,9 +5,9 @@
 mod api {
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use crate::palette::PickerItem;
     use serde::{Deserialize, Serialize};
     use ts_rs::TS;
-    use crate::palette::PickerItem;
 
     use crate::api::{Call, CallError, Reply};
     use crate::plugin_host::HostAction;
