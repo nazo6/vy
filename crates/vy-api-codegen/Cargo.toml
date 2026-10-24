@@ -6,5 +6,6 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+usage-rs.workspace = true
 vy-api-schema.workspace = true
 vy-client-api.workspace = true

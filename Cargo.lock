@@ -6308,6 +6308,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "usage-argv"
+version = "7.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e6c26160a0c3555a6a65fe6de0ff78f96e5cef6c42b0c3ca8f5879ad4a4e36"
+
+[[package]]
+name = "usage-derive"
+version = "7.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3967220729c94c9df7e4e7bb023a6e1b6fa560e635ec23c851c9957bb523fe"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "usage-rs"
+version = "7.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad1c2bc756a47c705ea4ea63c51d4eb7e64c13ee240bdd258f05c3a6fb0822f"
+dependencies = [
+ "usage-argv",
+ "usage-derive",
+]
+
+[[package]]
 name = "usvg"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6412,6 +6439,7 @@ dependencies = [
 name = "vy-api-codegen"
 version = "0.1.0"
 dependencies = [
+ "usage-rs",
  "vy-api-schema",
  "vy-client-api",
 ]
@@ -6450,6 +6478,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.21",
+ "usage-rs",
  "vy-api-schema",
  "vy-capabilities",
  "vy-client-api",
@@ -6549,6 +6578,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "usage-rs",
  "vy-capabilities",
  "vy-core",
  "vy-host-api",

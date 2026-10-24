@@ -10,41 +10,25 @@ mod stdio;
 
 use std::process::ExitCode;
 
-const HELP: &str = "\
-vy-server: headless core for Vy
-
-Usage:
-  vy-server [--stdio]
-
-Options:
-  --stdio      carry RPC over stdio (default)
-  --version    print the version
-  -h, --help   show this help
-
-Logs go to stderr. Stdout is reserved for RPC frames.
-";
+/// Headless core for Vy
+#[derive(usage_rs::Cli)]
+#[usage(
+    bin = "vy-server",
+    version,
+    after_help = "Logs go to stderr. Stdout is reserved for RPC frames."
+)]
+struct Cli {
+    /// Carry RPC over stdio (the only transport)
+    #[usage(long)]
+    stdio: bool,
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    for arg in std::env::args().skip(1) {
-        match arg.as_str() {
-            "--stdio" => {}
-            "--version" | "-V" => {
-                println!("vy-server {}", env!("CARGO_PKG_VERSION"));
-                return ExitCode::SUCCESS;
-            }
-            "--help" | "-h" => {
-                print!("{HELP}");
-                return ExitCode::SUCCESS;
-            }
-            other => {
-                eprintln!("unknown argument: {other}\n\n{HELP}");
-                return ExitCode::from(2);
-            }
-        }
-    }
+    let cli = Cli::parse();
 
     init_tracing();
+    tracing::debug!(stdio = cli.stdio, "starting vy-server");
 
     match stdio::serve(paths::data_dir()).await {
         Ok(()) => ExitCode::SUCCESS,

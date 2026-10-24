@@ -17,13 +17,7 @@ use vy_app::connection::{CliOptions, startup_for};
 use vy_app::paths::Paths;
 
 fn main() {
-    let options = match CliOptions::parse(std::env::args().skip(1)) {
-        Ok(options) => options,
-        Err(error) => {
-            eprintln!("vy: {error}");
-            std::process::exit(2);
-        }
-    };
+    let options = CliOptions::parse();
 
     let startup = match startup_for(&options, &Paths::from_env()) {
         Ok(startup) => startup,

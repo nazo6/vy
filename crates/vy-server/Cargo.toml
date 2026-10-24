@@ -19,6 +19,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+usage-rs.workspace = true
 vy-capabilities.workspace = true
 vy-core.workspace = true
 vy-host-api.workspace = true

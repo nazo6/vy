@@ -192,44 +192,21 @@ impl Startup {
 }
 
 /// Command-line arguments handled before the window opens.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, usage_rs::Cli)]
+#[usage(
+    bin = "vy-app",
+    version,
+    about = "A modal editor with a separate core process",
+    after_help = "Without --connect, the editor starts a local vy-server."
+)]
 pub struct CliOptions {
+    /// Connection profile from connections.json
+    #[usage(short = 'c', long, value_name = "PROFILE")]
     pub connect: Option<String>,
+
+    /// File to open at startup
+    #[usage(value_name = "FILE", value_hint = usage_rs::ValueHint::FilePath)]
     pub file: Option<String>,
-}
-
-impl CliOptions {
-    pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
-        let mut options = Self::default();
-        let mut args = args.into_iter();
-
-        while let Some(argument) = args.next() {
-            match argument.as_str() {
-                "--connect" | "-c" => {
-                    let name = args.next().ok_or("--connect requires a profile name")?;
-                    options.connect = Some(name);
-                }
-                _ if argument.starts_with("--connect=") => {
-                    let name = argument["--connect=".len()..].to_string();
-                    if name.is_empty() {
-                        return Err("--connect requires a profile name".to_string());
-                    }
-                    options.connect = Some(name);
-                }
-                _ if argument.starts_with('-') => {
-                    return Err(format!("unknown option: {argument}"));
-                }
-                _ => {
-                    if options.file.is_some() {
-                        return Err("only one file can be opened at startup".to_string());
-                    }
-                    options.file = Some(argument);
-                }
-            }
-        }
-
-        Ok(options)
-    }
 }
 
 /// Resolves the startup values for the command line.
@@ -332,28 +309,6 @@ mod tests {
             args,
             vec!["-T", "--", "example.com", "vy-server", "--stdio"]
         );
-    }
-
-    #[test]
-    fn parses_the_connect_option_and_file() {
-        let options = CliOptions::parse([
-            "--connect".to_string(),
-            "dev".to_string(),
-            "src/main.rs".to_string(),
-        ])
-        .expect("parse");
-        assert_eq!(options.connect.as_deref(), Some("dev"));
-        assert_eq!(options.file.as_deref(), Some("src/main.rs"));
-
-        let options = CliOptions::parse(["--connect=dev".to_string()]).expect("parse equals form");
-        assert_eq!(options.connect.as_deref(), Some("dev"));
-        assert!(options.file.is_none());
-    }
-
-    #[test]
-    fn rejects_unknown_options() {
-        assert!(CliOptions::parse(["--nope".to_string()]).is_err());
-        assert!(CliOptions::parse(["--connect".to_string()]).is_err());
     }
 
     #[test]

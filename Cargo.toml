@@ -28,6 +28,9 @@ serde = { version = "1", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2"
 
+# Command line
+usage-rs = "7"
+
 # Core
 ropey = "1"
 

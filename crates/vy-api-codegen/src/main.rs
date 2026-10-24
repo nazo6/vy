@@ -18,36 +18,32 @@ use vy_client_api::settings::SETTINGS;
 
 const REGENERATE: &str = "pnpm generate:api";
 
+/// Generates the TypeScript declarations for the plugin API
+#[derive(usage_rs::Cli)]
+#[usage(bin = "vy-api-codegen", version)]
+struct Cli {
+    /// Compare generated files without writing them
+    #[usage(long)]
+    check: bool,
+
+    /// Surface to generate
+    #[usage(default = "client", choices("client"))]
+    surface: String,
+}
+
 fn main() {
-    if let Err(error) = run() {
+    let cli = Cli::parse();
+    if let Err(error) = run(cli) {
         eprintln!("vy-api-codegen: {error}");
         std::process::exit(2);
     }
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
-    let mut check = false;
-    let mut command = None;
-
-    for argument in std::env::args().skip(1) {
-        match argument.as_str() {
-            "--check" => check = true,
-            "-h" | "--help" => {
-                print_help();
-                return Ok(());
-            }
-            value if value.starts_with('-') => {
-                return Err(format!("unknown option: {value}").into());
-            }
-            value if command.is_none() => command = Some(value.to_string()),
-            value => return Err(format!("unexpected argument: {value}").into()),
-        }
-    }
-
-    match command.as_deref().unwrap_or("client") {
+fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
+    match cli.surface.as_str() {
         "client" => {
             let output = Output::packages();
-            if check {
+            if cli.check {
                 check_client(&output)?;
                 eprintln!("vy-api-codegen: client declarations are up to date");
             } else {
@@ -59,15 +55,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn print_help() {
-    println!(
-        "Usage: vy-api-codegen [client] [--check]\n\n\
-         Generates the TypeScript declarations for the plugin API.\n\n\
-         client       Write the client declarations (default).\n\
-         --check      Compare generated files without writing them."
-    );
 }
 
 fn generate_client(output: &Output) -> Result<(), Box<dyn Error>> {
