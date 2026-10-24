@@ -179,7 +179,7 @@ crate 内に閉じ、外部からは `emit_event` だけを使います。
 - `fs` / `process` の `Reply::Deferred` と `ServerRpc`
 - `views` / `editor` の `HostAction`
 - `config` の共有 trait とクライアント trait の分割
-- `commands` の `manual` と `typed_args`
+- `commands` の `manual`（JS shim が型を提供する境界）
 - `host_api!` による facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集
 - `HostEvent` marker と `ScriptHost::emit_event` による型付きイベント
 - `vy-server` の `CoreHost` による共有 trait の実装

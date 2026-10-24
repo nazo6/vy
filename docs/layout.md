@@ -120,12 +120,13 @@ crates/
   vy-server/         ヘッドレスのバイナリ。RPC の受け口とセッション管理
   vy-proto/          RPC の型とバージョン
   vy-js/             QuickJS のホスト。モジュール解決、API の束縛、イベントループ
-                     lib.rs / vm.rs / transpile.rs / api.rs / shim.js
+                     lib.rs / vm.rs / transpile.rs / api.rs / shim.ts
+                     shim.js は shim.ts から生成する
   vy-capabilities/   ケイパビリティの定義、承認の記録、検査
 
 packages/
-  vy-api/            プラグイン API の型パッケージ。types/ は生成物、直下は手書きの糖衣
-                     ランタイムのシムは vy-js が持つ
+  vy-api/            プラグイン API の型パッケージ。types/ と api-base.d.ts は
+                     Rust から、shim.d.ts は vy-js の shim.ts から生成する
   vy-cli/            プラグインのビルド、インストール、doctor
   create-vy-plugin/  雛形の生成
 

@@ -247,17 +247,18 @@ version と一致したときだけ確定します。
 | API                                     | 実行場所 | ケイパビリティ | 優先度 |
 | :-------------------------------------- | :------- | :------------- | :----- |
 | `commands.registerCommand(id, handler)` | local    | なし           | P0     |
-| `commands.execute(id, args?)`           | both     | なし           | P0     |
+| `commands.execute({ id, args? })`       | both     | なし           | P0     |
 | `commands.getCommands()`                | local    | なし           | P1     |
-| `keymap.bind(keys, target, options?)`   | local    | なし           | P0     |
+| `keymap.bind({ keys, command, when? })` | local    | なし           | P0     |
 | `keymap.unbind({ keys })`               | local    | なし           | P0     |
 | `keymap.setContext({ key, value })`     | local    | なし           | P0     |
 | `keymap.registerMode(definition)`       | local    | なし           | P2     |
 | `keymap.sequenceTimeout`                | local    | なし           | P2     |
 
 コマンド ID は `<pluginId>.<name>` の形にします。組み込みのコマンドは `vy.`
-で始めます。`keymap.bind` の第2引数はコマンド ID か関数です。`options.when`
-にはコンテキスト式を書きます。
+で始めます。`commands.registerCommand` は独自コマンド用で、`vy.` で始まる ID は
+登録できません。`keymap.bind` の `command` は組み込み ID か独自コマンド ID です。
+`when` にはコンテキスト式を書きます。
 
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
 `vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、
@@ -270,7 +271,35 @@ Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_lef
 にあります。
 
 ```typescript
-keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });
+keymap.bind({
+  keys: "space f f",
+  command: "vy.editor.open",
+  when: "normalMode",
+});
+
+await commands.execute({
+  id: "vy.editor.open",
+  args: { uri: "src/main.rs" },
+});
+```
+
+独自コマンドは `CommandMap` を拡張すると引数まで型付けされます。
+
+```typescript
+declare module "vy-api" {
+  interface CommandMap {
+    "user.greet": { name: string };
+  }
+}
+
+commands.registerCommand("user.greet", (args) => {
+  // args は { name: string }
+});
+
+await commands.execute({
+  id: "user.greet",
+  args: { name: "Ada" },
+});
 ```
 
 ## 11. 設定
@@ -572,8 +601,9 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 ## 21. Phase 2 の実装状況
 
 Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しました。型は
-[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)（生成）と
-[`packages/vy-api/overrides.d.ts`](../packages/vy-api/overrides.d.ts)（糖衣）にあり、引数の形は
+[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)、
+[`packages/vy-api/api-base.d.ts`](../packages/vy-api/api-base.d.ts)、
+[`packages/vy-api/types`](../packages/vy-api/types) に生成され、引数の形は
 §2.1 のとおりです。
 
 | 名前空間                            | 実装済み                                                                                                |
@@ -582,7 +612,7 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 | `keymap`                            | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
 | `config`                            | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
 | `editor`                            | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
-| `document`（`Document` のメソッド） | `getText`、`lineAt`、`positionAt`、`offsetAt`、`fullRange`                                              |
+| `document`                          | `getText`、`lineAt`、`positionAt`、`offsetAt`                                                          |
 | `workspace`                         | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
 | `notifications`                     | `show`                                                                                                  |
 | `log`                               | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |

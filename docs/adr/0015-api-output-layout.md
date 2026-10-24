@@ -1,6 +1,7 @@
 # ADR 0015: API の生成物は `packages/vy-api` にまとめる
 
-- 状態: 採用
+- 状態: 採用（`overrides.d.ts` と `CommandId` は
+  [0016](./0016-command-types-and-ts-shim.md) で置き換え）
 - 日付: 2026-10-24
 
 ## 文脈

@@ -1,7 +1,8 @@
 # ADR 0014: API バインディングの生成を CLI に分離する
 
-- 状態: 採用（出力レイアウトは
-  [0015](./0015-api-output-layout.md) で置き換え）
+- 状態: 採用（出力レイアウトは [0015](./0015-api-output-layout.md)、
+  `CommandId` と `overrides.d.ts` は
+  [0016](./0016-command-types-and-ts-shim.md) で置き換え）
 - 日付: 2026-10-24
 
 ## 文脈

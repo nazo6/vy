@@ -64,6 +64,7 @@
 cargo test --workspace
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
+pnpm check:types
 ```
 
 - コアの変更は、ヘッドレスのテストで確かめます。
@@ -72,28 +73,31 @@ cargo fmt --all --check
 - クライアントの GPUI に依存しない部分は `cargo test -p vy-app --lib`
   で確かめます。キーマップ、設定、コマンド、`init.ts`
   のホストは画面なしで動きます。
-- プロトコル境界とプラグイン境界の型を変えたら、
-  `cargo run -p vy-api-codegen -- client` を実行し、`packages/vy-api` を
-  コミットします。CI では `cargo run -p vy-api-codegen -- client --check` と
-  `git diff --exit-code packages` で差分がないことを確かめます。出力先は
-  `codegen::Output::packages()` が決め、型は `packages/vy-api/types`、名前空間の
-  宣言は `packages/vy-api/index.d.ts` に置きます。クライアントとコアで共有する
-  API の params / reply / イベント payload 型とメソッド宣言は `vy-host-api` に
-  置きます。クライアント専用の型と宣言は `vy-client-api` に置きます。名前空間は
-  `#[vy_api_trait]` で trait として宣言し、`vy-app` / `vy-server` が実装します。
-  共有する値型は `vy-client-api` に置き、`vy-app` の対応するモジュール（`keymap`、
-  `color`、`widget` など）から再エクスポートします
-  （[ADR 0012](./adr/0012-shared-host-api.md)）。`host_api!` が生成する
-  `HostApi` / `ClientHostApi` の `dispatch` から名前空間を呼びます。イベントは
-  trait 内の `#[vy_api_event]` 関連定数で宣言します
+- プラグイン API の型は `pnpm check:types` で確かめます。
+  `type-tests/commands.ts` が `CommandMap`、`commands.registerCommand`、
+  `commands.execute`、`keymap.bind` の型検査を含みます。
+- プロトコル境界とプラグイン境界の型を変えたら、`pnpm generate:api` を実行し、
+  `packages/vy-api` と `crates/vy-js/src/generated/shim.js` をコミットします。
+  CI では `pnpm generate:api` の後に `git diff --exit-code packages crates/vy-js/src/generated`
+  で差分がないことを確かめます。出力先は `codegen::Output::packages()` が決め、
+  型は `packages/vy-api/types`、wire の名前空間宣言は `packages/vy-api/api-base.d.ts`
+  に置きます。`index.d.ts` は `types/`、`api-base.d.ts`、`shim.d.ts` を合成します。
+  クライアントとコアで共有する API の params / reply / イベント payload 型と
+  メソッド宣言は `vy-host-api` に置きます。クライアント専用の型と宣言は
+  `vy-client-api` に置きます。名前空間は `#[vy_api_trait]` で trait として宣言し、
+  `vy-app` / `vy-server` が実装します。共有する値型は `vy-client-api` に置き、
+  `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）から
+  再エクスポートします（[ADR 0012](./adr/0012-shared-host-api.md)）。`host_api!` が
+  生成する `HostApi` / `ClientHostApi` の `dispatch` から名前空間を呼びます。
+  イベントは trait 内の `#[vy_api_event]` 関連定数で宣言します
   （[ADR 0013](./adr/0013-host-api-traits.md)）。
   `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
-  `HostEvents.ts`、`packages/vy-api/types/index.ts`、`packages/vy-api/index.d.ts`
-  は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`ts-rs` の
-  自動テストに頼らず、型ファイルも `codegen::export_to` が書きます。手で書くのは
-  糖衣の `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と
-  `SettingsKey.ts` も同じ CLI が生成します。生成はテストではなく
-  [ADR 0014](./adr/0014-api-codegen-cli.md) のコマンドで行います。
+  `HostEvents.ts`、`packages/vy-api/types/index.ts`、`packages/vy-api/api-base.d.ts`
+  は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`BuiltinCommandMap.ts`
+  と `SettingsKey.ts` も同じ CLI が生成します。JS 向けの型は
+  `crates/vy-js/src/shim.ts` から `tsc` で `packages/vy-api/shim.d.ts` に生成します。
+  生成はテストではなく [ADR 0014](./adr/0014-api-codegen-cli.md) と
+  [ADR 0016](./adr/0016-command-types-and-ts-shim.md) のコマンドで行います。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
@@ -106,7 +110,7 @@ cargo fmt --all --check
 
 ```sh
 pnpm install --frozen-lockfile
-cargo run -p vy-api-codegen -- client
+pnpm generate:api
 pnpm docs:api
 ```
 
@@ -114,14 +118,12 @@ pnpm docs:api
 を使うと生成後に <http://localhost:8000> で表示できます。HTML は `target/`
 配下に生成し、コミットしません。
 
-- 入口は `packages/vy-api/docs.d.ts` です。`index.d.ts`
-  を再エクスポートし、糖衣の interface も TypeDoc に見せます。公開パッケージの
-  export 面は変えません。
+- 入口は `packages/vy-api/docs.d.ts` です。`index.d.ts` を再エクスポートします。
+  公開パッケージの export 面は変えません。
 - メソッドの説明は、`crates/vy-host-api` / `crates/vy-client-api` の trait の doc
-  コメントが正です。`cargo run -p vy-api-codegen -- client` で `index.d.ts` に
-  JSDoc として出ます。
-- 糖衣（`Document`、`editor.edit`、statusline、picker、views、widget builder）の
-  説明は `packages/vy-api/overrides.d.ts` に書きます。
+  コメントが正です。`pnpm generate:api` で `api-base.d.ts` に JSDoc として出ます。
+- JS 向けの糖衣（`commands.registerCommand`、`commands.execute`、イベント購読）の
+  説明は `crates/vy-js/src/shim.ts` に書きます。`shim.d.ts` はそこから生成されます。
 - 型の説明は Rust の doc コメントから `ts-rs` が JSDoc として出します。params
   型のフィールドは型レベルの説明に書きます（`ts-rs` はフィールド単位の JSDoc
   を出しません）。
