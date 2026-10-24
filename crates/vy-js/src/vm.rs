@@ -18,6 +18,7 @@ use serde::Serialize;
 use vy_core::Uri;
 
 use crate::api::{VyLoader, VyResolver};
+#[cfg(test)]
 use crate::document::DocumentInfoReply;
 use crate::transpile::strip_types;
 
@@ -219,22 +220,26 @@ impl ScriptHost {
     }
 
     /// Emits an event to the script.
-    pub fn emit(&self, topic: impl Into<String>, payload: serde_json::Value) {
+    fn emit(&self, topic: impl Into<String>, payload: serde_json::Value) {
         let _ = self.tasks.send_blocking(ScriptTask::Emit {
             topic: topic.into(),
             payload,
         });
     }
 
-    /// Tells the script that these keys changed.
-    pub fn emit_config_change(&self, keys: Vec<String>) {
-        for key in keys {
-            self.emit("config.onDidChange", serde_json::json!({ "key": key }));
+    /// Emits one typed event. The marker fixes both the topic and payload type.
+    pub fn emit_event<E: vy_host_api::HostEvent>(&self, payload: &E::Payload) {
+        match serde_json::to_value(payload) {
+            Ok(payload) => self.emit(E::TOPIC, payload),
+            Err(error) => {
+                eprintln!("vy: could not serialize event {}: {error}", E::TOPIC);
+            }
         }
     }
 
     /// Tells the script that the active editor's selections changed.
-    pub fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
+    #[cfg(test)]
+    fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
         self.emit(
             "editor.onDidChangeSelection",
             serde_json::json!({ "selections": selections }),
@@ -242,7 +247,8 @@ impl ScriptHost {
     }
 
     /// Tells the script that the active editor/document changed.
-    pub fn emit_active_editor_change(&self, document_info: Option<DocumentInfoReply>) {
+    #[cfg(test)]
+    fn emit_active_editor_change(&self, document_info: Option<DocumentInfoReply>) {
         self.emit(
             "editor.onDidChangeActiveDocument",
             serde_json::json!({ "document": document_info }),
@@ -250,28 +256,11 @@ impl ScriptHost {
     }
 
     /// Tells the script that workspace folders changed.
-    pub fn emit_workspace_folders_change(&self, folders: Vec<String>) {
+    #[cfg(test)]
+    fn emit_workspace_folders_change(&self, folders: Vec<String>) {
         self.emit(
             "workspace.onDidChangeWorkspaceFolders",
             serde_json::json!({ "folders": folders }),
-        );
-    }
-
-    /// Emits a stdout/stderr data chunk for a child process.
-    pub fn emit_process_data(&self, pid: u32, channel: String, data: String) {
-        let topic = if channel == "stderr" {
-            "process.onStderr"
-        } else {
-            "process.onStdout"
-        };
-        self.emit(topic, serde_json::json!({ "pid": pid, "data": data }));
-    }
-
-    /// Emits process exit event for a child process.
-    pub fn emit_process_exit(&self, pid: u32, exit_code: i32) {
-        self.emit(
-            "process.onExit",
-            serde_json::json!({ "pid": pid, "exitCode": exit_code }),
         );
     }
 
@@ -287,6 +276,12 @@ impl ScriptHost {
         self.thread
             .as_ref()
             .is_some_and(|thread| !thread.is_finished())
+    }
+}
+
+impl vy_host_api::EventTransport for ScriptHost {
+    fn emit_event<E: vy_host_api::HostEvent>(&self, payload: &E::Payload) {
+        ScriptHost::emit_event::<E>(self, payload);
     }
 }
 
@@ -693,6 +688,7 @@ impl ScriptHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::DocumentInfoReply;
     use serde_json::json;
 
     #[test]

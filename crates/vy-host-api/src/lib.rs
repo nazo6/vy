@@ -11,6 +11,7 @@ extern crate self as vy_host_api;
 pub mod config;
 pub mod context;
 pub mod document;
+pub mod event;
 pub mod fs;
 pub mod log;
 pub mod process;
@@ -18,6 +19,7 @@ pub mod runtime;
 pub mod workspace;
 
 pub use document::DocumentInfoReply;
+pub use event::{EventTransport, HostEvent};
 pub use runtime::{CallError, Reply, erase_reply, parse_params};
 pub use vy_api_schema::Json;
 
@@ -191,6 +193,18 @@ mod tests {
             ]
         );
         assert_eq!(process::EVENTS.len(), 3);
+    }
+
+    #[test]
+    fn events_have_typed_markers() {
+        assert_eq!(process::OnStdout::TOPIC, "process.onStdout");
+        assert_eq!(process::OnStderr::TOPIC, "process.onStderr");
+        assert_eq!(process::OnExit::TOPIC, "process.onExit");
+        assert_eq!(
+            workspace::OnDidChangeWorkspaceFolders::TOPIC,
+            "workspace.onDidChangeWorkspaceFolders"
+        );
+        assert_eq!(config::OnDidChange::TOPIC, "config.onDidChange");
     }
 
     #[test]

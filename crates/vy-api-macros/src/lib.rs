@@ -208,11 +208,20 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                 let identifier = marker.ident.clone();
                 let doc = doc_of(&marker.attrs);
                 let payload = event.payload;
+                let marker = format_ident!("{}", pascal_case(name));
                 let payload_fn = format_ident!("__vy_event_payload_{}", identifier);
                 let payload_collect = format_ident!("__vy_event_collect_{}", identifier);
                 let declaration = format_ident!("__VY_EVENT_{}", identifier);
 
                 generated_items.push(quote! {
+                    /// Marker for this event.
+                    pub struct #marker;
+
+                    impl ::vy_host_api::HostEvent for #marker {
+                        const TOPIC: &'static str = #topic;
+                        type Payload = #payload;
+                    }
+
                     #[allow(non_snake_case)]
                     fn #payload_fn() -> String {
                         ::vy_api_schema::ts_name::<#payload>()
@@ -511,6 +520,18 @@ fn doc_of(attributes: &[Attribute]) -> String {
         }
     }
     lines.join("\n")
+}
+
+fn pascal_case(name: &str) -> String {
+    let mut characters = name.chars();
+    match characters.next() {
+        Some(first) => {
+            let mut output = first.to_uppercase().collect::<String>();
+            output.push_str(characters.as_str());
+            output
+        }
+        None => String::new(),
+    }
 }
 
 fn camel_case(name: &str) -> String {

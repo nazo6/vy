@@ -142,22 +142,37 @@ impl PluginHost {
 
     /// Tells the script which settings keys changed.
     pub fn emit_config_change(&self, keys: Vec<String>) {
-        self.script.emit_config_change(keys);
+        for key in keys {
+            self.script.emit_event::<vy_host_api::config::OnDidChange>(
+                &vy_host_api::config::ConfigChange { key },
+            );
+        }
     }
 
     /// Tells the script that the active editor's selections changed.
     pub fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
-        self.script.emit_selection_change(selections);
+        self.script
+            .emit_event::<vy_client_api::editor::OnDidChangeSelection>(
+                &vy_client_api::editor::SelectionChange { selections },
+            );
     }
 
     /// Tells the script that the active editor/document changed.
     pub fn emit_active_editor_change(&self, document_info: Option<vy_js::DocumentInfoReply>) {
-        self.script.emit_active_editor_change(document_info);
+        self.script
+            .emit_event::<vy_client_api::editor::OnDidChangeActiveDocument>(
+                &vy_client_api::editor::ActiveDocumentChange {
+                    document: document_info,
+                },
+            );
     }
 
     /// Tells the script that workspace folders changed.
     pub fn emit_workspace_folders_change(&self, folders: Vec<String>) {
-        self.script.emit_workspace_folders_change(folders);
+        self.script
+            .emit_event::<vy_host_api::workspace::OnDidChangeWorkspaceFolders>(
+                &vy_host_api::workspace::WorkspaceFoldersChange { folders },
+            );
     }
 
     pub fn is_running(&self) -> bool {

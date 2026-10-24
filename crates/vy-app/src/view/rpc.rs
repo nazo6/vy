@@ -242,27 +242,41 @@ impl EditorView {
                 let channel = json
                     .get("channel")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("stdout")
-                    .to_string();
+                    .unwrap_or("stdout");
                 let data = json
                     .get("data")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                plugin.script().emit_process_data(pid, channel, data);
+                let payload = vy_host_api::process::ProcessData { pid, data };
+                if channel == "stderr" {
+                    plugin
+                        .script()
+                        .emit_event::<vy_host_api::process::OnStderr>(&payload);
+                } else {
+                    plugin
+                        .script()
+                        .emit_event::<vy_host_api::process::OnStdout>(&payload);
+                }
             }
             vy_proto::StreamPayload::End { summary } => {
                 let exit_code = summary
                     .and_then(|s| decode_value::<serde_json::Value>(&s))
                     .and_then(|s| s.get("exit_code").and_then(|v| v.as_i64()))
                     .unwrap_or(0) as i32;
-                plugin.script().emit_process_exit(pid, exit_code);
+                plugin.script().emit_event::<vy_host_api::process::OnExit>(
+                    &vy_host_api::process::ProcessExit { pid, exit_code },
+                );
             }
             vy_proto::StreamPayload::Error { message, .. } => {
                 plugin
                     .script()
-                    .emit_process_data(pid, "stderr".into(), message);
-                plugin.script().emit_process_exit(pid, -1);
+                    .emit_event::<vy_host_api::process::OnStderr>(
+                        &vy_host_api::process::ProcessData { pid, data: message },
+                    );
+                plugin.script().emit_event::<vy_host_api::process::OnExit>(
+                    &vy_host_api::process::ProcessExit { pid, exit_code: -1 },
+                );
             }
         }
     }
