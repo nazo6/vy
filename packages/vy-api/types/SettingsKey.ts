@@ -15,6 +15,8 @@ export interface SettingsMap {
   "editor.transactionIdleMs": number;
   /** Time in milliseconds allowed between keys of one sequence. */
   "editor.sequenceTimeoutMs": number;
+  /** Whether to wrap lines that exceed the viewport width. */
+  "editor.wrap": boolean;
 }
 
 /** Names of every setting the client defines. */

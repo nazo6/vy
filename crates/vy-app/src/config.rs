@@ -222,6 +222,12 @@ impl Config {
         self.unsigned("editor.sequenceTimeoutMs", 1000)
     }
 
+    pub fn wrap(&self) -> bool {
+        self.get("editor.wrap")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     fn string(&self, key: &str, fallback: &str) -> String {
         self.get(key)
             .and_then(Value::as_str)
@@ -309,6 +315,15 @@ mod tests {
         // Memory layer takes precedence over user layer.
         config.set("ui.lineHeight", Value::from(40.0));
         assert_eq!(config.line_height(), 40.0);
+    }
+
+    #[test]
+    fn config_resolves_wrap_setting() {
+        let mut config = Config::with_defaults();
+        assert!(!config.wrap());
+
+        config.set("editor.wrap", Value::Bool(true));
+        assert!(config.wrap());
     }
 
     #[test]

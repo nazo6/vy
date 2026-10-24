@@ -86,6 +86,9 @@ define_command_enum! {
         CenterCursor => ("vy.view.center_cursor", "Center Cursor"),
         ScrollCursorTop => ("vy.view.scroll_cursor_top", "Scroll Cursor Top"),
         ScrollCursorBottom => ("vy.view.scroll_cursor_bottom", "Scroll Cursor Bottom"),
+        ScrollLeft => ("vy.view.scroll_left", "Scroll Left"),
+        ScrollRight => ("vy.view.scroll_right", "Scroll Right"),
+        ToggleWrap => ("vy.view.toggle_wrap", "Toggle Wrap"),
     }
 }
 

@@ -127,6 +127,8 @@ pub struct EditorView {
     statusline: Statusline,
     /// Gutter marks registered by scripts/plugins.
     gutter: GutterRegistry,
+    /// Width of one character measured from font or approximate default.
+    pub(crate) char_width: f32,
     /// Hover popup currently displayed, if any.
     hover: Option<HoverState>,
     last_reported_document_id: Option<u64>,
@@ -192,6 +194,8 @@ impl EditorView {
             .editor
             .set_transaction_idle(Duration::from_millis(config.transaction_idle_ms()));
 
+        let char_width = ui::pane::character_width(&config);
+
         let mut view = Self {
             client: None,
             connection_generation: 0,
@@ -235,6 +239,7 @@ impl EditorView {
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
             last_frame: None,
+            char_width,
             statusline: Statusline::new(),
             gutter: GutterRegistry::new(),
             hover: None,
@@ -590,7 +595,7 @@ impl EditorView {
         changed
     }
 
-    /// Scrolls by whole lines. The wheel moves the view, not the cursor.
+    /// Scrolls by whole lines or columns. The wheel moves the view, not the cursor.
     fn on_scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
@@ -598,35 +603,121 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) {
         let line_height = self.line_height();
-        let delta = f32::from(event.delta.pixel_delta(px(line_height)).y);
-        if delta == 0.0 {
+        let pixel_delta = event.delta.pixel_delta(px(line_height));
+        let delta_y = f32::from(pixel_delta.y);
+        let delta_x = f32::from(pixel_delta.x);
+        if delta_y == 0.0 && delta_x == 0.0 {
             return;
         }
 
-        let Some(pane) = self.active_pane_state() else {
+        let Some(active_pane_id) = self.active_pane else {
             return;
         };
-        let Some(document) = self.active_document() else {
+        let Some(pane) = self.panes.get(&active_pane_id) else {
             return;
         };
-        let (viewport_rows, scroll_top, line_count) = (
-            pane.viewport_rows,
-            pane.scroll_top,
-            document.editor.line_count(),
-        );
+        let is_wrap = pane.is_wrap(&self.config);
+        let viewport_rows = pane.viewport_rows;
+        let viewport_cols = pane.viewport_cols;
+        let scroll_top = pane.scroll_top;
+        let scroll_left = pane.scroll_left;
+        let scroll_sub_line = pane.scroll_sub_line;
+        let Some(doc_id) = pane.document_id else {
+            return;
+        };
+        let Some(document) = self.documents.get(&doc_id) else {
+            return;
+        };
+        let line_count = document.editor.line_count();
 
-        // Positive deltas scroll up, so they move towards earlier lines.
-        let mut lines = (delta / line_height).round() as isize;
-        if lines == 0 {
-            lines = delta.signum() as isize;
-        }
+        let mut changed = false;
 
-        let next = scroll_lines(scroll_top, -lines, viewport_rows, line_count);
-
-        if next != scroll_top {
-            if let Some(pane) = self.active_pane_state_mut() {
-                pane.scroll_top = next;
+        if delta_x != 0.0 && !is_wrap {
+            let char_width = self.char_width;
+            let mut cols = (delta_x / char_width).round() as isize;
+            if cols == 0 {
+                cols = delta_x.signum() as isize;
             }
+            let next = vy_app::text_layout::scroll_cols(scroll_left, -cols);
+            if next != scroll_left {
+                if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                    pane.scroll_left = next;
+                }
+                changed = true;
+            }
+        }
+
+        if delta_y != 0.0 {
+            let mut lines = (delta_y / line_height).round() as isize;
+            if lines == 0 {
+                lines = delta_y.signum() as isize;
+            }
+
+            if !is_wrap {
+                let next = scroll_lines(scroll_top, -lines, viewport_rows, line_count);
+                if next != scroll_top {
+                    if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                        pane.scroll_top = next;
+                    }
+                    changed = true;
+                }
+            } else {
+                let rows_delta = -lines;
+                let cols = viewport_cols.max(1);
+                let mut cur_top = scroll_top;
+                let mut cur_sub = scroll_sub_line;
+
+                if rows_delta > 0 {
+                    let mut remaining = rows_delta as usize;
+                    while remaining > 0 && cur_top < line_count {
+                        let text = document.editor.line(cur_top).unwrap_or_default();
+                        let num_chunks = vy_app::text_layout::chunk_line(&text, cols).len();
+                        if cur_sub + 1 < num_chunks {
+                            cur_sub += 1;
+                            remaining -= 1;
+                        } else if cur_top + 1 < line_count {
+                            cur_top += 1;
+                            cur_sub = 0;
+                            remaining -= 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    if cur_top != scroll_top || cur_sub != scroll_sub_line {
+                        if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                            pane.scroll_top = cur_top;
+                            pane.scroll_sub_line = cur_sub;
+                        }
+                        changed = true;
+                    }
+                } else if rows_delta < 0 {
+                    let mut remaining = rows_delta.unsigned_abs();
+                    while remaining > 0 {
+                        if cur_sub > 0 {
+                            cur_sub -= 1;
+                            remaining -= 1;
+                        } else if cur_top > 0 {
+                            cur_top -= 1;
+                            let text = document.editor.line(cur_top).unwrap_or_default();
+                            let num_chunks = vy_app::text_layout::chunk_line(&text, cols).len();
+                            cur_sub = num_chunks.saturating_sub(1);
+                            remaining -= 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    if cur_top != scroll_top || cur_sub != scroll_sub_line {
+                        if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                            pane.scroll_top = cur_top;
+                            pane.scroll_sub_line = cur_sub;
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if changed {
             cx.notify();
         }
     }

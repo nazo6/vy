@@ -74,6 +74,10 @@ fn sequence_timeout_ms() -> Value {
     Value::from(1000)
 }
 
+fn wrap() -> Value {
+    Value::from(false)
+}
+
 /// Every setting the client defines, with its default and description.
 pub const SETTINGS: &[SettingDecl] = &[
     SettingDecl {
@@ -105,6 +109,11 @@ pub const SETTINGS: &[SettingDecl] = &[
         key: "editor.sequenceTimeoutMs",
         doc: "Time in milliseconds allowed between keys of one sequence.",
         default: sequence_timeout_ms,
+    },
+    SettingDecl {
+        key: "editor.wrap",
+        doc: "Whether to wrap lines that exceed the viewport width.",
+        default: wrap,
     },
 ];
 

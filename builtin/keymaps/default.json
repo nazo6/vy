@@ -219,6 +219,16 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "z h",
+        "command": "vy.view.scroll_right",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "z l",
+        "command": "vy.view.scroll_left",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "enter",
         "command": "vy.insert.newline",
         "when": "mode == 'insert'"

@@ -212,6 +212,34 @@ impl EditorView {
                     pane.scroll_top = scroll_cursor_bottom(cursor_line, viewport_rows, line_count);
                 }
             }
+            ViewCommand::ScrollLeft => {
+                let delta = count.unwrap_or(4) as isize;
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_left = vy_app::text_layout::scroll_cols(pane.scroll_left, -delta);
+                }
+            }
+            ViewCommand::ScrollRight => {
+                let delta = count.unwrap_or(4) as isize;
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_left = vy_app::text_layout::scroll_cols(pane.scroll_left, delta);
+                }
+            }
+            ViewCommand::ToggleWrap => {
+                let current = self
+                    .active_pane_state()
+                    .map(|p| p.is_wrap(&self.config))
+                    .unwrap_or(false);
+                let next = !current;
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.wrap = Some(next);
+                    if next {
+                        pane.scroll_left = 0;
+                    } else {
+                        pane.scroll_sub_line = 0;
+                    }
+                }
+                self.ensure_cursor_visible();
+            }
         }
     }
 

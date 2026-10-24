@@ -269,6 +269,10 @@ pub const EX_ALIASES: &[ExAlias] = &[
         name: "reconnect",
         id: "vy.reconnect_server",
     },
+    ExAlias {
+        name: "wrap",
+        id: "vy.view.toggle_wrap",
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -655,6 +659,7 @@ mod tests {
         assert_eq!(resolve_ex_name("buffer"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve_ex_name("ts"), Ok("vy.script.eval"));
         assert_eq!(resolve_ex_name("reconnect"), Ok("vy.reconnect_server"));
+        assert_eq!(resolve_ex_name("wrap"), Ok("vy.view.toggle_wrap"));
         assert_eq!(
             resolve_ex_name("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
@@ -674,6 +679,7 @@ mod tests {
                     "buffer".to_string(),
                     "ts".to_string(),
                     "reconnect".to_string(),
+                    "wrap".to_string(),
                 ],
             })
         );

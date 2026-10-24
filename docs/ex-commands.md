@@ -165,6 +165,8 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | `:w`     | `vy.document.save`          | 実装済み | 引数のパスは未対応            |
 | `:b` / `:buffer` | `vy.editor.switch_document` | 実装済み | 文書の切り替え                |
 | `:ts`    | `vy.script.eval`            | 実装済み | TypeScript コードを直接評価   |
+| `:reconnect` | `vy.reconnect_server`   | 実装済み | サーバーへの再接続            |
+| `:wrap`  | `vy.view.toggle_wrap`       | 実装済み | 折り返しモードの切り替え      |
 | `:wq`    | `vy.document.write_quit`    | 未実装   | 保存と終了を 1 コマンドにする |
 | `:bn`    | `vy.document.next`          | 未実装   | 文書一覧ができてから          |
 | `:bp`    | `vy.document.previous`      | 未実装   | 文書一覧ができてから          |

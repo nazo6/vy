@@ -53,8 +53,16 @@ pub struct PaneState {
     pub preedit_selection: Option<std::ops::Range<usize>>,
     /// First line drawn in this pane.
     pub scroll_top: usize,
+    /// First column scrolled in this pane when wrap is disabled.
+    pub scroll_left: usize,
+    /// Visual row offset within the first line drawn in this pane when wrap is enabled.
+    pub scroll_sub_line: usize,
     /// Rows that fit in this pane. Updated on every render.
     pub viewport_rows: usize,
+    /// Columns that fit horizontally in this pane. Updated on every render.
+    pub viewport_cols: usize,
+    /// Pane-specific wrap mode override. None falls back to config.
+    pub wrap: Option<bool>,
     /// Kind of view displayed in this pane (e.g. "editor", "ui", "list", etc.).
     pub view_type: String,
     /// Root of the custom widget tree if this is a "ui" view.
@@ -70,9 +78,42 @@ impl PaneState {
             preedit: String::new(),
             preedit_selection: None,
             scroll_top: 0,
+            scroll_left: 0,
+            scroll_sub_line: 0,
             viewport_rows: VISIBLE_LINES,
+            viewport_cols: 80,
+            wrap: None,
             view_type: "editor".to_string(),
             widget_tree: None,
         }
+    }
+
+    /// Whether line wrapping is active for this pane.
+    pub fn is_wrap(&self, config: &crate::config::Config) -> bool {
+        self.wrap.unwrap_or_else(|| config.wrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn pane_inherits_wrap_from_config_or_overrides() {
+        let mut config = Config::with_defaults();
+        let mut pane = PaneState::new(1, None);
+
+        assert!(!pane.is_wrap(&config));
+
+        pane.wrap = Some(true);
+        assert!(pane.is_wrap(&config));
+
+        pane.wrap = Some(false);
+        assert!(!pane.is_wrap(&config));
+
+        pane.wrap = None;
+        config.set("editor.wrap", serde_json::Value::Bool(true));
+        assert!(pane.is_wrap(&config));
     }
 }

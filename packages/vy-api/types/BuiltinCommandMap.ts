@@ -78,7 +78,10 @@ export interface BuiltinCommandMap {
   "vy.view.scroll_cursor_top": unknown;
   "vy.view.scroll_half_page_down": unknown;
   "vy.view.scroll_half_page_up": unknown;
+  "vy.view.scroll_left": unknown;
+  "vy.view.scroll_right": unknown;
   "vy.view.toggle": unknown;
+  "vy.view.toggle_wrap": unknown;
 }
 
 /** Identifiers of the commands built into the client. */

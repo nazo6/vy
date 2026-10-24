@@ -7,7 +7,7 @@ use gpui::{
     ParentElement, Render, Styled, Window, canvas, div, px,
 };
 use vy_app::state::{DocumentState, PaneState};
-use vy_app::text_layout::{clamp_scroll_top, scroll_to_show};
+use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
 use super::EditorView;
@@ -42,33 +42,177 @@ impl EditorView {
         ui::pane::gutter_width(&self.config, line_count)
     }
 
-    /// Moves the active viewport just enough to show the cursor.
-    pub(super) fn ensure_cursor_visible(&mut self) {
-        let (line, rows, scroll_top, total) = {
-            let Some(pane) = self.active_pane_state() else {
-                return;
-            };
-            let Some(document) = self.active_document() else {
-                return;
-            };
-            (
-                pane.view.cursor().line as usize,
-                pane.viewport_rows,
-                pane.scroll_top,
-                document.editor.line_count(),
-            )
+    /// Updates the row and column capacity of all panes based on their allocated dimensions.
+    pub(super) fn update_pane_viewports(&mut self, width: f32, height: f32) {
+        let lh = self.line_height();
+        let ch_w = self.char_width;
+        let active_doc_lines = self
+            .active_document()
+            .map(|d| d.editor.line_count())
+            .unwrap_or(1);
+        let gutter = self.gutter_width(active_doc_lines);
+        let rows = ((height / lh).floor().max(1.0)) as usize;
+        let cols = (((width - gutter).max(0.0) / ch_w).floor().max(1.0)) as usize;
+
+        let Some(layout) = self.layout.clone() else {
+            if let Some(pane) = self.active_pane_state_mut() {
+                pane.viewport_rows = rows;
+                pane.viewport_cols = cols;
+            }
+            return;
         };
 
-        let next = scroll_to_show(line, scroll_top, rows, total);
-        if let Some(pane) = self.active_pane_state_mut() {
-            pane.scroll_top = next;
+        self.update_node_viewports(&layout, width, height);
+    }
+
+    fn update_node_viewports(&mut self, node: &LayoutNode, width: f32, height: f32) {
+        match node {
+            LayoutNode::Leaf { pane_id } => {
+                let lh = self.line_height();
+                let ch_w = self.char_width;
+                let doc_lines = self
+                    .panes
+                    .get(pane_id)
+                    .and_then(|p| p.document_id)
+                    .and_then(|id| self.documents.get(&id))
+                    .map(|d| d.editor.line_count())
+                    .unwrap_or(1);
+                let gutter = self.gutter_width(doc_lines);
+                if let Some(pane) = self.panes.get_mut(pane_id) {
+                    pane.viewport_rows = ((height / lh).floor().max(1.0)) as usize;
+                    pane.viewport_cols =
+                        (((width - gutter).max(0.0) / ch_w).floor().max(1.0)) as usize;
+                }
+            }
+            LayoutNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => match direction {
+                SplitDirection::Horizontal => {
+                    self.update_node_viewports(first, width * ratio, height);
+                    self.update_node_viewports(second, width * (1.0 - ratio), height);
+                }
+                SplitDirection::Vertical => {
+                    self.update_node_viewports(first, width, height * ratio);
+                    self.update_node_viewports(second, width, height * (1.0 - ratio));
+                }
+            },
+        }
+    }
+
+    /// Moves the active viewport just enough to show the cursor.
+    pub(super) fn ensure_cursor_visible(&mut self) {
+        let Some(pane) = self.active_pane_state() else {
+            return;
+        };
+        let Some(document) = self.active_document() else {
+            return;
+        };
+
+        let is_wrap = pane.is_wrap(&self.config);
+        let cursor = pane.view.cursor();
+        let cursor_line = cursor.line as usize;
+        let line_count = document.editor.line_count();
+        let rows = pane.viewport_rows;
+        let cols = pane.viewport_cols;
+
+        if !is_wrap {
+            let next_top = scroll_to_show(cursor_line, pane.scroll_top, rows, line_count);
+            let next_left =
+                scroll_to_show_horizontal(cursor.character as usize, pane.scroll_left, cols);
+            if let Some(pane) = self.active_pane_state_mut() {
+                pane.scroll_top = next_top;
+                pane.scroll_left = next_left;
+                pane.scroll_sub_line = 0;
+            }
+        } else {
+            let text = document.editor.line(cursor_line).unwrap_or_default();
+            let chunks = vy_app::text_layout::chunk_line(&text, cols);
+            let cursor_chunk = chunks
+                .iter()
+                .enumerate()
+                .find_map(|(idx, chunk)| {
+                    vy_app::text_layout::cursor_in_chunk(
+                        cursor,
+                        cursor_line,
+                        idx,
+                        chunks.len(),
+                        &chunk.utf16_range,
+                    )
+                    .map(|_| idx)
+                })
+                .unwrap_or(0);
+
+            let (scroll_top, scroll_sub) = (pane.scroll_top, pane.scroll_sub_line);
+
+            if (cursor_line, cursor_chunk) < (scroll_top, scroll_sub) {
+                if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_top = cursor_line;
+                    pane.scroll_sub_line = cursor_chunk;
+                    pane.scroll_left = 0;
+                }
+            } else {
+                let mut rows_between = 0;
+                let mut cur_l = scroll_top;
+                let mut cur_c = scroll_sub;
+                let mut found = false;
+
+                while cur_l <= cursor_line {
+                    let cur_text = document.editor.line(cur_l).unwrap_or_default();
+                    let cur_chunks_len = vy_app::text_layout::chunk_line(&cur_text, cols).len();
+                    while cur_c < cur_chunks_len {
+                        if cur_l == cursor_line && cur_c == cursor_chunk {
+                            found = true;
+                            break;
+                        }
+                        rows_between += 1;
+                        cur_c += 1;
+                    }
+                    if found {
+                        break;
+                    }
+                    cur_l += 1;
+                    cur_c = 0;
+                }
+
+                if rows_between >= rows {
+                    let mut needed_steps = rows.saturating_sub(1);
+                    let mut b_line = cursor_line;
+                    let mut b_chunk = cursor_chunk;
+
+                    while needed_steps > 0 {
+                        if b_chunk > 0 {
+                            b_chunk -= 1;
+                            needed_steps -= 1;
+                        } else if b_line > 0 {
+                            b_line -= 1;
+                            let prev_text = document.editor.line(b_line).unwrap_or_default();
+                            let prev_chunks =
+                                vy_app::text_layout::chunk_line(&prev_text, cols).len();
+                            b_chunk = prev_chunks.saturating_sub(1);
+                            needed_steps -= 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Some(pane) = self.active_pane_state_mut() {
+                        pane.scroll_top = b_line;
+                        pane.scroll_sub_line = b_chunk;
+                        pane.scroll_left = 0;
+                    }
+                } else if let Some(pane) = self.active_pane_state_mut() {
+                    pane.scroll_left = 0;
+                }
+            }
         }
 
         self.check_and_emit_editor_events();
     }
 
     pub(super) fn clamp_scroll(&mut self) {
-        let (rows, scroll_top, total) = {
+        let (rows, scroll_top, total, is_wrap) = {
             let Some(pane) = self.active_pane_state() else {
                 return;
             };
@@ -79,12 +223,19 @@ impl EditorView {
                 pane.viewport_rows,
                 pane.scroll_top,
                 document.editor.line_count(),
+                pane.is_wrap(&self.config),
             )
         };
 
-        let next = clamp_scroll_top(scroll_top, rows, total);
-        if let Some(pane) = self.active_pane_state_mut() {
-            pane.scroll_top = next;
+        if !is_wrap {
+            let next = clamp_scroll_top(scroll_top, rows, total);
+            if let Some(pane) = self.active_pane_state_mut() {
+                pane.scroll_top = next;
+                pane.scroll_sub_line = 0;
+            }
+        } else if let Some(pane) = self.active_pane_state_mut() {
+            pane.scroll_top = pane.scroll_top.min(total.saturating_sub(1));
+            pane.scroll_left = 0;
         }
 
         self.check_and_emit_editor_events();
@@ -95,6 +246,8 @@ impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let started = Instant::now();
 
+        self.char_width = ui::pane::font_character_width(&self.config, window);
+
         // Fit the viewport to the window before choosing which lines to draw.
         let chrome_height = ui::titlebar::TITLEBAR_HEIGHT
             + STATUSLINE_HEIGHT
@@ -104,10 +257,8 @@ impl Render for EditorView {
                 0.0
             };
         let height = f32::from(window.viewport_size().height) - chrome_height;
-        let rows = ((height / self.line_height()).floor().max(1.0)) as usize;
-        if let Some(pane) = self.active_pane_state_mut() {
-            pane.viewport_rows = rows;
-        }
+        let width = f32::from(window.viewport_size().width);
+        self.update_pane_viewports(width, height);
         self.clamp_scroll();
         self.sync_modal_focus(window, cx);
 
@@ -310,31 +461,38 @@ impl EditorView {
                 && let Some(pane) = pane
             {
                 let lh = self.line_height();
-                let ch_w = ui::pane::character_width(&self.config);
+                let ch_w = self.char_width;
                 let gutter =
                     self.gutter_width(document.map(|d| d.editor.line_count()).unwrap_or(1));
                 if hover.line >= pane.scroll_top
                     && hover.line < pane.scroll_top + pane.viewport_rows
                 {
                     let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
-                    let left = gutter + hover.character as f32 * ch_w;
-                    area = area.child(
-                        div()
-                            .absolute()
-                            .top(px(top))
-                            .left(px(left))
-                            .max_w(px(400.0))
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .bg(theme.background.surface)
-                            .border_1()
-                            .border_color(theme.border.subtle)
-                            .shadow_md()
-                            .text_xs()
-                            .text_color(theme.foreground.default)
-                            .child(hover.text.clone()),
-                    );
+                    let scroll_left_px = if pane.is_wrap(&self.config) {
+                        0.0
+                    } else {
+                        pane.scroll_left as f32 * ch_w
+                    };
+                    let left = gutter + hover.character as f32 * ch_w - scroll_left_px;
+                    if left >= gutter {
+                        area = area.child(
+                            div()
+                                .absolute()
+                                .top(px(top))
+                                .left(px(left))
+                                .max_w(px(400.0))
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .bg(theme.background.surface)
+                                .border_1()
+                                .border_color(theme.border.subtle)
+                                .shadow_md()
+                                .text_xs()
+                                .text_color(theme.foreground.default)
+                                .child(hover.text.clone()),
+                        );
+                    }
                 }
             }
         }
