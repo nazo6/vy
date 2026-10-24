@@ -76,9 +76,11 @@ cargo fmt --all --check
   `cargo test --workspace export_bindings` を実行し、`packages/vy-api-types` を
   一緒にコミットします。CI では生成後に `git diff --exit-code packages`
   で差分がないことを確かめます。生成先は `.cargo/config.toml` の
-  `TS_RS_EXPORT_DIR` です。プラグイン API の params / reply / イベント payload
-  型は、それぞれの `#[vy_api_namespace]` モジュールでハンドラの隣に置きます。共有する
-  値型は `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）に置きます。
+  `TS_RS_EXPORT_DIR` です。クライアントとコアで共有する API の params / reply /
+  イベント payload 型とメソッド宣言は `vy-host-api` に置きます。クライアント専用の
+  型と宣言は `vy-app` の対応する `#[vy_api_namespace]` モジュールに置きます。共有する
+  値型は `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）に置きます
+  （[ADR 0012](./adr/0012-shared-host-api.md)）。
   `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
   `HostEvents.ts`、`packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
   は、宣言が持つ `TypeCollector` から同じテストで生成します。`ts-rs` の自動テストに

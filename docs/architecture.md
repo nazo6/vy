@@ -228,13 +228,20 @@ Webview は最終手段です。Web の文書そのものを表示するとき�
 ```text
 vy-app  --->  vy-proto
   |  \--> vy-core
+  |  \--> vy-host-api
   |  \--> vy-js  ----->  rquickjs, Oxc (外部クレート)
+  |         \--> vy-host-api
   |  \--> vy-capabilities
 
 vy-server ---> vy-core --->  ropey
           \--> vy-proto
+          \--> vy-host-api
           \--> vy-js        (Phase 6 で追加)
 ```
+
+`vy-host-api` は params / reply / イベント payload の型とメソッド宣言だけを持ち、
+ハンドラを持ちません。クライアントは `vy-app/src/api`、コアは
+`vy-server/src/api` にハンドラを置きます（[ADR 0012](./adr/0012-shared-host-api.md)）。
 
 - `vy-app` だけが GPUI に依存します。CI で `cargo tree` を検査し、他のクレートが
   GPUI を引いたら失敗させます。

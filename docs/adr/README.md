@@ -36,3 +36,4 @@ ADR を追加します。古い ADR
 | [0009](./0009-api-types-live-with-handlers.md)   | API の型はハンドラの隣に置き、生成を集約する     | 採用                                       |
 | [0010](./0010-remote-connection.md)              | SSH で接続し、再起動と再同期でセッションを戻す   | 採用                                       |
 | [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす             | 採用（実装は Phase 6）                     |
+| [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く | 採用（`fs` と `workspace` から実装中） |
