@@ -1,6 +1,7 @@
 # ADR 0007: プラグイン境界の型は Rust を正とする
 
-- 状態: 採用
+- 状態: 採用（メソッド宣言と dispatch は
+  [0008](./0008-declare-plugin-api-with-macros.md) で置き換え）
 - 日付: 2026-10-23
 
 ## 文脈
@@ -65,7 +66,8 @@ Phase 3 以降、API
 にも rquickjs にも依存しません。依存は
 `serde`、`serde_json`、`thiserror`、`ts-rs`、`vy-core` だけです。
 
-- **値型**: `Mode`、`ThemeColor`、`StatuslineAlignment`、`Gap`、`Font`、`ButtonVariant`、`LogLevel`、通知のレベル、`WidgetNode`
+- **値型**:
+  `Mode`、`ThemeColor`、`StatuslineAlignment`、`Gap`、`Font`、`ButtonVariant`、`LogLevel`、通知のレベル、`WidgetNode`
   とその構成要素。
 - **メソッド型**: メソッドごとの params と result。すべて `Serialize` /
   `Deserialize` / `TS` を導出します。
@@ -262,10 +264,11 @@ tsconfig の `include` に加えます。宣言マージは同じ TS
 
 ## 関連する未決定事項
 
-- `keymap.bind` の `keys` を文字列のままにするか、キーの配列にするか（現状は文字列）。
-- プロバイダ
-  API（`ui.picker.registerSource`、ガター、ホバー）は、ホストから JS
-  の関数を呼ぶ経路ができるまで API から削除した。Phase 3 で戻すか、ホスト主導の問い合わせに変えるかを決めます。
+- `keymap.bind` の `keys`
+  を文字列のままにするか、キーの配列にするか（現状は文字列）。
+- プロバイダ API（`ui.picker.registerSource`、ガター、ホバー）は、ホストから JS
+  の関数を呼ぶ経路ができるまで API から削除した。Phase 3
+  で戻すか、ホスト主導の問い合わせに変えるかを決めます。
 - `when` を文字列の式から構造化した条件木にするか。
 - イベント API の型生成方法と、購読の上限（[`api.md`](../api.md) §22）。
 - 生成物の差分を検査する CI の整備（現状は手元のコマンドのみ）。

@@ -12,26 +12,25 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use vy_api_schema::{
     CommandsExecuteParams, CommandsRegisterParams, ConfigGetParams, ConfigInspectParams,
     ConfigInspectReply, ConfigSetParams, ConfigSetReply, DocumentGetTextParams, DocumentInfoReply,
     DocumentLineAtParams, DocumentOffsetAtParams, DocumentPositionAtParams, EditorEditParams,
-    EditorEditReply, EditorSetModeParams, EditorSetSelectionsParams, FsCopyParams,
-    FsCreateDirParams, FsExistsParams, FsReadDirParams, FsReadFileParams, FsReadTextFileParams,
-    FsRemoveParams, FsRenameParams, FsStatParams, FsWriteFileParams, GutterCreateParams,
-    GutterDisposeParams, HostCall, HoverShowParams, KeyContextValue, KeymapBindParams,
-    KeymapSetContextParams, KeymapUnbindParams, LogWriteParams, NotificationsShowParams,
-    PickerShowParams, ProcessKillParams, ProcessSpawnParams, ProcessStdinParams,
-    StatuslineCreateParams, StatuslineDisposeParams, StatuslineUpdateParams, ThemeColor,
-    ViewsRenderParams,
+    EditorEditReply, EditorSetSelectionsParams, FsCopyParams, FsCreateDirParams, FsExistsParams,
+    FsReadDirParams, FsReadFileParams, FsReadTextFileParams, FsRemoveParams, FsRenameParams,
+    FsStatParams, FsWriteFileParams, GutterCreateParams, GutterDisposeParams, HostCall,
+    HoverShowParams, KeyContextValue, KeymapBindParams, KeymapSetContextParams, KeymapUnbindParams,
+    LogWriteParams, NotificationsShowParams, PickerShowParams, ProcessKillParams,
+    ProcessSpawnParams, ProcessStdinParams, StatuslineCreateParams, StatuslineDisposeParams,
+    StatuslineUpdateParams, ThemeColor, ViewsRenderParams,
 };
 use vy_capabilities::TrustedStore;
 use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 use vy_proto::{ErrorCode, to_value};
 
+use crate::api::{CallError, parse_params};
 use crate::commands::{
     BuiltinCommand, CommandArgs, CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand,
 };
@@ -297,44 +296,6 @@ impl Reply {
     }
 }
 
-/// A failure that the shim receives as an exception with a stable code.
-struct CallError {
-    code: ErrorCode,
-    message: String,
-}
-
-impl CallError {
-    fn invalid_params(message: impl Into<String>) -> Self {
-        Self {
-            code: ErrorCode::InvalidParams,
-            message: message.into(),
-        }
-    }
-
-    fn invalid_state(message: impl Into<String>) -> Self {
-        Self {
-            code: ErrorCode::InvalidState,
-            message: message.into(),
-        }
-    }
-}
-
-impl From<serde_json::Error> for CallError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::invalid_params(error.to_string())
-    }
-}
-
-/// Deserializes the parameters of one method.
-///
-/// Missing parameters arrive as `null`; treating that as an empty object keeps
-/// methods without parameters from needing a special case.
-fn parse_params<T: DeserializeOwned>(params: &Value) -> Result<T, CallError> {
-    let empty = Value::Object(serde_json::Map::new());
-    let value = if params.is_null() { &empty } else { params };
-    Ok(serde_json::from_value(value.clone())?)
-}
-
 /// Reads a field that distinguishes an absent value from `null`.
 fn optional_text(value: Value) -> Result<Option<String>, CallError> {
     match value {
@@ -363,6 +324,26 @@ fn optional_theme_color(value: Value) -> Result<Option<ThemeColor>, CallError> {
 /// thread never waits for the full reply timeout.
 pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> HostOutcome {
     let mut outcome = HostOutcome::default();
+    let mut context = context;
+
+    // Methods declared with `#[vy_api_namespace]` answer first. The remaining
+    // arms are migrated namespace by namespace; see ADR 0008.
+    let generated = {
+        let mut call = crate::api::Call {
+            context: &mut context,
+            request: &request,
+            outcome: &mut outcome,
+        };
+        crate::api::dispatch(&mut call, &request.method, &request.params)
+    };
+    if let Some(result) = generated {
+        match result {
+            Ok(crate::api::Reply::Value(value)) => request.respond_value(value),
+            Ok(crate::api::Reply::Deferred) => {}
+            Err(error) => request.respond_error(&error.code.to_string(), error.message),
+        }
+        return outcome;
+    }
 
     let Some(call) = HostCall::parse(&request.method) else {
         let code = ErrorCode::InvalidRequest.to_string();
@@ -371,7 +352,6 @@ pub fn handle_request(context: RequestContext<'_>, request: HostRequest) -> Host
         return outcome;
     };
 
-    let mut context = context;
     let result = dispatch(&mut context, call, &request.params, &mut outcome, &request);
     match result {
         Ok(Reply::Value(value)) => request.respond_value(value),
@@ -520,11 +500,8 @@ fn dispatch(
                 .collect();
             Reply::value(documents)
         }
-        HostCall::EditorMode => Reply::value(context.editor.mode()),
-        HostCall::EditorSetMode => {
-            let params: EditorSetModeParams = parse_params(params)?;
-            context.editor.set_mode(params.mode);
-            Ok(Reply::null())
+        HostCall::EditorMode | HostCall::EditorSetMode => {
+            unreachable!("`editor.mode` and `editor.setMode` are declared in `crate::api`")
         }
         HostCall::EditorSelections => Reply::value(context.editor.selections()),
         HostCall::EditorSetSelections => {
@@ -1247,6 +1224,32 @@ commands.registerCommand("user.hello", async () => {
 
         let reply = receiver.recv().expect("reply");
         assert!(matches!(reply, vy_js::HostReply::Err { code, .. } if code == "InvalidRequest"));
+    }
+
+    #[test]
+    fn answers_editor_mode_from_the_declared_namespace() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        let (request, receiver) = HostRequest::new("editor.mode".to_string(), Value::Null);
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Ok(value) if value == json!("normal")));
     }
 
     #[test]

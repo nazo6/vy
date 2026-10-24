@@ -3,6 +3,7 @@
 //! The binary in `main.rs` owns the window and rendering. Everything here can be
 //! tested without a display.
 
+pub mod api;
 pub mod commands;
 pub mod config;
 pub mod editor;
