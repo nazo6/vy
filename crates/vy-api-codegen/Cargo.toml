@@ -1,0 +1,10 @@
+[package]
+name = "vy-api-codegen"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+vy-api-schema.workspace = true
+vy-client-api.workspace = true

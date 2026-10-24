@@ -332,14 +332,4 @@ mod tests {
         assert_eq!((find("process.onStderr").payload.name)(), "ProcessData");
         assert_eq!((find("process.onExit").payload.name)(), "ProcessExit");
     }
-
-    /// Regenerates the TypeScript declarations. The filter `export_bindings`
-    /// runs this together with the ts-rs tests.
-    #[test]
-    fn export_bindings_plugin_api() {
-        let methods = declarations();
-        let namespaces = all_namespace_decls();
-        let events = all_events();
-        vy_api_schema::codegen::export(&methods, &namespaces, &events);
-    }
 }

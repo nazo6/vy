@@ -32,7 +32,7 @@ as a file. Point the TypeScript compiler at this package when you write an
 hand-written declaration is the command callback wrapper in `overrides.d.ts`.
 Types shared with the Rust protocol live in
 [`packages/vy-api-types`](../vy-api-types/README.md). Both are refreshed by
-`cargo test --workspace export_bindings`.
+`cargo run -p vy-api-codegen -- client`.
 
 ## API reference
 
@@ -40,7 +40,7 @@ The declarations are rendered as a searchable HTML reference with TypeDoc:
 
 ```sh
 pnpm install --frozen-lockfile
-cargo test --workspace export_bindings
+cargo run -p vy-api-codegen -- client
 pnpm docs:api
 ```
 

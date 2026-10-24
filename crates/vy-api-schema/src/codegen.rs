@@ -70,34 +70,52 @@ impl<'a> Namespace<'a> {
     }
 }
 
-/// Writes every generated file. The export test calls this.
-pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl], events: &[&EventDecl]) {
-    let types_dir = export_dir();
-    std::fs::create_dir_all(&types_dir).expect("create the TypeScript export directory");
-    write_types(&types_dir, methods, events);
-    write_host_methods(&types_dir, methods);
-    write_host_events(&types_dir, events);
-    write_barrel(&types_dir);
-
-    let api_dir = types_dir
-        .parent()
-        .map_or_else(|| types_dir.clone(), Path::to_path_buf)
-        .join("vy-api");
-    std::fs::create_dir_all(&api_dir).expect("create the vy-api directory");
-    std::fs::write(
-        api_dir.join("index.d.ts"),
-        render_api(methods, namespaces, events),
-    )
-    .expect("write index.d.ts");
-    std::fs::write(api_dir.join("docs.d.ts"), render_docs()).expect("write docs.d.ts");
+/// Where the generated client declarations are written.
+#[derive(Clone, Debug)]
+pub struct Output {
+    /// Directory for per-type `.ts` files, for example `packages/vy-api-types`.
+    pub types_dir: PathBuf,
+    /// Directory for the namespace declarations, for example `packages/vy-api`.
+    pub api_dir: PathBuf,
 }
 
-/// `TS_RS_EXPORT_DIR` when set by cargo, otherwise the repository default.
-fn export_dir() -> PathBuf {
-    std::env::var("TS_RS_EXPORT_DIR").map_or_else(
-        |_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/vy-api-types"),
-        PathBuf::from,
-    )
+impl Output {
+    /// The repository's committed output directories.
+    ///
+    /// `TS_RS_EXPORT_DIR` overrides the type directory, as it does for `ts-rs`.
+    pub fn packages() -> Self {
+        let types_dir = std::env::var("TS_RS_EXPORT_DIR").map_or_else(
+            |_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/vy-api-types"),
+            PathBuf::from,
+        );
+        let api_dir = types_dir
+            .parent()
+            .map_or_else(|| types_dir.clone(), Path::to_path_buf)
+            .join("vy-api");
+        Self { types_dir, api_dir }
+    }
+}
+
+/// Writes every generated file into `output`.
+pub fn export_to(
+    output: &Output,
+    methods: &[&MethodDecl],
+    namespaces: &[&NamespaceDecl],
+    events: &[&EventDecl],
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(&output.types_dir)?;
+    write_types(&output.types_dir, methods, events)?;
+    write_host_methods(&output.types_dir, methods)?;
+    write_host_events(&output.types_dir, events)?;
+    write_barrel(&output.types_dir)?;
+
+    std::fs::create_dir_all(&output.api_dir)?;
+    std::fs::write(
+        output.api_dir.join("index.d.ts"),
+        render_api(methods, namespaces, events),
+    )?;
+    std::fs::write(output.api_dir.join("docs.d.ts"), render_docs())?;
+    Ok(())
 }
 
 /// Writes every type the declarations refer to.
@@ -105,7 +123,11 @@ fn export_dir() -> PathBuf {
 /// `ts-rs` generates a per-type export test, but the API needs one entry point
 /// that writes all of them. The declarations carry the collector, so a type can
 /// live in any crate and still be generated here.
-fn write_types(directory: &Path, methods: &[&MethodDecl], events: &[&EventDecl]) {
+fn write_types(
+    directory: &Path,
+    methods: &[&MethodDecl],
+    events: &[&EventDecl],
+) -> std::io::Result<()> {
     let mut collector = TypeCollector::default();
     for method in methods {
         if let Some(params) = method.params {
@@ -120,13 +142,14 @@ fn write_types(directory: &Path, methods: &[&MethodDecl], events: &[&EventDecl])
     for (path, body) in collector.files() {
         let target = directory.join(path);
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).expect("create the type directory");
+            std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&target, body).expect("write a generated type");
+        std::fs::write(&target, body)?;
     }
+    Ok(())
 }
 
-fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
+fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) -> std::io::Result<()> {
     let mut sorted = methods.to_vec();
     sorted.sort_by_key(|method| method.method);
 
@@ -156,10 +179,10 @@ fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
     output.push_str("// Wire names of every host call.\n");
     output.push_str("export type HostMethodName = keyof HostMethods;\n");
 
-    std::fs::write(directory.join("HostMethods.ts"), output).expect("write HostMethods.ts");
+    std::fs::write(directory.join("HostMethods.ts"), output)
 }
 
-fn write_host_events(directory: &Path, events: &[&EventDecl]) {
+fn write_host_events(directory: &Path, events: &[&EventDecl]) -> std::io::Result<()> {
     let mut sorted = events.to_vec();
     sorted.sort_by_key(|event| event.topic);
 
@@ -183,12 +206,11 @@ fn write_host_events(directory: &Path, events: &[&EventDecl]) {
     output.push_str("}\n\n");
     output.push_str("// Wire names of every event.\n");
     output.push_str("export type HostEventName = keyof HostEvents;\n");
-    std::fs::write(directory.join("HostEvents.ts"), output).expect("write HostEvents.ts");
+    std::fs::write(directory.join("HostEvents.ts"), output)
 }
 
-fn write_barrel(directory: &Path) {
-    let mut names: Vec<String> = std::fs::read_dir(directory)
-        .expect("read the TypeScript export directory")
+fn write_barrel(directory: &Path) -> std::io::Result<()> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)?
         .filter_map(|entry| {
             let path = entry.ok()?.path();
             if path.extension().and_then(|extension| extension.to_str()) != Some("ts") {
@@ -204,7 +226,7 @@ fn write_barrel(directory: &Path) {
     for name in names {
         output.push_str(&format!("export * from \"./{name}\";\n"));
     }
-    std::fs::write(directory.join("index.ts"), output).expect("write index.ts");
+    std::fs::write(directory.join("index.ts"), output)
 }
 
 /// Renders `packages/vy-api/index.d.ts`.
@@ -289,7 +311,7 @@ fn render_docs() -> String {
 fn header() -> String {
     let mut output = String::new();
     output.push_str("// This file was generated by vy-api-schema. Do not edit it manually.\n");
-    output.push_str("// Regenerate with `cargo test --workspace export_bindings`.\n\n");
+    output.push_str("// Regenerate with `cargo run -p vy-api-codegen -- client`.\n\n");
     output
 }
 

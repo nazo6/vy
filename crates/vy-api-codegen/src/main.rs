@@ -1,0 +1,232 @@
+//! Generates the TypeScript declarations for the plugin API.
+//!
+//! The generator is a CLI, not a test, so it does not depend on `vy-app` or
+//! GPUI. Client command ids and settings keys are declared in `vy-client-api`;
+//! the shared and client-only namespaces come from the API crates. A future
+//! `backend` surface can reuse the same `codegen::export_to` entry point with
+//! `vy-host-api` declarations.
+
+use std::error::Error;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use vy_api_schema::codegen::{self, Output};
+use vy_client_api::command::{
+    BuiltinCommand, DocumentCommand, PaneCommand, UiCommand, ViewCommand,
+};
+use vy_client_api::settings::SETTINGS;
+
+const REGENERATE: &str = "cargo run -p vy-api-codegen -- client";
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("vy-api-codegen: {error}");
+        std::process::exit(2);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
+    let mut check = false;
+    let mut command = None;
+
+    for argument in std::env::args().skip(1) {
+        match argument.as_str() {
+            "--check" => check = true,
+            "-h" | "--help" => {
+                print_help();
+                return Ok(());
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unknown option: {value}").into());
+            }
+            value if command.is_none() => command = Some(value.to_string()),
+            value => return Err(format!("unexpected argument: {value}").into()),
+        }
+    }
+
+    match command.as_deref().unwrap_or("client") {
+        "client" => {
+            let output = Output::packages();
+            if check {
+                check_client(&output)?;
+                eprintln!("vy-api-codegen: client declarations are up to date");
+            } else {
+                generate_client(&output)?;
+                eprintln!("vy-api-codegen: wrote client declarations");
+            }
+        }
+        other => return Err(format!("unknown surface: {other}").into()),
+    }
+
+    Ok(())
+}
+
+fn print_help() {
+    println!(
+        "Usage: vy-api-codegen [client] [--check]\n\n\
+         Generates the TypeScript declarations for the plugin API.\n\n\
+         client       Write the client declarations (default).\n\
+         --check      Compare generated files without writing them."
+    );
+}
+
+fn generate_client(output: &Output) -> Result<(), Box<dyn Error>> {
+    let methods = vy_client_api::client_host_api_methods();
+    let namespaces = vy_client_api::client_host_api_namespaces();
+    let events = vy_client_api::client_host_api_events();
+    std::fs::create_dir_all(&output.types_dir)?;
+    write_command_ids(&output.types_dir)?;
+    write_settings_keys(&output.types_dir)?;
+    codegen::export_to(output, &methods, &namespaces, &events)?;
+    Ok(())
+}
+
+fn check_client(expected: &Output) -> Result<(), Box<dyn Error>> {
+    let root = std::env::temp_dir().join(format!("vy-api-codegen-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+
+    let actual = Output {
+        types_dir: root.join("vy-api-types"),
+        api_dir: root.join("vy-api"),
+    };
+
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        generate_client(&actual)?;
+        compare_tree(&actual.types_dir, &expected.types_dir)?;
+        compare_tree(&actual.api_dir, &expected.api_dir)?;
+        Ok(())
+    })();
+
+    let _ = std::fs::remove_dir_all(&root);
+    result
+}
+
+/// Compares every generated file with its committed copy.
+fn compare_tree(generated: &Path, committed: &Path) -> io::Result<()> {
+    let mut differences = Vec::new();
+    for relative in files_under(generated)? {
+        let actual = generated.join(&relative);
+        let expected = committed.join(&relative);
+        match std::fs::read(&expected) {
+            Ok(body) if body == std::fs::read(&actual)? => {}
+            Ok(_) => differences.push(format!("differs: {}", expected.display())),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                differences.push(format!("missing: {}", expected.display()));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    if differences.is_empty() {
+        Ok(())
+    } else {
+        Err(io::Error::other(differences.join("\n")))
+    }
+}
+
+fn files_under(root: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    collect_files(root, root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_files(root: &Path, directory: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in std::fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_files(root, &path, files)?;
+        } else {
+            files.push(
+                path.strip_prefix(root)
+                    .expect("path under root")
+                    .to_path_buf(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn header() -> String {
+    format!(
+        "// This file was generated by vy-api-codegen. Do not edit it manually.\n\
+         // Regenerate with `{REGENERATE}`.\n\n"
+    )
+}
+
+fn write_command_ids(directory: &Path) -> io::Result<()> {
+    let mut ids: Vec<&str> = Vec::new();
+    ids.extend(BuiltinCommand::all().iter().map(|command| command.id()));
+    ids.extend(PaneCommand::all().iter().map(|command| command.id()));
+    ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
+    ids.extend(UiCommand::all().iter().map(|command| command.id()));
+    ids.extend(ViewCommand::all().iter().map(|command| command.id()));
+    ids.sort_unstable();
+    ids.dedup();
+
+    let mut output = header();
+    output.push_str("/** Identifiers of the commands built into the client. */\n");
+    output.push_str("export type CommandId =\n");
+    output.push_str(
+        &ids.iter()
+            .map(|id| format!("  | \"{id}\""))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    output.push_str(";\n");
+
+    std::fs::write(directory.join("CommandId.ts"), output)
+}
+
+fn write_settings_keys(directory: &Path) -> io::Result<()> {
+    let mut output = header();
+    output.push_str("/** Value type of every setting the client defines. */\n");
+    output.push_str("export interface SettingsMap {\n");
+    for setting in SETTINGS {
+        output.push_str(&format!("  /** {} */\n", setting.doc));
+        output.push_str(&format!(
+            "  \"{}\": {};\n",
+            setting.key,
+            setting.typescript_type()
+        ));
+    }
+    output.push_str("}\n\n");
+    output.push_str("/** Names of every setting the client defines. */\n");
+    output.push_str("export type SettingsKey = keyof SettingsMap;\n");
+
+    std::fs::write(directory.join("SettingsKey.ts"), output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_ids_are_sorted_and_unique() {
+        let mut ids: Vec<&str> = Vec::new();
+        ids.extend(BuiltinCommand::all().iter().map(|command| command.id()));
+        ids.extend(PaneCommand::all().iter().map(|command| command.id()));
+        ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
+        ids.extend(UiCommand::all().iter().map(|command| command.id()));
+        ids.extend(ViewCommand::all().iter().map(|command| command.id()));
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(ids.len(), sorted.len());
+    }
+
+    #[test]
+    fn generated_metadata_is_non_empty() {
+        let root = std::env::temp_dir().join(format!("vy-api-codegen-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create test directory");
+        write_command_ids(&root).expect("write command ids");
+        write_settings_keys(&root).expect("write settings keys");
+
+        let commands = std::fs::read_to_string(root.join("CommandId.ts")).expect("read commands");
+        assert!(commands.contains("\"vy.motion.left\""));
+        let settings = std::fs::read_to_string(root.join("SettingsKey.ts")).expect("read settings");
+        assert!(settings.contains("\"ui.fontSize\": number;"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
