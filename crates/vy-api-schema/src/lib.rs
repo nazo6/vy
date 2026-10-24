@@ -8,7 +8,6 @@
 //! Nothing here may depend on GPUI or rquickjs: the client and the script host
 //! both use these types.
 
-mod calls;
 pub mod codegen;
 mod color;
 mod mode;
@@ -17,7 +16,6 @@ mod registry;
 mod slots;
 mod widget;
 
-pub use calls::*;
 pub use color::ThemeColor;
 pub use mode::Mode;
 pub use picker::PickerItem;
