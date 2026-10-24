@@ -18,8 +18,6 @@ use serde::Serialize;
 use vy_core::Uri;
 
 use crate::api::{VyLoader, VyResolver};
-#[cfg(test)]
-use crate::document::DocumentInfoReply;
 use crate::transpile::strip_types;
 
 /// Time given to one evaluation of `init.ts`.
@@ -235,33 +233,6 @@ impl ScriptHost {
                 eprintln!("vy: could not serialize event {}: {error}", E::TOPIC);
             }
         }
-    }
-
-    /// Tells the script that the active editor's selections changed.
-    #[cfg(test)]
-    fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
-        self.emit(
-            "editor.onDidChangeSelection",
-            serde_json::json!({ "selections": selections }),
-        );
-    }
-
-    /// Tells the script that the active editor/document changed.
-    #[cfg(test)]
-    fn emit_active_editor_change(&self, document_info: Option<DocumentInfoReply>) {
-        self.emit(
-            "editor.onDidChangeActiveDocument",
-            serde_json::json!({ "document": document_info }),
-        );
-    }
-
-    /// Tells the script that workspace folders changed.
-    #[cfg(test)]
-    fn emit_workspace_folders_change(&self, folders: Vec<String>) {
-        self.emit(
-            "workspace.onDidChangeWorkspaceFolders",
-            serde_json::json!({ "folders": folders }),
-        );
     }
 
     /// Evaluates a JavaScript/TypeScript code snippet in the script context.
@@ -689,7 +660,32 @@ impl ScriptHost {
 mod tests {
     use super::*;
     use crate::document::DocumentInfoReply;
+    use serde::Serialize;
     use serde_json::json;
+
+    #[derive(Serialize)]
+    struct SelectionPayload {
+        selections: Vec<vy_core::Selection>,
+    }
+
+    struct SelectionEvent;
+
+    impl vy_host_api::HostEvent for SelectionEvent {
+        const TOPIC: &'static str = "editor.onDidChangeSelection";
+        type Payload = SelectionPayload;
+    }
+
+    #[derive(Serialize)]
+    struct ActiveDocumentPayload {
+        document: Option<DocumentInfoReply>,
+    }
+
+    struct ActiveDocumentEvent;
+
+    impl vy_host_api::HostEvent for ActiveDocumentEvent {
+        const TOPIC: &'static str = "editor.onDidChangeActiveDocument";
+        type Payload = ActiveDocumentPayload;
+    }
 
     #[test]
     fn runs_a_module_and_answers_config_calls() {
@@ -1121,10 +1117,12 @@ ui.hover.hide();
         );
 
         // 1. Selection change
-        host.emit_selection_change(vec![
-            vy_core::Selection::caret(vy_core::Position::new(0, 5)),
-            vy_core::Selection::caret(vy_core::Position::new(1, 5)),
-        ]);
+        host.emit_event::<SelectionEvent>(&SelectionPayload {
+            selections: vec![
+                vy_core::Selection::caret(vy_core::Position::new(0, 5)),
+                vy_core::Selection::caret(vy_core::Position::new(1, 5)),
+            ],
+        });
 
         host.eval("globalThis.__test_selection_count");
         if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
@@ -1134,14 +1132,16 @@ ui.hover.hide();
         }
 
         // 2. Active editor change
-        host.emit_active_editor_change(Some(DocumentInfoReply {
-            id: 42,
-            uri: vy_core::Uri::parse("file:///test.rs").unwrap(),
-            language_id: "rust".into(),
-            version: 1,
-            line_count: 10,
-            end: vy_core::Position::new(10, 0),
-        }));
+        host.emit_event::<ActiveDocumentEvent>(&ActiveDocumentPayload {
+            document: Some(DocumentInfoReply {
+                id: 42,
+                uri: vy_core::Uri::parse("file:///test.rs").unwrap(),
+                language_id: "rust".into(),
+                version: 1,
+                line_count: 10,
+                end: vy_core::Position::new(10, 0),
+            }),
+        });
 
         host.eval("globalThis.__test_active_doc_id");
         if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
@@ -1151,11 +1151,15 @@ ui.hover.hide();
         }
 
         // 3. Workspace folders change
-        host.emit_workspace_folders_change(vec![
-            "/workspace/one".into(),
-            "/workspace/two".into(),
-            "/workspace/three".into(),
-        ]);
+        host.emit_event::<vy_host_api::workspace::OnDidChangeWorkspaceFolders>(
+            &vy_host_api::workspace::WorkspaceFoldersChange {
+                folders: vec![
+                    "/workspace/one".into(),
+                    "/workspace/two".into(),
+                    "/workspace/three".into(),
+                ],
+            },
+        );
 
         host.eval("globalThis.__test_folders_count");
         if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
@@ -1177,9 +1181,9 @@ ui.hover.hide();
             "dispose eval failed: {dispose_event:?}"
         );
 
-        host.emit_selection_change(vec![vy_core::Selection::caret(vy_core::Position::new(
-            0, 1,
-        ))]);
+        host.emit_event::<SelectionEvent>(&SelectionPayload {
+            selections: vec![vy_core::Selection::caret(vy_core::Position::new(0, 1))],
+        });
 
         host.eval("globalThis.__test_selection_count");
         if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
