@@ -436,6 +436,19 @@ mod tests {
             "frontend.js should exist at {}",
             main.display()
         );
+
+        let tree = plugins
+            .iter()
+            .find(|p| p.manifest.id == "example.tree")
+            .expect("example.tree plugin should be discovered");
+        assert_eq!(tree.manifest.name, "File Explorer");
+        assert_eq!(tree.manifest.permissions, vec!["fs:read:${workspace}/**"]);
+        let tree_main = tree.main_path().expect("should have main path");
+        assert!(
+            tree_main.is_file(),
+            "frontend.js should exist at {}",
+            tree_main.display()
+        );
     }
 
     #[test]

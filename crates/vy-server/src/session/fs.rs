@@ -13,25 +13,33 @@ use vy_proto::{
 
 use super::{Outcome, Session};
 
-/// Converts a URI or absolute file path into a local `PathBuf`.
+/// Converts a URI or file path into a local `PathBuf`.
 pub fn uri_to_path(uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
     if uri_str.starts_with('/') {
         return Ok(PathBuf::from(uri_str));
     }
-    let uri =
-        Uri::parse(uri_str).map_err(|e| (ErrorCode::InvalidParams, format!("invalid URI: {e}")))?;
-    if uri.scheme() != "file" {
-        return Err((
-            ErrorCode::InvalidParams,
-            format!("expected a file:// URI, found {uri}"),
-        ));
+    if let Ok(uri) = Uri::parse(uri_str) {
+        if uri.scheme() != "file" {
+            return Err((
+                ErrorCode::InvalidParams,
+                format!("expected a file:// URI, found {uri}"),
+            ));
+        }
+        return uri.file_path().ok_or_else(|| {
+            (
+                ErrorCode::InvalidParams,
+                format!("cannot convert URI to path: {uri}"),
+            )
+        });
     }
-    uri.file_path().ok_or_else(|| {
-        (
-            ErrorCode::InvalidParams,
-            format!("cannot convert URI to path: {uri}"),
-        )
-    })
+    std::env::current_dir()
+        .map(|pwd| pwd.join(uri_str))
+        .map_err(|e| {
+            (
+                ErrorCode::Internal,
+                format!("failed to get current dir: {e}"),
+            )
+        })
 }
 
 impl Session {

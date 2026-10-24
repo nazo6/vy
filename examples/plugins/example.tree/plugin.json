@@ -1,0 +1,36 @@
+{
+  "id": "example.tree",
+  "name": "File Explorer",
+  "version": "0.1.0",
+  "description": "Interactive file explorer sidebar powered by native declarative UI",
+  "engines": {
+    "vy": ">=0.1.0"
+  },
+  "main": "dist/frontend.js",
+  "permissions": [
+    "fs:read:${workspace}/**"
+  ],
+  "activationEvents": [
+    "onStartup",
+    "onCommand:example.tree.toggle",
+    "onCommand:example.tree.open",
+    "onCommand:example.tree.refresh",
+    "onView:example.tree"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "example.tree.toggle",
+        "title": "File Explorer: Toggle"
+      },
+      {
+        "id": "example.tree.open",
+        "title": "File Explorer: Open"
+      },
+      {
+        "id": "example.tree.refresh",
+        "title": "File Explorer: Refresh"
+      }
+    ]
+  }
+}

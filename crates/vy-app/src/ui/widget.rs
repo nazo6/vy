@@ -68,6 +68,7 @@ pub fn render_widget_node(
         } => {
             let mut button = div()
                 .id(gpui::SharedString::from(id.clone()))
+                .w_full()
                 .px_2()
                 .py_0p5()
                 .rounded_sm()
@@ -87,8 +88,8 @@ pub fn render_widget_node(
                 }
                 None => {
                     button = button
-                        .bg(theme.list.active_background)
-                        .text_color(theme.foreground.default);
+                        .text_color(theme.foreground.default)
+                        .hover(|s| s.bg(theme.border.subtle));
                 }
             }
 

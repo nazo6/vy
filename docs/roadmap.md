@@ -142,7 +142,7 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
 - [x] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
-- [ ] 実用プラグインの検証
+- [x] 実用プラグインの検証
   - サイドバー的なツリービューペイン（`views.register` と `ui` ウィジェット木を用いた `nvim-tree` 相当のファイルエクスプローラー）の実装と検証
 
 ### Phase 5: 実用エディタ化と言語機能拡充
