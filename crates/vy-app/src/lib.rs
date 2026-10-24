@@ -7,6 +7,7 @@ pub mod api;
 pub mod color;
 pub mod commands;
 pub mod config;
+pub mod connection;
 pub mod editor;
 pub mod ex;
 pub mod geometry;

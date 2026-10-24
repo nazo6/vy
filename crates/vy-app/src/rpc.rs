@@ -4,11 +4,13 @@
 //! reads and writes happen on dedicated threads so the UI thread never blocks.
 
 use std::io::{BufReader, Read, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use rmpv::Value;
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
+
+use crate::connection::ConnectionSpec;
 
 pub use vy_proto::{decode_value, to_value, value_of};
 
@@ -21,9 +23,18 @@ pub struct Client {
 }
 
 impl Client {
+    /// Starts a local `vy-server` child process.
     pub fn spawn() -> std::io::Result<Self> {
-        let mut child = server_command()
-            .arg("--stdio")
+        Self::connect(ConnectionSpec::local())
+    }
+
+    /// Starts or attaches to the server described by `spec`.
+    pub fn connect(spec: ConnectionSpec) -> std::io::Result<Self> {
+        let mut command = spec.command();
+        if matches!(spec, ConnectionSpec::Local) {
+            command.arg("--stdio");
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Forward the server's logs to the client's stderr.
@@ -171,27 +182,6 @@ fn read_loop(stdout: std::process::ChildStdout, sender: async_channel::Sender<Rp
             }
         }
     }
-}
-
-/// Resolves the location of `vy-server`.
-///
-/// Uses `VY_SERVER` when set. Otherwise it looks next to `vy-app` and finally falls
-/// back to `PATH`.
-fn server_command() -> Command {
-    if let Some(path) = std::env::var_os("VY_SERVER") {
-        return Command::new(path);
-    }
-
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(directory) = executable.parent()
-    {
-        let sibling = directory.join(format!("vy-server{}", std::env::consts::EXE_SUFFIX));
-        if sibling.is_file() {
-            return Command::new(sibling);
-        }
-    }
-
-    Command::new("vy-server")
 }
 
 #[cfg(test)]
