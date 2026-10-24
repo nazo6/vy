@@ -3,7 +3,9 @@ import type { DirEntry, WidgetNode, WorkspaceInfoReply } from "vy-api";
 declare global {
   namespace Vy {
     interface CommandMap {
-      "example.tree.toggle_dir": string;
+      "example.tree.toggle_dir":
+        | string
+        | { raw?: string; uri?: string };
     }
   }
 }
@@ -144,7 +146,9 @@ vy.commands.registerCommand("example.tree.refresh", async () => {
   await refreshAll();
 });
 
-vy.commands.registerCommand("example.tree.toggle_dir", async (dirUri) => {
+vy.commands.registerCommand("example.tree.toggle_dir", async (args) => {
+  const dirUri =
+    typeof args === "string" ? args : (args?.raw ?? args?.uri ?? "");
   if (!dirUri) return;
   if (expandedDirs.has(dirUri)) {
     expandedDirs.delete(dirUri);
