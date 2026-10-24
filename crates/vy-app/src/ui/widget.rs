@@ -2,14 +2,19 @@
 //!
 //! Defined in `docs/ui.md` and `docs/adr/0005-native-plugin-ui.md`.
 
-use gpui::{Div, div, prelude::*, px};
+use gpui::{AnyElement, Context, IntoElement, div, prelude::*, px};
 use vy_app::widget::{ButtonVariant, ContainerKind, Gap, WidgetNode};
 
 use crate::theme::Theme;
 use crate::ui::color::color as resolve_color;
+use crate::view::EditorView;
 
 /// Renders a custom declarative widget node into a GPUI element tree.
-pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
+pub fn render_widget_node(
+    theme: &Theme,
+    node: &WidgetNode,
+    cx: &mut Context<EditorView>,
+) -> AnyElement {
     match node {
         WidgetNode::Container {
             kind,
@@ -44,26 +49,27 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
             }
 
             for child in children {
-                container = container.child(render_widget_node(theme, child));
+                container = container.child(render_widget_node(theme, child, cx));
             }
-            container
+            container.into_any_element()
         }
         WidgetNode::Text { text, color, .. } => {
             let mut text_el = div().child(text.clone());
             text_el = text_el.text_color(color.map_or(theme.foreground.default, |token| {
                 resolve_color(theme, token)
             }));
-            text_el
+            text_el.into_any_element()
         }
         WidgetNode::Button {
+            id,
             label,
-            command: _,
+            command,
             variant,
-            ..
         } => {
             let mut button = div()
-                .px_3()
-                .py_1()
+                .id(gpui::SharedString::from(id.clone()))
+                .px_2()
+                .py_0p5()
                 .rounded_sm()
                 .cursor_pointer()
                 .child(label.clone());
@@ -85,7 +91,16 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
                         .text_color(theme.foreground.default);
                 }
             }
-            button
+
+            if !command.is_empty() {
+                let cmd = command.clone();
+                button = button.on_click(cx.listener(move |this, _, _, cx| {
+                    this.execute_command_string(&cmd);
+                    cx.notify();
+                }));
+            }
+
+            button.into_any_element()
         }
         WidgetNode::TextInput {
             value, placeholder, ..
@@ -107,7 +122,12 @@ pub fn render_widget_node(theme: &Theme, node: &WidgetNode) -> Div {
                     theme.foreground.default
                 })
                 .child(text)
+                .into_any_element()
         }
-        WidgetNode::Separator { .. } => div().w_full().h(px(1.0)).bg(theme.border.subtle),
+        WidgetNode::Separator { .. } => div()
+            .w_full()
+            .h(px(1.0))
+            .bg(theme.border.subtle)
+            .into_any_element(),
     }
 }

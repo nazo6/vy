@@ -238,6 +238,9 @@ define_command_enum! {
         CommandPalette => ("vy.ui.command_palette", "Command Palette"),
         ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
         ScriptEval => ("vy.script.eval", "Script Evaluate"),
+        ViewOpen => ("vy.view.open", "Open View"),
+        ViewClose => ("vy.view.close", "Close View"),
+        ViewToggle => ("vy.view.toggle", "Toggle View"),
     }
 }
 
@@ -399,8 +402,12 @@ pub fn display_title(id: &str) -> String {
     Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString, strum::VariantArray,
 )]
 pub enum PaneCommand {
+    #[strum(serialize = "vy.pane.split_left")]
+    SplitLeft,
     #[strum(serialize = "vy.pane.split_right")]
     SplitRight,
+    #[strum(serialize = "vy.pane.split_up")]
+    SplitUp,
     #[strum(serialize = "vy.pane.split_down")]
     SplitDown,
     #[strum(serialize = "vy.pane.close")]

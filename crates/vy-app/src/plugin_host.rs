@@ -222,8 +222,14 @@ pub enum HostAction {
     Undo,
     Redo,
     Pane(PaneCommand),
-    Document(DocumentCommand),
-    Ui(UiCommand),
+    Document {
+        command: DocumentCommand,
+        args: Option<Value>,
+    },
+    Ui {
+        command: UiCommand,
+        args: Option<Value>,
+    },
     RenderWidgetTree {
         view_id: String,
         tree: WidgetNode,
@@ -421,12 +427,23 @@ fn dispatch(
         HostCall::CommandsExecute => {
             let params: CommandsExecuteParams = parse_params(params)?;
             let id = params.id;
+            let cmd_args = if params.args.is_null() {
+                None
+            } else {
+                Some(params.args.clone())
+            };
             if let Some(command) = UiCommand::parse(&id) {
-                outcome.action = HostAction::Ui(command);
+                outcome.action = HostAction::Ui {
+                    command,
+                    args: cmd_args,
+                };
             } else if let Some(command) = PaneCommand::parse(&id) {
                 outcome.action = HostAction::Pane(command);
             } else if let Some(command) = DocumentCommand::parse(&id) {
-                outcome.action = HostAction::Document(command);
+                outcome.action = HostAction::Document {
+                    command,
+                    args: cmd_args,
+                };
             } else if let Some(command) = BuiltinCommand::parse(&id) {
                 let args = command_args(&params.args);
                 outcome.action = context.editor.execute(command, args).into();

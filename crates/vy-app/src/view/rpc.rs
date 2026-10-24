@@ -225,12 +225,19 @@ impl EditorView {
         };
         match self.panes.entry(pane_id) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().document_id = Some(document_id);
+                let pane = entry.get_mut();
+                pane.document_id = Some(document_id);
+                if let Some(view_type) = self.pending_view_for_next_open.take() {
+                    pane.view_type = view_type;
+                }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let mut pane = PaneState::new(pane_id, Some(document_id));
                 pane.view = inherited;
                 pane.scroll_top = inherited_scroll;
+                if let Some(view_type) = self.pending_view_for_next_open.take() {
+                    pane.view_type = view_type;
+                }
                 entry.insert(pane);
             }
         }

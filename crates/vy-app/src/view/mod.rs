@@ -100,6 +100,7 @@ pub struct EditorView {
     hover: Option<HoverState>,
     last_reported_document_id: Option<u64>,
     last_reported_selections: Option<Vec<vy_core::Selection>>,
+    pub(super) pending_view_for_next_open: Option<String>,
 }
 
 impl EditorView {
@@ -188,6 +189,7 @@ impl EditorView {
             hover: None,
             last_reported_document_id: None,
             last_reported_selections: None,
+            pending_view_for_next_open: None,
         };
 
         match Client::spawn() {

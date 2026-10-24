@@ -55,7 +55,9 @@ export type CommandId =
   | "vy.pane.focus_up"
   | "vy.pane.next"
   | "vy.pane.split_down"
+  | "vy.pane.split_left"
   | "vy.pane.split_right"
+  | "vy.pane.split_up"
   | "vy.script.eval"
   | "vy.text_object.angle"
   | "vy.text_object.backtick"
@@ -69,7 +71,10 @@ export type CommandId =
   | "vy.ui.command_palette"
   | "vy.ui.ex_command_line"
   | "vy.view.center_cursor"
+  | "vy.view.close"
+  | "vy.view.open"
   | "vy.view.scroll_cursor_bottom"
   | "vy.view.scroll_cursor_top"
   | "vy.view.scroll_half_page_down"
-  | "vy.view.scroll_half_page_up";
+  | "vy.view.scroll_half_page_up"
+  | "vy.view.toggle";

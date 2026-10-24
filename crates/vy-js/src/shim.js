@@ -283,6 +283,16 @@ editor.edit = (input) => {
   return call("editor.edit", { edits: input || [] });
 };
 
+editor.open = async (uri, options) => {
+  if (!uri) {
+    throw new TypeError("editor.open needs a uri string");
+  }
+  await commands.execute("vy.editor.open", {
+    uri: String(uri),
+    paneId: options?.paneId ?? null,
+  });
+};
+
 editor.onDidChangeActiveDocument = (listener) => {
   activeDocumentListeners.push(listener);
   return {
@@ -462,6 +472,44 @@ views.register = (type, options) => {
 };
 
 views.get = (type) => registeredViews.get(type);
+
+views.open = async (viewId, options) => {
+  if (!viewId || typeof viewId !== "string") {
+    throw new TypeError("views.open needs a view string");
+  }
+  await commands.execute("vy.view.open", {
+    view: viewId,
+    direction: options?.direction ?? "left",
+  });
+};
+
+views.close = async (viewId) => {
+  if (!viewId || typeof viewId !== "string") {
+    throw new TypeError("views.close needs a view string");
+  }
+  await commands.execute("vy.view.close", { view: viewId });
+};
+
+views.toggle = async (viewId, options) => {
+  if (!viewId || typeof viewId !== "string") {
+    throw new TypeError("views.toggle needs a view string");
+  }
+  await commands.execute("vy.view.toggle", {
+    view: viewId,
+    direction: options?.direction ?? "left",
+  });
+};
+
+views.update = (viewId) => {
+  if (!viewId || typeof viewId !== "string") {
+    throw new TypeError("views.update needs a view string");
+  }
+  const reg = registeredViews.get(viewId);
+  if (reg && typeof reg.render === "function") {
+    const tree = reg.render();
+    call("views.render", { id: viewId, tree });
+  }
+};
 
 function widgetContainer(kind, options, children) {
   const opts = Array.isArray(options) ? {} : options || {};

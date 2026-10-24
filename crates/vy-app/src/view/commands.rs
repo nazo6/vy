@@ -27,7 +27,9 @@ use super::{EditorView, Pending};
 impl EditorView {
     pub(super) fn run_pane_command(&mut self, command: PaneCommand) {
         match command {
+            PaneCommand::SplitLeft => self.open_split("left"),
             PaneCommand::SplitRight => self.open_split("right"),
+            PaneCommand::SplitUp => self.open_split("above"),
             PaneCommand::SplitDown => self.open_split("below"),
             PaneCommand::Close => self.close_active_pane(),
             PaneCommand::FocusLeft => self.focus_direction("left"),
@@ -45,19 +47,66 @@ impl EditorView {
     ) {
         match command {
             DocumentCommand::Open => {
-                let Some(raw) = invocation.ex_raw() else {
+                let path_or_uri = if let Some(raw) = invocation.ex_raw() {
+                    Some(raw.trim().to_string())
+                } else if let InvocationArgs::Script(val) = &invocation.args {
+                    if let Some(s) = val.as_str() {
+                        Some(s.trim().to_string())
+                    } else if let Some(obj) = val.as_object() {
+                        obj.get("uri")
+                            .or_else(|| obj.get("path"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let Some(path_or_uri) = path_or_uri else {
                     self.status = "editor.open requires a path".into();
                     return;
                 };
-                let raw = raw.trim();
-                if raw.is_empty() {
+                if path_or_uri.is_empty() {
                     self.status = "editor.open requires a path".into();
                     return;
                 }
-                let uri = uri_from_argument(raw, self.workspace.as_deref());
+
+                let target_pane_id = if let InvocationArgs::Script(val) = &invocation.args {
+                    val.get("pane_id")
+                        .or_else(|| val.get("paneId"))
+                        .and_then(|v| v.as_u64())
+                } else {
+                    None
+                };
+
+                let target_pane = target_pane_id.or_else(|| {
+                    if let Some(active_id) = self.active_pane {
+                        if let Some(active_pane) = self.panes.get(&active_id) {
+                            if active_pane.view_type != "editor" {
+                                self.panes
+                                    .iter()
+                                    .find(|(_, p)| p.view_type == "editor")
+                                    .map(|(id, _)| *id)
+                            } else {
+                                Some(active_id)
+                            }
+                        } else {
+                            Some(active_id)
+                        }
+                    } else {
+                        None
+                    }
+                });
+
+                let uri = uri_from_argument(&path_or_uri, self.workspace.as_deref());
                 self.request(
                     "editor/open",
-                    to_value(&EditorOpenParams { uri, pane_id: None }),
+                    to_value(&EditorOpenParams {
+                        uri,
+                        pane_id: target_pane,
+                    }),
                     Pending::EditorOpen,
                 );
             }
@@ -633,6 +682,133 @@ impl EditorView {
                     self.status = "the script host is not running".into();
                 }
             }
+            UiCommand::ViewOpen => {
+                let (view_id, direction) = parse_view_args(invocation);
+                if let Some(view_id) = view_id {
+                    self.open_view_pane(&view_id, &direction);
+                }
+            }
+            UiCommand::ViewClose => {
+                let (view_id, _) = parse_view_args(invocation);
+                if let Some(view_id) = view_id {
+                    self.close_view_pane(&view_id);
+                }
+            }
+            UiCommand::ViewToggle => {
+                let (view_id, direction) = parse_view_args(invocation);
+                if let Some(view_id) = view_id {
+                    self.toggle_view_pane(&view_id, &direction);
+                }
+            }
         }
+    }
+
+    /// Executes a command specified as a string (e.g. `"vy.editor.open foo.txt"` or `"my.tree.toggle"`).
+    pub(crate) fn execute_command_string(&mut self, cmd: &str) {
+        let cmd = cmd.trim();
+        if cmd.is_empty() {
+            return;
+        }
+        let (id, args) = match cmd.split_once(' ') {
+            Some((id, args)) => (id, Some(args.trim())),
+            None => (cmd, None),
+        };
+        let invocation = if let Some(raw) = args {
+            Invocation::ex(id, raw)
+        } else {
+            Invocation::palette(id)
+        };
+        self.execute_invocation(invocation);
+    }
+
+    pub(super) fn open_view_pane(&mut self, view_id: &str, direction: &str) {
+        // If a pane with this view already exists, focus it
+        if let Some((pane_id, _)) = self.panes.iter().find(|(_, p)| p.view_type == view_id) {
+            let pid = *pane_id;
+            self.active_pane = Some(pid);
+            return;
+        }
+
+        self.activate_plugins_for_view(view_id);
+
+        let Some(target) = self
+            .active_pane
+            .or_else(|| self.panes.keys().next().copied())
+        else {
+            return;
+        };
+        let uri = self
+            .active_document()
+            .map(|d| d.uri.clone())
+            .unwrap_or_else(|| {
+                self.documents
+                    .values()
+                    .next()
+                    .map(|d| d.uri.clone())
+                    .unwrap_or_else(|| "untitled:1".into())
+            });
+
+        self.pending_view_for_next_open = Some(view_id.to_string());
+        self.request(
+            "pane/open",
+            to_value(&PaneOpenParams {
+                view: Some(view_id.to_string()),
+                uri,
+                placement: Some(PanePlacement {
+                    target: Some(target),
+                    direction: Some(direction.to_string()),
+                    ratio: Some(0.25),
+                }),
+            }),
+            Pending::Open,
+        );
+    }
+
+    pub(super) fn close_view_pane(&mut self, view_id: &str) {
+        if let Some((pane_id, _)) = self.panes.iter().find(|(_, p)| p.view_type == view_id) {
+            let pid = *pane_id;
+            self.request(
+                "pane/close",
+                to_value(&PaneCloseParams { pane_id: pid }),
+                Pending::Close,
+            );
+        }
+    }
+
+    pub(super) fn toggle_view_pane(&mut self, view_id: &str, direction: &str) {
+        if self.panes.values().any(|p| p.view_type == view_id) {
+            self.close_view_pane(view_id);
+        } else {
+            self.open_view_pane(view_id, direction);
+        }
+    }
+}
+
+fn parse_view_args(invocation: &Invocation) -> (Option<String>, String) {
+    if let Some(raw) = invocation.ex_raw() {
+        let parts: Vec<&str> = raw.split_whitespace().collect();
+        let view_id = parts.first().map(|s| s.to_string());
+        let dir = parts.get(1).unwrap_or(&"left").to_string();
+        (view_id, dir)
+    } else if let InvocationArgs::Script(val) = &invocation.args {
+        if let Some(s) = val.as_str() {
+            (Some(s.to_string()), "left".to_string())
+        } else if let Some(obj) = val.as_object() {
+            let view_id = obj
+                .get("view")
+                .or_else(|| obj.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let dir = obj
+                .get("direction")
+                .and_then(|v| v.as_str())
+                .unwrap_or("left")
+                .to_string();
+            (view_id, dir)
+        } else {
+            (None, "left".to_string())
+        }
+    } else {
+        (None, "left".to_string())
     }
 }

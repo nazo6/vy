@@ -149,6 +149,8 @@ export interface ConfigSugar {
 
 /** Reads and edits the active document. */
 export interface EditorSugar {
+  /** Opens a document in an editor pane. */
+  open(uri: Uri | string, options?: { paneId?: number }): Promise<void>;
   /** Returns the document in the focused pane, or null when none is open. */
   activeDocument(): Promise<Document | null>;
   /** Returns every open document. */
@@ -368,6 +370,14 @@ export interface ViewsSugar {
   register(type: string, options: ViewOptions): Disposable;
   /** Returns the registration for a view type, or undefined. */
   get(type: string): ViewOptions | undefined;
+  /** Opens a view pane. */
+  open(viewId: string, options?: { direction?: "left" | "right" | "above" | "below" }): Promise<void>;
+  /** Closes a view pane. */
+  close(viewId: string): Promise<void>;
+  /** Toggles a view pane open/closed. */
+  toggle(viewId: string, options?: { direction?: "left" | "right" | "above" | "below" }): Promise<void>;
+  /** Triggers a re-render of an open view. */
+  update(viewId: string): void;
 }
 
 /** Information about the remote connection. */

@@ -283,18 +283,33 @@ impl EditorView {
             HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
             HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
             HostAction::Pane(command) => self.run_pane_command(command),
-            HostAction::Document(command) => {
-                self.run_document_command(command, &Invocation::palette(command.id()));
+            HostAction::Document { command, args } => {
+                let invocation = args
+                    .map(|a| Invocation::script(command.id(), a))
+                    .unwrap_or_else(|| Invocation::palette(command.id()));
+                self.run_document_command(command, &invocation);
             }
-            HostAction::Ui(command) => {
-                self.run_ui_command(command, &Invocation::palette(command.id()));
+            HostAction::Ui { command, args } => {
+                let invocation = args
+                    .map(|a| Invocation::script(command.id(), a))
+                    .unwrap_or_else(|| Invocation::palette(command.id()));
+                self.run_ui_command(command, &invocation);
             }
             HostAction::RenderWidgetTree { view_id, tree } => {
                 self.activate_plugins_for_view(&view_id);
-                if let Some(pane_id) = self.active_pane
+                let mut updated = false;
+                for pane in self.panes.values_mut() {
+                    if pane.view_type == view_id || pane.view_type == "ui" {
+                        pane.view_type = view_id.clone();
+                        pane.widget_tree = Some(tree.clone());
+                        updated = true;
+                    }
+                }
+                if !updated
+                    && let Some(pane_id) = self.active_pane
                     && let Some(pane) = self.panes.get_mut(&pane_id)
                 {
-                    pane.view_type = "ui".to_string();
+                    pane.view_type = view_id;
                     pane.widget_tree = Some(tree);
                 }
             }

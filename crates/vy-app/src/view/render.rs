@@ -243,7 +243,7 @@ impl EditorView {
         let active = self.active_pane == Some(pane_id);
 
         if let Some(pane) = pane
-            && pane.view_type == "ui"
+            && (pane.view_type == "ui" || pane.widget_tree.is_some())
         {
             let mut area = div()
                 .relative()
@@ -252,7 +252,7 @@ impl EditorView {
                 .p_3()
                 .bg(theme.background.surface);
             if let Some(tree) = &pane.widget_tree {
-                area = area.child(ui::widget::render_widget_node(&theme, tree));
+                area = area.child(ui::widget::render_widget_node(&theme, tree, cx));
             } else {
                 area = area.child(
                     div()
