@@ -1,21 +1,12 @@
 //! `ui.hover` namespace.
 
 /// Shows and hides hover popups.
-#[vy_api_schema::vy_api_namespace("ui.hover")]
+#[vy_api_schema::vy_api_namespace("ui.hover", shared = vy_client_api::namespaces::ui_hover)]
 mod api {
-    use serde::{Deserialize, Serialize};
-    use ts_rs::TS;
+    use vy_client_api::namespaces::ui_hover::HoverShowParams;
 
     use crate::api::{Call, CallError, Reply};
     use crate::slots::HoverState;
-
-    /// `ui.hover.show` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct HoverShowParams {
-        pub line: usize,
-        pub character: usize,
-        pub text: String,
-    }
 
     /// Shows a hover popup at a position.
     #[vy_api_schema::vy_api_method]

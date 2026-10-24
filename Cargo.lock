@@ -6445,6 +6445,7 @@ dependencies = [
  "ts-rs",
  "vy-api-schema",
  "vy-capabilities",
+ "vy-client-api",
  "vy-core",
  "vy-host-api",
  "vy-js",
@@ -6458,6 +6459,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "vy-client-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strum",
+ "ts-rs",
+ "vy-api-schema",
+ "vy-core",
+ "vy-host-api",
 ]
 
 [[package]]

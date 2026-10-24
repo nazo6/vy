@@ -1,19 +1,14 @@
 //! `notifications` namespace.
 
 /// Shows notifications to the user.
-#[vy_api_schema::vy_api_namespace("notifications")]
+#[vy_api_schema::vy_api_namespace(
+    "notifications",
+    shared = vy_client_api::namespaces::notifications
+)]
 mod api {
-    use serde::{Deserialize, Serialize};
-    use ts_rs::TS;
+    use vy_client_api::namespaces::notifications::NotificationsShowParams;
 
     use crate::api::{Call, CallError, Reply};
-
-    /// `notifications.show` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(deny_unknown_fields)]
-    pub struct NotificationsShowParams {
-        pub message: String,
-    }
 
     /// Shows a notification to the user.
     #[vy_api_schema::vy_api_method]

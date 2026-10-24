@@ -1,32 +1,12 @@
 //! `ui.gutter` namespace.
 
 /// Creates and removes gutter items.
-#[vy_api_schema::vy_api_namespace("ui.gutter")]
+#[vy_api_schema::vy_api_namespace("ui.gutter", shared = vy_client_api::namespaces::ui_gutter)]
 mod api {
-    use crate::color::ThemeColor;
-    use serde::{Deserialize, Serialize};
-    use ts_rs::TS;
+    use vy_client_api::namespaces::ui_gutter::{GutterCreateParams, GutterDisposeParams};
 
     use crate::api::{Call, CallError, Reply};
     use crate::slots::GutterItem;
-
-    /// `ui.gutter.createItem` parameters.
-    ///
-    /// `line` is zero-based. The item is drawn in the gutter of that line.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct GutterCreateParams {
-        pub id: String,
-        pub line: usize,
-        pub text: String,
-        #[ts(optional = nullable)]
-        pub color: Option<ThemeColor>,
-    }
-
-    /// `ui.gutter.disposeItem` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct GutterDisposeParams {
-        pub id: String,
-    }
 
     /// Creates a gutter item and returns its id.
     #[vy_api_schema::vy_api_method]

@@ -19,6 +19,7 @@ thiserror.workspace = true
 ts-rs.workspace = true
 vy-api-schema.workspace = true
 vy-capabilities.workspace = true
+vy-client-api.workspace = true
 vy-core.workspace = true
 vy-host-api.workspace = true
 vy-js.workspace = true

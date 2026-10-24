@@ -1,83 +1,16 @@
 //! `process` namespace.
 
 /// Runs and manages external processes.
-#[vy_api_schema::vy_api_namespace("process")]
+#[vy_api_schema::vy_api_namespace("process", shared = vy_host_api::process)]
 mod api {
-    use serde::{Deserialize, Serialize};
-    use ts_rs::TS;
+    use vy_host_api::process::{
+        ProcessKillParams, ProcessKillReply, ProcessSpawnParams, ProcessSpawnReply,
+        ProcessStdinParams, ProcessStdinReply,
+    };
     use vy_proto::{ProcessExecParams, ProcessOutput, to_value};
 
     use crate::api::{Call, CallError, Reply, check_capability};
     use crate::plugin_host::HostAction;
-
-    /// `process.spawn` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessSpawnParams {
-        pub command: String,
-        #[serde(default)]
-        pub args: Vec<String>,
-        #[serde(default)]
-        #[ts(optional)]
-        pub cwd: Option<String>,
-        #[serde(default)]
-        #[ts(optional)]
-        pub env: Option<std::collections::BTreeMap<String, String>>,
-    }
-
-    /// `process.spawn` reply.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessSpawnReply {
-        pub pid: u32,
-    }
-
-    /// `process.kill` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessKillParams {
-        pub pid: u32,
-        #[serde(default)]
-        #[ts(optional)]
-        pub signal: Option<String>,
-    }
-
-    /// `process.kill` reply.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessKillReply {
-        pub success: bool,
-    }
-
-    /// `process.writeStdin` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessStdinParams {
-        pub pid: u32,
-        pub data: String,
-    }
-
-    /// `process.writeStdin` reply.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessStdinReply {
-        pub success: bool,
-    }
-
-    /// Payload of `process.onStdout` and `process.onStderr`.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct ProcessData {
-        pub pid: u32,
-        pub data: String,
-    }
-
-    /// Payload of `process.onExit`.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ProcessExit {
-        pub pid: u32,
-        pub exit_code: i32,
-    }
 
     /// Executes a process and waits for it to complete.
     #[vy_api_schema::vy_api_method]
@@ -149,18 +82,6 @@ mod api {
         };
         Ok(Reply::Deferred)
     }
-
-    /// Fires when a child process writes to standard output.
-    #[vy_api_schema::vy_api_event("process.onStdout", payload = ProcessData)]
-    const ON_STDOUT: () = ();
-
-    /// Fires when a child process writes to standard error.
-    #[vy_api_schema::vy_api_event("process.onStderr", payload = ProcessData)]
-    const ON_STDERR: () = ();
-
-    /// Fires when a child process exits.
-    #[vy_api_schema::vy_api_event("process.onExit", payload = ProcessExit)]
-    const ON_EXIT: () = ();
 }
 
 pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

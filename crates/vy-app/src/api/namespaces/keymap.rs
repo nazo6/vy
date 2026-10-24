@@ -1,47 +1,15 @@
 //! `keymap` namespace.
 
 /// Binds keys and updates keymap context values.
-#[vy_api_schema::vy_api_namespace("keymap")]
+#[vy_api_schema::vy_api_namespace("keymap", shared = vy_client_api::namespaces::keymap)]
 mod api {
-    use serde::{Deserialize, Serialize};
-    use ts_rs::TS;
+    use vy_client_api::namespaces::keymap::{
+        KeyContextValue, KeymapBindParams, KeymapSetContextParams, KeymapUnbindParams,
+    };
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::Owner;
     use crate::when;
-
-    /// `keymap.bind` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct KeymapBindParams {
-        pub keys: String,
-        pub command: String,
-        #[ts(optional = nullable)]
-        pub when: Option<String>,
-    }
-
-    /// `keymap.unbind` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct KeymapUnbindParams {
-        pub keys: String,
-    }
-
-    /// A value visible to a `when` expression, set by `keymap.setContext`.
-    ///
-    /// A context value is a boolean, a string, or a number.
-    #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
-    #[serde(untagged)]
-    pub enum KeyContextValue {
-        Bool(bool),
-        Text(String),
-        Number(f64),
-    }
-
-    /// `keymap.setContext` parameters.
-    #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
-    pub struct KeymapSetContextParams {
-        pub key: String,
-        pub value: KeyContextValue,
-    }
 
     /// Binds a key sequence to a command.
     #[vy_api_schema::vy_api_method]

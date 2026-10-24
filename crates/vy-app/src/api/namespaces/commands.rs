@@ -1,32 +1,18 @@
 //! `commands` namespace.
 
 /// Registers command handlers and runs commands by id.
-#[vy_api_schema::vy_api_namespace("commands", sugar = CommandsSugar)]
+#[vy_api_schema::vy_api_namespace(
+    "commands",
+    shared = vy_client_api::namespaces::commands
+)]
 mod api {
-    use serde::{Deserialize, Serialize};
-    use serde_json::Value;
-    use ts_rs::TS;
+    use vy_client_api::namespaces::commands::{CommandsExecuteParams, CommandsRegisterParams};
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::{
         BuiltinCommand, CommandArgs, DocumentCommand, Owner, PaneCommand, UiCommand,
     };
     use crate::plugin_host::HostAction;
-
-    /// `commands.registerCommand` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct CommandsRegisterParams {
-        pub id: String,
-    }
-
-    /// `commands.execute` parameters.
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-    pub struct CommandsExecuteParams {
-        pub id: String,
-        #[serde(default)]
-        #[ts(type = "unknown")]
-        pub args: Value,
-    }
 
     /// Registers a command handler and returns a disposable registration.
     #[vy_api_schema::vy_api_method(manual)]
@@ -106,16 +92,16 @@ mod api {
         Ok(Reply::Value(ids))
     }
 
-    fn command_args(args: &Value) -> CommandArgs {
+    fn command_args(value: &serde_json::Value) -> CommandArgs {
         CommandArgs {
-            count: args
+            count: value
                 .get("count")
-                .and_then(Value::as_u64)
+                .and_then(serde_json::Value::as_u64)
                 .map(|count| count as u32),
-            register: args
+            register: value
                 .get("register")
-                .and_then(Value::as_str)
-                .and_then(|value| value.chars().next()),
+                .and_then(serde_json::Value::as_str)
+                .and_then(|register| register.chars().next()),
         }
     }
 }

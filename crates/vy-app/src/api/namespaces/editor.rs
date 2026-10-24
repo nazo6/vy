@@ -1,60 +1,20 @@
 //! `editor` namespace.
 
 /// Reads and edits the active document.
-#[vy_api_schema::vy_api_namespace("editor")]
+#[vy_api_schema::vy_api_namespace("editor", shared = vy_client_api::namespaces::editor)]
 mod api {
-    use crate::keymap::Mode;
-    use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use ts_rs::TS;
-    use vy_core::{Selection, TextEdit, Uri};
-    use vy_js::DocumentInfoReply;
+    use vy_client_api::keymap::Mode;
+    use vy_client_api::namespaces::editor::{
+        EditorEditParams, EditorEditReply, EditorOpenParams, EditorSetModeParams,
+        EditorSetSelectionsParams,
+    };
+    use vy_core::Selection;
+    use vy_host_api::DocumentInfoReply;
 
     use crate::api::{Call, CallError, Reply, document_info};
     use crate::commands::DocumentCommand;
     use crate::plugin_host::HostAction;
-
-    /// `editor.setMode` parameters.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct EditorSetModeParams {
-        pub mode: Mode,
-    }
-
-    /// `editor.setSelections` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct EditorSetSelectionsParams {
-        pub selections: Vec<Selection>,
-    }
-
-    /// `editor.edit` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct EditorEditParams {
-        pub edits: Vec<TextEdit>,
-    }
-
-    /// `editor.edit` reply.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct EditorEditReply {
-        #[ts(type = "number")]
-        pub version: u64,
-    }
-
-    /// `editor.open` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct EditorOpenParams {
-        pub uri: Uri,
-        #[serde(default)]
-        #[ts(type = "number")]
-        #[ts(optional = nullable)]
-        pub pane_id: Option<u64>,
-    }
-
-    /// Payload of `editor.onDidChangeSelection`.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct SelectionChange {
-        pub selections: Vec<Selection>,
-    }
 
     /// Returns the editor mode of the focused pane.
     #[vy_api_schema::vy_api_method]
@@ -162,23 +122,6 @@ mod api {
         call.outcome.action = HostAction::Redo;
         Ok(Reply::Value(()))
     }
-
-    /// Payload of `editor.onDidChangeActiveDocument`.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct ActiveDocumentChange {
-        pub document: Option<DocumentInfoReply>,
-    }
-
-    /// Fires when the document in the focused pane changes.
-    #[vy_api_schema::vy_api_event(
-        "editor.onDidChangeActiveDocument",
-        payload = ActiveDocumentChange
-    )]
-    const ON_DID_CHANGE_ACTIVE_DOCUMENT: () = ();
-
-    /// Fires when the selections in the focused pane change.
-    #[vy_api_schema::vy_api_event("editor.onDidChangeSelection", payload = SelectionChange)]
-    const ON_DID_CHANGE_SELECTION: () = ();
 }
 
 pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

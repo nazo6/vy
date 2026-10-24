@@ -5,8 +5,12 @@
 //! crates; the declarations live here so the TypeScript surface and the
 //! backend implementation cannot drift. See ADR 0012.
 
+pub mod config;
+pub mod context;
 pub mod document;
 pub mod fs;
+pub mod log;
+pub mod process;
 pub mod workspace;
 
 pub use document::DocumentInfoReply;
@@ -18,17 +22,12 @@ pub use document::DocumentInfoReply;
 #[macro_export]
 macro_rules! method_decl {
     ($name:ident, $wire:literal, $result:ty, $doc:literal) => {
-        $crate::method_decl!(
-            @build $name,
-            $wire,
-            None,
-            $result,
-            $doc
-        );
+        $crate::method_decl!(@build $name, $wire, None, $result, $doc, false, None, None);
     };
     ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal) => {
         $crate::method_decl!(
-            @build $name,
+            @build
+            $name,
             $wire,
             Some(::vy_api_schema::TypeRef {
                 name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
@@ -36,10 +35,74 @@ macro_rules! method_decl {
                     as fn(&mut ::vy_api_schema::TypeCollector),
             }),
             $result,
-            $doc
+            $doc,
+            false,
+            None,
+            None
         );
     };
-    (@build $name:ident, $wire:literal, $params:expr, $result:ty, $doc:literal) => {
+    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, manual) => {
+        $crate::method_decl!(
+            @build
+            $name,
+            $wire,
+            Some(::vy_api_schema::TypeRef {
+                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
+                collect: ::vy_api_schema::collect::<$params>
+                    as fn(&mut ::vy_api_schema::TypeCollector),
+            }),
+            $result,
+            $doc,
+            true,
+            None,
+            None
+        );
+    };
+    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, typed_key = $key:literal) => {
+        $crate::method_decl!(
+            @build
+            $name,
+            $wire,
+            Some(::vy_api_schema::TypeRef {
+                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
+                collect: ::vy_api_schema::collect::<$params>
+                    as fn(&mut ::vy_api_schema::TypeCollector),
+            }),
+            $result,
+            $doc,
+            false,
+            Some($key),
+            None
+        );
+    };
+    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, typed_args = $key:literal) => {
+        $crate::method_decl!(
+            @build
+            $name,
+            $wire,
+            Some(::vy_api_schema::TypeRef {
+                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
+                collect: ::vy_api_schema::collect::<$params>
+                    as fn(&mut ::vy_api_schema::TypeCollector),
+            }),
+            $result,
+            $doc,
+            false,
+            None,
+            Some($key)
+        );
+    };
+    (
+        @build
+        $name:ident,
+        $wire:literal,
+        $params:expr,
+        $result:ty,
+        $doc:literal,
+        $manual:expr,
+        $typed_key:expr,
+        $typed_args:expr
+    ) => {
         pub static $name: ::vy_api_schema::MethodDecl = ::vy_api_schema::MethodDecl {
             method: $wire,
             params: $params,
@@ -49,9 +112,27 @@ macro_rules! method_decl {
                     as fn(&mut ::vy_api_schema::TypeCollector),
             },
             doc: $doc,
-            manual: false,
-            typed_key: None,
-            typed_args: None,
+            manual: $manual,
+            typed_key: $typed_key,
+            typed_args: $typed_args,
+        };
+    };
+}
+
+/// Declares an event without a handler.
+#[macro_export]
+macro_rules! event_decl {
+    ($name:ident, $topic:literal, $namespace:literal, $event:literal, $payload:ty, $doc:literal) => {
+        pub static $name: ::vy_api_schema::EventDecl = ::vy_api_schema::EventDecl {
+            topic: $topic,
+            name: $event,
+            namespace: $namespace,
+            payload: ::vy_api_schema::TypeRef {
+                name: ::vy_api_schema::ts_name::<$payload> as fn() -> String,
+                collect: ::vy_api_schema::collect::<$payload>
+                    as fn(&mut ::vy_api_schema::TypeCollector),
+            },
+            doc: $doc,
         };
     };
 }
@@ -96,5 +177,28 @@ mod tests {
             workspace::EVENTS[0].topic,
             "workspace.onDidChangeWorkspaceFolders"
         );
+    }
+
+    #[test]
+    fn process_declares_methods_and_events() {
+        assert_eq!(
+            names(process::METHODS),
+            vec![
+                "process.exec",
+                "process.spawn",
+                "process.kill",
+                "process.writeStdin",
+            ]
+        );
+        assert_eq!(process::EVENTS.len(), 3);
+    }
+
+    #[test]
+    fn document_config_log_and_context_are_shared() {
+        assert_eq!(document::METHODS.len(), 4);
+        assert_eq!(config::METHODS.len(), 2);
+        assert_eq!(config::EVENTS.len(), 1);
+        assert_eq!(log::METHODS.len(), 1);
+        assert_eq!(context::METHODS.len(), 1);
     }
 }

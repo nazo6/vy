@@ -1,73 +1,16 @@
 //! `views` namespace.
 
 /// Registers and looks up pane views.
-#[vy_api_schema::vy_api_namespace("views")]
+#[vy_api_schema::vy_api_namespace("views", shared = vy_client_api::namespaces::views)]
 mod api {
-    use crate::widget::WidgetNode;
-    use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use ts_rs::TS;
+    use vy_client_api::namespaces::views::{
+        ViewCloseParams, ViewDirection, ViewOpenParams, ViewToggleParams, ViewsRenderParams,
+    };
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::UiCommand;
     use crate::plugin_host::HostAction;
-
-    /// `views.render` parameters.
-    ///
-    /// `tree` is the widget tree returned by the view's render callback.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    pub struct ViewsRenderParams {
-        pub id: String,
-        pub tree: WidgetNode,
-    }
-
-    /// Direction a view pane opens toward.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "lowercase")]
-    pub enum ViewDirection {
-        Left,
-        Right,
-        Above,
-        Below,
-    }
-
-    impl ViewDirection {
-        pub fn as_str(self) -> &'static str {
-            match self {
-                Self::Left => "left",
-                Self::Right => "right",
-                Self::Above => "above",
-                Self::Below => "below",
-            }
-        }
-    }
-
-    /// `views.open` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ViewOpenParams {
-        pub view: String,
-        #[serde(default)]
-        #[ts(optional = nullable)]
-        pub direction: Option<ViewDirection>,
-    }
-
-    /// `views.close` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ViewCloseParams {
-        pub view: String,
-    }
-
-    /// `views.toggle` parameters.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ViewToggleParams {
-        pub view: String,
-        #[serde(default)]
-        #[ts(optional = nullable)]
-        pub direction: Option<ViewDirection>,
-    }
 
     /// Opens a view pane.
     #[vy_api_schema::vy_api_method]
