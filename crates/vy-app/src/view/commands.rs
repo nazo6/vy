@@ -16,7 +16,7 @@ use vy_app::state::DocumentState;
 use vy_app::text_layout::{
     half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
 };
-use vy_app::workspace::uri_from_argument;
+use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_proto::{
     DocumentIdParams, EditorOpenParams, PaneCloseParams, PaneFocusParams, PaneOpenParams,
     PanePlacement, to_value,
@@ -100,7 +100,11 @@ impl EditorView {
                     }
                 });
 
-                let uri = uri_from_argument(&path_or_uri, self.workspace.as_deref());
+                let uri = if self.connection.is_remote() {
+                    uri_from_argument_remote(&path_or_uri, Some(&self.workspace_uri))
+                } else {
+                    uri_from_argument_with_base(&path_or_uri, Some(&self.workspace_uri))
+                };
                 self.request(
                     "editor/open",
                     to_value(&EditorOpenParams {

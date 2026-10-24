@@ -13,13 +13,32 @@ use gpui::{
 use gpui_platform::application;
 use theme::Theme;
 use view::EditorView;
+use vy_app::connection::{CliOptions, startup_for};
+use vy_app::paths::Paths;
 
 fn main() {
-    application().run(|cx: &mut App| {
+    let options = match CliOptions::parse(std::env::args().skip(1)) {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("vy: {error}");
+            std::process::exit(2);
+        }
+    };
+
+    let startup = match startup_for(&options, &Paths::from_env()) {
+        Ok(startup) => startup,
+        Err(error) => {
+            eprintln!("vy: {error}");
+            std::process::exit(2);
+        }
+    };
+
+    application().run(move |cx: &mut App| {
         gpui_base::init(cx);
         cx.set_global(Theme::dark());
 
         let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
+        let view_startup = startup.clone();
 
         let window = cx
             .open_window(
@@ -32,7 +51,7 @@ fn main() {
                     }),
                     ..Default::default()
                 },
-                |_window, cx| cx.new(EditorView::new),
+                move |_window, cx| cx.new(|cx| EditorView::new(cx, view_startup.clone())),
             )
             .expect("could not open the window");
 

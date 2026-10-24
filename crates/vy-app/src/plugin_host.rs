@@ -167,6 +167,24 @@ impl PluginHost {
 
 /// Builds the constants the shim exposes. `init.ts` is always trusted.
 pub fn script_env(workspace: &WorkspaceInfo, paths: &Paths) -> (ScriptEnv, Vec<String>) {
+    script_env_with_remote(
+        workspace,
+        paths,
+        RemoteEnv {
+            is_remote: false,
+            name: "local".to_string(),
+            os: std::env::consts::OS.to_string(),
+            path_separator: std::path::MAIN_SEPARATOR.to_string(),
+        },
+    )
+}
+
+/// Builds the script environment for a local or remote workspace.
+pub fn script_env_with_remote(
+    workspace: &WorkspaceInfo,
+    paths: &Paths,
+    remote: RemoteEnv,
+) -> (ScriptEnv, Vec<String>) {
     let (store, warning) = TrustedStore::load(&paths.trusted_json());
     // Phase 2 has no manifests; reading the store here keeps a broken file from
     // going unnoticed and leaves the approval path in place for Phase 3.
@@ -189,12 +207,7 @@ pub fn script_env(workspace: &WorkspaceInfo, paths: &Paths) -> (ScriptEnv, Vec<S
             trusted: true,
         },
         capabilities: Vec::new(),
-        remote: RemoteEnv {
-            is_remote: false,
-            name: "local".to_string(),
-            os: std::env::consts::OS.to_string(),
-            path_separator: std::path::MAIN_SEPARATOR.to_string(),
-        },
+        remote,
     };
 
     (env, warning.into_iter().collect())

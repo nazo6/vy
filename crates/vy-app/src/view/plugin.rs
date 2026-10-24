@@ -5,7 +5,6 @@ use std::time::Duration;
 use gpui::Context;
 use vy_app::commands::Invocation;
 use vy_app::plugin_host::{self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext};
-use vy_app::workspace::workspace_info;
 use vy_core::Uri;
 use vy_js::{HostRequest, ScriptEvent};
 
@@ -61,7 +60,8 @@ impl EditorView {
         self.keymap.unbind_owner(&vy_app::commands::Owner::Init);
         self.config.clear_memory();
 
-        let (env, warnings) = plugin_host::script_env(&workspace_info(), &self.paths);
+        let (env, warnings) =
+            plugin_host::script_env_with_remote(&self.workspace_info(), &self.paths, self.remote_env());
         for warning in &warnings {
             eprintln!("vy: trusted.json: {warning}");
         }
@@ -103,7 +103,7 @@ impl EditorView {
         }
 
         // 2. Activate onWorkspaceContains plugins if workspace is open
-        if let Some(workspace) = self.workspace.as_deref() {
+        if let Some(workspace) = self.local_workspace.as_deref() {
             let ws_plugins = self.plugin_manager.plugins_for_workspace(workspace);
             for plugin in ws_plugins {
                 self.evaluate_discovered_plugin(&plugin);
@@ -159,7 +159,7 @@ impl EditorView {
         }
 
         // Activate if workspace matches
-        if let Some(workspace) = self.workspace.as_deref() {
+        if let Some(workspace) = self.local_workspace.as_deref() {
             let ws_plugins = self.plugin_manager.plugins_for_workspace(workspace);
             for plugin in ws_plugins {
                 if plugin.manifest.id == plugin_id {
@@ -232,7 +232,7 @@ impl EditorView {
     pub(super) fn handle_host_request(&mut self, request: HostRequest) {
         self.activate_active_view();
         let document = self.document_info();
-        let workspace = workspace_info();
+        let workspace = self.workspace_info();
         let Some(plugin) = self.plugin.as_ref() else {
             request.respond_error("RemoteDisconnected", "the script host is not running");
             return;

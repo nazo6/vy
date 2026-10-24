@@ -17,6 +17,7 @@ use gpui::{Context, FocusHandle, KeyDownEvent, ScrollWheelEvent, SharedString, W
 use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
+use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState};
 use vy_app::ex::{ExHistory, ExState};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
@@ -29,8 +30,9 @@ use vy_app::slots::{GutterRegistry, HoverState};
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::statusline::Statusline;
 use vy_app::text_layout::scroll_lines;
-use vy_app::workspace::{document_uri, workspace_info, workspace_uri};
+use vy_app::workspace::{document_uri, workspace_info_for};
 use vy_core::{LayoutNode, PaneId};
+use vy_js::RemoteEnv;
 use vy_proto::{InitializeParams, PROTOCOL_VERSION, to_value};
 
 /// The kind of request we are waiting for a response to.
@@ -53,7 +55,13 @@ pub struct EditorView {
     pending: HashMap<u64, Pending>,
     config: Config,
     paths: Paths,
-    workspace: Option<PathBuf>,
+    connection: ConnectionSpec,
+    connection_name: String,
+    /// URI of the workspace on the core. For remote connections this is not a
+    /// path on this machine.
+    workspace_uri: String,
+    /// Local path used for project settings. `None` for remote connections.
+    local_workspace: Option<PathBuf>,
     settings_stamp: Option<SystemTime>,
     keymap: Keymap,
     commands: CommandRegistry,
@@ -105,9 +113,9 @@ pub struct EditorView {
 }
 
 impl EditorView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>, startup: Startup) -> Self {
         let paths = Paths::from_env();
-        let workspace = std::env::current_dir().ok();
+        let workspace = startup.local_workspace.clone();
         let (config, warnings) = Config::load(&paths, workspace.as_deref());
         let settings_stamp = paths.settings_stamp(workspace.as_deref());
         for warning in &warnings {
@@ -123,7 +131,8 @@ impl EditorView {
             }
         };
 
-        let roots = vy_capabilities::Roots::new(workspace.clone(), dirs::home_dir());
+        let roots =
+            vy_capabilities::Roots::new(startup.workspace_path.clone(), startup.home.clone());
         let mut plugin_manager = PluginManager::new(paths.clone(), roots);
         let plugin_warnings = plugin_manager.scan();
         for warning in &plugin_warnings {
@@ -139,8 +148,15 @@ impl EditorView {
             })
         });
 
-        let uri = document_uri();
-        let (env, trusted_warnings) = plugin_host::script_env(&workspace_info(), &paths);
+        let uri = document_uri(
+            startup.initial_file.as_deref(),
+            Some(&startup.workspace_uri),
+            !startup.connection.is_remote(),
+        );
+        let workspace_info = workspace_info_for(Some(startup.workspace_uri.clone()));
+        let remote = remote_env(&startup);
+        let (env, trusted_warnings) =
+            plugin_host::script_env_with_remote(&workspace_info, &paths, remote);
         for warning in &trusted_warnings {
             eprintln!("vy: trusted.json: {warning}");
         }
@@ -156,7 +172,10 @@ impl EditorView {
             pending: HashMap::new(),
             config,
             paths,
-            workspace,
+            connection: startup.connection.clone(),
+            connection_name: startup.connection_name.clone(),
+            workspace_uri: startup.workspace_uri.clone(),
+            local_workspace: startup.local_workspace.clone(),
             settings_stamp,
             keymap,
             commands: CommandRegistry::new(),
@@ -194,15 +213,15 @@ impl EditorView {
             view_widget_trees: HashMap::new(),
         };
 
-        match Client::spawn() {
+        match Client::connect(startup.connection.clone()) {
             Ok(mut client) => {
                 let id = client.request(
                     "initialize",
                     to_value(&InitializeParams {
                         protocol_version: PROTOCOL_VERSION,
                         client_version: env!("CARGO_PKG_VERSION").into(),
-                        client_capabilities: Vec::new(),
-                        workspace: Some(workspace_uri()),
+                        client_capabilities: vec!["session-restore".to_string()],
+                        workspace: Some(startup.workspace_uri.clone()),
                         resume_session: None,
                     }),
                 );
@@ -214,7 +233,11 @@ impl EditorView {
                 };
             }
             Err(error) => {
-                view.status = format!("could not start vy-server: {error}").into();
+                view.status = format!(
+                    "could not start vy-server for {}: {error}",
+                    startup.connection_name
+                )
+                .into();
             }
         }
 
@@ -222,6 +245,17 @@ impl EditorView {
         view.start_config_watch(cx);
         view.start_script(cx);
         view
+    }
+
+    fn workspace_info(&self) -> vy_app::plugin_host::WorkspaceInfo {
+        workspace_info_for(Some(self.workspace_uri.clone()))
+    }
+
+    fn remote_env(&self) -> RemoteEnv {
+        remote_env_for(
+            &self.connection,
+            &self.connection_name,
+        )
     }
 
     fn active_pane_state(&self) -> Option<&PaneState> {
@@ -404,14 +438,16 @@ impl EditorView {
 
     /// Reloads the settings layers when the file timestamps changed.
     fn reload_config_if_changed(&mut self) -> bool {
-        let stamp = self.paths.settings_stamp(self.workspace.as_deref());
+        let stamp = self.paths.settings_stamp(self.local_workspace.as_deref());
         if stamp == self.settings_stamp {
             return false;
         }
         self.settings_stamp = stamp;
 
         let previous = self.config.clone();
-        let warnings = self.config.reload(&self.paths, self.workspace.as_deref());
+        let warnings = self
+            .config
+            .reload(&self.paths, self.local_workspace.as_deref());
         for warning in &warnings {
             eprintln!("vy: settings: {warning}");
         }
@@ -577,5 +613,27 @@ impl EditorView {
             }
             cx.notify();
         }
+    }
+}
+
+fn remote_env(startup: &Startup) -> RemoteEnv {
+    remote_env_for(&startup.connection, &startup.connection_name)
+}
+
+fn remote_env_for(connection: &ConnectionSpec, name: &str) -> RemoteEnv {
+    let remote = connection.is_remote();
+    RemoteEnv {
+        is_remote: remote,
+        name: name.to_string(),
+        os: if remote {
+            "unknown".to_string()
+        } else {
+            std::env::consts::OS.to_string()
+        },
+        path_separator: if remote {
+            "/".to_string()
+        } else {
+            std::path::MAIN_SEPARATOR.to_string()
+        },
     }
 }

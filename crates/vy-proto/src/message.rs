@@ -6,7 +6,7 @@ use crate::error::ErrorCode;
 /// Protocol version. Matched during `initialize`.
 ///
 /// Version 2 returns undo and redo results as ordered batches of edits.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Payload of every RPC frame.
 ///

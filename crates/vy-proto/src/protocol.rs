@@ -439,7 +439,7 @@ mod tests {
     #[test]
     fn roundtrips_initialize_params() {
         let params = InitializeParams {
-            protocol_version: 2,
+            protocol_version: 3,
             client_version: "0.1.0".into(),
             client_capabilities: vec!["stream".into()],
             workspace: Some("file:///tmp".into()),

@@ -42,6 +42,10 @@ impl Paths {
         self.config.join("settings.json")
     }
 
+    pub fn connections_json(&self) -> PathBuf {
+        self.config.join("connections.json")
+    }
+
     pub fn trusted_json(&self) -> PathBuf {
         self.config.join("trusted.json")
     }
