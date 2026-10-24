@@ -477,12 +477,7 @@ impl EditorView {
                             } else {
                                 self.status =
                                     format!("Approved and enabled plugin {plugin_name}").into();
-                                if let Some(vy_app::plugin::PluginState::Trusted(plugin)) =
-                                    self.plugin_manager.state(&plugin_id)
-                                {
-                                    let plugin_clone = plugin.clone();
-                                    self.evaluate_discovered_plugin(&plugin_clone);
-                                }
+                                self.on_plugin_approved(&plugin_id);
                             }
                             self.show_next_approval_prompt();
                         } else if id == "deny" {
@@ -559,6 +554,7 @@ impl EditorView {
     /// Runs one command. Returns true when it continues on the script thread.
     pub(super) fn execute_invocation(&mut self, invocation: Invocation) -> bool {
         let id = invocation.id.clone();
+        self.activate_plugins_for_command(&id);
 
         if let Some(command) = UiCommand::parse(&id) {
             self.run_ui_command(command, &invocation);

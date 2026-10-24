@@ -3,11 +3,13 @@
 //! Implements external plugin loading and the trust model defined in
 //! `docs/plugin-system.md` and `docs/layout.md`.
 
+pub mod activation;
 pub mod discovery;
 pub mod manager;
 pub mod manifest;
 pub mod trust;
 
+pub use activation::ActivationEvent;
 pub use discovery::{DiscoveredPlugin, discover_plugins};
 pub use manager::{PluginApprovalRequest, PluginManager, PluginState};
 pub use manifest::{

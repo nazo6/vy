@@ -88,20 +88,85 @@ impl EditorView {
                 self.status = message.into();
             }
         }
-        self.load_trusted_plugins();
+        self.init_plugins();
     }
 
-    /// Evaluates the frontend main entry for all currently trusted plugins.
-    pub(super) fn load_trusted_plugins(&mut self) {
-        let trusted: Vec<vy_app::plugin::DiscoveredPlugin> = self
-            .plugin_manager
-            .trusted_plugins()
-            .into_iter()
-            .cloned()
-            .collect();
+    /// Initializes trusted plugins: pre-registers contributed commands and activates
+    /// plugins triggered by `onStartup` or `onWorkspaceContains`.
+    pub(super) fn init_plugins(&mut self) {
+        self.register_contributed_commands();
 
-        for plugin in trusted {
+        // 1. Activate onStartup plugins
+        let startup = self.plugin_manager.plugins_for_startup();
+        for plugin in startup {
             self.evaluate_discovered_plugin(&plugin);
+        }
+
+        // 2. Activate onWorkspaceContains plugins if workspace is open
+        if let Some(workspace) = self.workspace.as_deref() {
+            let ws_plugins = self.plugin_manager.plugins_for_workspace(workspace);
+            for plugin in ws_plugins {
+                self.evaluate_discovered_plugin(&plugin);
+            }
+        }
+    }
+
+    /// Pre-registers contributed commands from all trusted plugins into the command registry.
+    pub(super) fn register_contributed_commands(&mut self) {
+        for (cmd_id, title, plugin_id) in self.plugin_manager.contributed_commands() {
+            let _ = self
+                .commands
+                .register_contributed(cmd_id, title, &plugin_id);
+        }
+    }
+
+    /// Checks if executing `command_id` triggers any lazy-loaded plugin and activates them.
+    pub(super) fn activate_plugins_for_command(&mut self, command_id: &str) {
+        let to_activate = self.plugin_manager.plugins_for_command(command_id);
+        for plugin in to_activate {
+            self.evaluate_discovered_plugin(&plugin);
+        }
+    }
+
+    /// Checks if displaying `view_id` triggers any lazy-loaded plugin and activates them.
+    pub(super) fn activate_plugins_for_view(&mut self, view_id: &str) {
+        let to_activate = self.plugin_manager.plugins_for_view(view_id);
+        for plugin in to_activate {
+            self.evaluate_discovered_plugin(&plugin);
+        }
+    }
+
+    /// Checks if opening `language_id` triggers any lazy-loaded plugin and activates them.
+    pub(super) fn activate_plugins_for_language(&mut self, language_id: &str) {
+        let to_activate = self.plugin_manager.plugins_for_language(language_id);
+        for plugin in to_activate {
+            self.evaluate_discovered_plugin(&plugin);
+        }
+    }
+
+    /// Handles post-approval setup for a plugin: registers its commands and triggers
+    /// activation if it matches startup or the current workspace/document.
+    pub(super) fn on_plugin_approved(&mut self, plugin_id: &str) {
+        self.register_contributed_commands();
+
+        // Activate if it has onStartup
+        let startup = self.plugin_manager.plugins_for_startup();
+        for plugin in startup {
+            if plugin.manifest.id == plugin_id {
+                self.evaluate_discovered_plugin(&plugin);
+                return;
+            }
+        }
+
+        // Activate if workspace matches
+        if let Some(workspace) = self.workspace.as_deref() {
+            let ws_plugins = self.plugin_manager.plugins_for_workspace(workspace);
+            for plugin in ws_plugins {
+                if plugin.manifest.id == plugin_id {
+                    self.evaluate_discovered_plugin(&plugin);
+                    return;
+                }
+            }
         }
     }
 
@@ -224,7 +289,8 @@ impl EditorView {
             HostAction::Ui(command) => {
                 self.run_ui_command(command, &Invocation::palette(command.id()));
             }
-            HostAction::RenderWidgetTree { view_id: _, tree } => {
+            HostAction::RenderWidgetTree { view_id, tree } => {
+                self.activate_plugins_for_view(&view_id);
                 if let Some(pane_id) = self.active_pane
                     && let Some(pane) = self.panes.get_mut(&pane_id)
                 {
@@ -247,10 +313,36 @@ impl EditorView {
 
     pub(super) fn document_info(&self) -> Option<DocumentInfo> {
         let document = self.active_document()?;
+        let language_id = detect_language_id(&document.uri).to_string();
         Some(DocumentInfo {
             id: document.id,
             uri: Uri::parse(document.uri.clone()).ok()?,
-            language_id: "text".to_string(),
+            language_id,
         })
+    }
+}
+
+/// Detects a basic language identifier from a file URI or path extension.
+pub fn detect_language_id(uri: &str) -> &'static str {
+    let path = uri.split('?').next().unwrap_or(uri);
+    if let Some(ext) = path.rsplit('.').next() {
+        match ext.to_lowercase().as_str() {
+            "rs" => "rust",
+            "ts" | "mts" | "cts" => "typescript",
+            "js" | "mjs" | "cjs" => "javascript",
+            "json" => "json",
+            "md" | "markdown" => "markdown",
+            "py" => "python",
+            "toml" => "toml",
+            "yaml" | "yml" => "yaml",
+            "html" | "htm" => "html",
+            "css" => "css",
+            "sh" | "bash" => "shellscript",
+            "c" | "h" => "c",
+            "cpp" | "hpp" | "cc" => "cpp",
+            _ => "text",
+        }
+    } else {
+        "text"
     }
 }

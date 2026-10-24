@@ -617,6 +617,7 @@ pub enum CommandError {
 #[derive(Debug, Default)]
 pub struct CommandRegistry {
     scripts: HashMap<String, Owner>,
+    titles: HashMap<String, String>,
 }
 
 impl CommandRegistry {
@@ -624,19 +625,58 @@ impl CommandRegistry {
         Self::default()
     }
 
-    /// Registers a command from a script. Built-in ids and duplicates are rejected.
+    /// Registers a command from a script. Built-in ids and foreign duplicates are rejected.
+    /// Re-registration by the same plugin owner (implementing a contributed command) is allowed.
     pub fn register(&mut self, id: impl Into<String>, owner: Owner) -> Result<(), CommandError> {
         let id = CommandId::parse(id)?;
-        if BuiltinCommand::parse(id.as_str()).is_some() || self.scripts.contains_key(id.as_str()) {
-            return Err(CommandError::Duplicate(id.as_str().to_string()));
+        if BuiltinCommand::parse(id.as_str()).is_some() {
+            return Err(CommandError::Reserved(id.as_str().to_string()));
+        }
+        if let Some(existing_owner) = self.scripts.get(id.as_str()) {
+            match (existing_owner, &owner) {
+                (Owner::Plugin(p1), Owner::Plugin(p2)) if p1 == p2 => {
+                    // Allowed: plugin implementing its own contributed command
+                }
+                _ => return Err(CommandError::Duplicate(id.as_str().to_string())),
+            }
         }
         self.scripts.insert(id.as_str().to_string(), owner);
         Ok(())
     }
 
+    /// Registers a contributed command from a plugin manifest.
+    pub fn register_contributed(
+        &mut self,
+        id: impl Into<String>,
+        title: impl Into<String>,
+        plugin_id: &str,
+    ) -> Result<(), CommandError> {
+        let id = CommandId::parse(id)?;
+        if BuiltinCommand::parse(id.as_str()).is_some() {
+            return Err(CommandError::Reserved(id.as_str().to_string()));
+        }
+        let id_str = id.as_str().to_string();
+        let title_str = title.into();
+        self.scripts
+            .insert(id_str.clone(), Owner::Plugin(plugin_id.to_string()));
+        if !title_str.is_empty() {
+            self.titles.insert(id_str, title_str);
+        }
+        Ok(())
+    }
+
     /// Drops every command registered by an owner. Used when `init.ts` reloads.
     pub fn unregister_owner(&mut self, owner: &Owner) {
-        self.scripts.retain(|_, registered| registered != owner);
+        let removed: Vec<String> = self
+            .scripts
+            .iter()
+            .filter(|(_, reg)| *reg == owner)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for id in removed {
+            self.scripts.remove(&id);
+            self.titles.remove(&id);
+        }
     }
 
     pub fn owner_of(&self, id: &str) -> Option<&Owner> {
@@ -702,11 +742,12 @@ impl CommandRegistry {
                 .owner_of(&id)
                 .map(CommandSource::from)
                 .unwrap_or(CommandSource::Init);
-            descriptors.push(CommandDescriptor::new(
-                id.clone(),
-                display_title(&id),
-                source,
-            ));
+            let title = self
+                .titles
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| display_title(&id));
+            descriptors.push(CommandDescriptor::new(id.clone(), title, source));
         }
 
         descriptors

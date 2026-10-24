@@ -137,7 +137,7 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
 外部プラグインの導入と実用的なプラグイン（`nvim-tree` 風のファイラー、Git、ステータス拡張など）を実装・動作させられる基盤を整えます。
 
 - [x] 外部プラグインのマニフェスト読み込みと初回の承認 UI（`trusted.json` の対話的承認）
-- [ ] `activationEvents` による遅延読み込み（`onView:xxx`、`onCommand:xxx`）
+- [x] `activationEvents` による遅延読み込み（`onView:xxx`、`onCommand:xxx`）
 - [ ] エディタとワークスペースのイベント通知 API
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`

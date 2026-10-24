@@ -295,6 +295,11 @@ impl EditorView {
             self.activate_active_view();
         }
 
+        if let Some(document) = self.documents.get(&document_id) {
+            let lang = super::plugin::detect_language_id(&document.uri);
+            self.activate_plugins_for_language(lang);
+        }
+
         let (line_count, version) = self
             .documents
             .get(&document_id)

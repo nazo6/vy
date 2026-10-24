@@ -1,10 +1,13 @@
-//! High-level plugin manager managing discovered plugins and capability approval workflow.
+//! High-level plugin manager managing discovered plugins, capability approvals,
+//! and lazy activation lifecycle.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::Path;
 
 use vy_capabilities::{Roots, TrustedStore};
 
 use crate::paths::Paths;
+use crate::plugin::activation::{ActivationEvent, workspace_contains};
 use crate::plugin::discovery::{DiscoveredPlugin, discover_plugins};
 use crate::plugin::trust::{PluginTrustStatus, approve_plugin, evaluate_plugin_trust};
 
@@ -17,11 +20,9 @@ pub struct PluginApprovalRequest {
     pub missing_capabilities: Vec<String>,
 }
 
-/// The runtime status of a known plugin.
+/// The runtime lifecycle status of a known plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginState {
-    /// Fully trusted and ready to be activated.
-    Trusted(DiscoveredPlugin),
     /// Pending approval from user before it can be loaded.
     PendingApproval {
         plugin: DiscoveredPlugin,
@@ -29,6 +30,38 @@ pub enum PluginState {
     },
     /// Denied by the user; will not be loaded.
     Denied(DiscoveredPlugin),
+    /// Trusted, but not yet activated (idle/lazy).
+    Loaded(DiscoveredPlugin),
+    /// Successfully activated and running.
+    Active(DiscoveredPlugin),
+    /// Activation failed with an error message.
+    Failed {
+        plugin: DiscoveredPlugin,
+        error: String,
+    },
+}
+
+impl PluginState {
+    /// Returns the underlying discovered plugin regardless of its current state.
+    pub fn plugin(&self) -> &DiscoveredPlugin {
+        match self {
+            Self::PendingApproval { plugin, .. }
+            | Self::Denied(plugin)
+            | Self::Loaded(plugin)
+            | Self::Active(plugin)
+            | Self::Failed { plugin, .. } => plugin,
+        }
+    }
+
+    /// Whether this plugin has been trusted (approved).
+    pub fn is_trusted(&self) -> bool {
+        matches!(self, Self::Loaded(_) | Self::Active(_))
+    }
+
+    /// Whether this plugin is currently active.
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Active(_))
+    }
 }
 
 /// Manages plugin discovery, capability checking, and user approval requests.
@@ -64,14 +97,19 @@ impl PluginManager {
 
         for plugin in discovered {
             let id = plugin.manifest.id.clone();
-            // If already explicitly denied in this session, keep denied
-            if let Some(PluginState::Denied(_)) = self.plugins.get(&id) {
+            // If already explicitly denied, active, or loaded in this session, keep status
+            if self.plugins.get(&id).is_some_and(|state| {
+                matches!(
+                    state,
+                    PluginState::Denied(_) | PluginState::Active(_) | PluginState::Loaded(_)
+                )
+            }) {
                 continue;
             }
 
             match evaluate_plugin_trust(&plugin.manifest, &self.trusted_store, &self.roots) {
                 Ok(PluginTrustStatus::Trusted) => {
-                    self.plugins.insert(id, PluginState::Trusted(plugin));
+                    self.plugins.insert(id, PluginState::Loaded(plugin));
                 }
                 Ok(PluginTrustStatus::Pending { missing }) => {
                     let missing_strings: Vec<String> =
@@ -115,7 +153,7 @@ impl PluginManager {
         self.approval_queue.pop_front()
     }
 
-    /// Approves a plugin's capabilities, moves it to `Trusted`, and persists `trusted.json`.
+    /// Approves a plugin's capabilities, moves it to `Loaded`, and persists `trusted.json`.
     pub fn approve(&mut self, plugin_id: &str) -> Result<(), String> {
         self.approval_queue.retain(|r| r.plugin_id != plugin_id);
 
@@ -123,11 +161,7 @@ impl PluginManager {
             return Err(format!("unknown plugin '{plugin_id}'"));
         };
 
-        let plugin = match state {
-            PluginState::PendingApproval { plugin, .. } => plugin,
-            PluginState::Trusted(plugin) => plugin,
-            PluginState::Denied(plugin) => plugin,
-        };
+        let plugin = state.plugin().clone();
 
         approve_plugin(
             &plugin.manifest,
@@ -137,7 +171,7 @@ impl PluginManager {
         .map_err(|e| format!("failed to save trusted.json: {e}"))?;
 
         self.plugins
-            .insert(plugin_id.to_string(), PluginState::Trusted(plugin));
+            .insert(plugin_id.to_string(), PluginState::Loaded(plugin));
         Ok(())
     }
 
@@ -146,25 +180,168 @@ impl PluginManager {
         self.approval_queue.retain(|r| r.plugin_id != plugin_id);
 
         if let Some(state) = self.plugins.remove(plugin_id) {
-            let plugin = match state {
-                PluginState::PendingApproval { plugin, .. } => plugin,
-                PluginState::Trusted(plugin) => plugin,
-                PluginState::Denied(plugin) => plugin,
-            };
+            let plugin = state.plugin().clone();
             self.plugins
                 .insert(plugin_id.to_string(), PluginState::Denied(plugin));
         }
     }
 
-    /// Returns all plugins currently in the `Trusted` state.
+    /// Returns all plugins currently in a trusted state (`Loaded` or `Active`).
     pub fn trusted_plugins(&self) -> Vec<&DiscoveredPlugin> {
         self.plugins
             .values()
-            .filter_map(|state| match state {
-                PluginState::Trusted(plugin) => Some(plugin),
-                _ => None,
+            .filter_map(|state| {
+                if state.is_trusted() {
+                    Some(state.plugin())
+                } else {
+                    None
+                }
             })
             .collect()
+    }
+
+    /// Returns all contributed commands from all trusted plugins.
+    ///
+    /// Each entry is `(command_id, command_title, plugin_id)`.
+    pub fn contributed_commands(&self) -> Vec<(String, String, String)> {
+        let mut commands = Vec::new();
+        for state in self.plugins.values() {
+            if state.is_trusted() {
+                let plugin = state.plugin();
+                for cmd in &plugin.manifest.contributes.commands {
+                    commands.push((
+                        cmd.id.clone(),
+                        cmd.title.clone(),
+                        plugin.manifest.id.clone(),
+                    ));
+                }
+            }
+        }
+        commands.sort_by(|a, b| a.0.cmp(&b.0));
+        commands
+    }
+
+    /// Collects and marks as active all plugins that should activate for `event`.
+    pub fn activate_for_event(&mut self, event: &ActivationEvent) -> Vec<DiscoveredPlugin> {
+        let mut to_activate = Vec::new();
+
+        for (id, state) in &mut self.plugins {
+            if let PluginState::Loaded(plugin) = state {
+                let should_activate = plugin
+                    .manifest
+                    .activation_events
+                    .iter()
+                    .any(|raw| ActivationEvent::parse(raw).as_ref() == Some(event));
+
+                if should_activate {
+                    to_activate.push((id.clone(), plugin.clone()));
+                }
+            }
+        }
+
+        for (id, plugin) in &to_activate {
+            self.plugins
+                .insert(id.clone(), PluginState::Active(plugin.clone()));
+        }
+
+        to_activate.into_iter().map(|(_, p)| p).collect()
+    }
+
+    /// Collects plugins that declare `onStartup` and marks them `Active`.
+    pub fn plugins_for_startup(&mut self) -> Vec<DiscoveredPlugin> {
+        self.activate_for_event(&ActivationEvent::Startup)
+    }
+
+    /// Collects plugins that should activate when `command_id` is run and marks them `Active`.
+    ///
+    /// Matches explicit `onCommand:<command_id>` declarations as well as commands
+    /// contributed in `contributes.commands`.
+    pub fn plugins_for_command(&mut self, command_id: &str) -> Vec<DiscoveredPlugin> {
+        let mut to_activate = Vec::new();
+
+        for (id, state) in &mut self.plugins {
+            if let PluginState::Loaded(plugin) = state {
+                let matches_event = plugin.manifest.activation_events.iter().any(|raw| {
+                    matches!(
+                        ActivationEvent::parse(raw),
+                        Some(ActivationEvent::Command(ref cmd)) if cmd == command_id
+                    )
+                });
+                let matches_contributes = plugin
+                    .manifest
+                    .contributes
+                    .commands
+                    .iter()
+                    .any(|cmd| cmd.id == command_id);
+
+                if matches_event || matches_contributes {
+                    to_activate.push((id.clone(), plugin.clone()));
+                }
+            }
+        }
+
+        for (id, plugin) in &to_activate {
+            self.plugins
+                .insert(id.clone(), PluginState::Active(plugin.clone()));
+        }
+
+        to_activate.into_iter().map(|(_, p)| p).collect()
+    }
+
+    /// Collects plugins that declare `onView:<view_id>` and marks them `Active`.
+    pub fn plugins_for_view(&mut self, view_id: &str) -> Vec<DiscoveredPlugin> {
+        self.activate_for_event(&ActivationEvent::View(view_id.to_string()))
+    }
+
+    /// Collects plugins that declare `onLanguage:<language_id>` and marks them `Active`.
+    pub fn plugins_for_language(&mut self, language_id: &str) -> Vec<DiscoveredPlugin> {
+        self.activate_for_event(&ActivationEvent::Language(language_id.to_string()))
+    }
+
+    /// Collects plugins that declare `onWorkspaceContains:<glob>` matching files in `workspace_path`.
+    pub fn plugins_for_workspace(&mut self, workspace_path: &Path) -> Vec<DiscoveredPlugin> {
+        let mut to_activate = Vec::new();
+
+        for (id, state) in &mut self.plugins {
+            if let PluginState::Loaded(plugin) = state {
+                let should_activate = plugin.manifest.activation_events.iter().any(|raw| {
+                    if let Some(ActivationEvent::WorkspaceContains(glob)) =
+                        ActivationEvent::parse(raw)
+                    {
+                        workspace_contains(workspace_path, &glob)
+                    } else {
+                        false
+                    }
+                });
+
+                if should_activate {
+                    to_activate.push((id.clone(), plugin.clone()));
+                }
+            }
+        }
+
+        for (id, plugin) in &to_activate {
+            self.plugins
+                .insert(id.clone(), PluginState::Active(plugin.clone()));
+        }
+
+        to_activate.into_iter().map(|(_, p)| p).collect()
+    }
+
+    /// Marks a plugin as active.
+    pub fn mark_active(&mut self, plugin_id: &str) {
+        if let Some(state) = self.plugins.get_mut(plugin_id) {
+            let plugin = state.plugin().clone();
+            *state = PluginState::Active(plugin);
+        }
+    }
+
+    /// Marks a plugin as failed.
+    pub fn mark_failed(&mut self, plugin_id: &str, error: String) {
+        if let Some(state) = self.plugins.get_mut(plugin_id) {
+            let plugin = state.plugin().clone();
+            *state = PluginState::Failed { plugin, error };
+        }
     }
 
     /// Returns the state of a given plugin.
@@ -259,5 +436,98 @@ mod tests {
             "frontend.js should exist at {}",
             main.display()
         );
+    }
+
+    #[test]
+    fn lazy_activation_workflow() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("vy_plugin_lazy_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let paths = Paths::under(&temp_dir);
+        std::fs::create_dir_all(paths.plugins_dir()).unwrap();
+
+        // 1. Plugin with onStartup
+        let p1 = paths.plugins_dir().join("startup-plugin");
+        std::fs::create_dir_all(&p1).unwrap();
+        std::fs::write(
+            p1.join("plugin.json"),
+            r#"{
+                "id": "p.startup",
+                "name": "Startup",
+                "version": "1.0.0",
+                "activationEvents": ["onStartup"]
+            }"#,
+        )
+        .unwrap();
+
+        // 2. Plugin with onCommand
+        let p2 = paths.plugins_dir().join("cmd-plugin");
+        std::fs::create_dir_all(&p2).unwrap();
+        std::fs::write(
+            p2.join("plugin.json"),
+            r#"{
+                "id": "p.cmd",
+                "name": "Command",
+                "version": "1.0.0",
+                "activationEvents": ["onCommand:p.cmd.run"],
+                "contributes": {
+                    "commands": [{ "id": "p.cmd.run", "title": "Run Command" }]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // 3. Plugin with onView
+        let p3 = paths.plugins_dir().join("view-plugin");
+        std::fs::create_dir_all(&p3).unwrap();
+        std::fs::write(
+            p3.join("plugin.json"),
+            r#"{
+                "id": "p.view",
+                "name": "View",
+                "version": "1.0.0",
+                "activationEvents": ["onView:p.tree"]
+            }"#,
+        )
+        .unwrap();
+
+        let mut manager = PluginManager::new(paths, Roots::default());
+        manager.scan();
+
+        // Initially all are Loaded (no permissions required)
+        assert_eq!(manager.trusted_plugins().len(), 3);
+        assert!(!manager.state("p.startup").unwrap().is_active());
+        assert!(!manager.state("p.cmd").unwrap().is_active());
+        assert!(!manager.state("p.view").unwrap().is_active());
+
+        // Contributed commands are visible before activation
+        let cmds = manager.contributed_commands();
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].0, "p.cmd.run");
+        assert_eq!(cmds[0].1, "Run Command");
+
+        // 1. Startup triggers only p.startup
+        let act = manager.plugins_for_startup();
+        assert_eq!(act.len(), 1);
+        assert_eq!(act[0].manifest.id, "p.startup");
+        assert!(manager.state("p.startup").unwrap().is_active());
+        assert!(!manager.state("p.cmd").unwrap().is_active());
+
+        // 2. Command triggers p.cmd
+        let act = manager.plugins_for_command("p.cmd.run");
+        assert_eq!(act.len(), 1);
+        assert_eq!(act[0].manifest.id, "p.cmd");
+        assert!(manager.state("p.cmd").unwrap().is_active());
+
+        // Calling it again does not return already active plugin
+        assert!(manager.plugins_for_command("p.cmd.run").is_empty());
+
+        // 3. View triggers p.view
+        let act = manager.plugins_for_view("p.tree");
+        assert_eq!(act.len(), 1);
+        assert_eq!(act[0].manifest.id, "p.view");
+        assert!(manager.state("p.view").unwrap().is_active());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
