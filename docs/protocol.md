@@ -20,6 +20,11 @@ RustのMessagePack (`rmp-serde`)** を用いた高速バイナリRPCで通信を
 を子プロセスで起動し、標準入出力でこのフレームを流します。リモート接続では、SSH
 の標準入出力を使います。どちらも同じ形式です（[ADR 0002](./adr/0002-process-model.md)）。
 
+リモート接続は `ssh -T [-p port] [user@]host -- <serverPath> --stdio` で起動します。
+接続先には導入済みの `vy-server` を使い、バイナリの自動転送は行いません
+（[ADR 0010](./adr/0010-remote-connection.md)）。接続先は
+`~/.config/vy/connections.json` のプロファイルで選びます。
+
 `vy-server` を起動するときの引数は `--stdio`（既定）と `--version`
 だけにします。ワークスペース、ログの出力先、再開するセッションは引数ではなく、§3
 の `initialize` の params で渡します。接続先が同じでも、引数と params
@@ -106,9 +111,9 @@ Request {
     session_id: 0,
     method: "initialize",
     params: {
-        "protocol_version": 2,
+        "protocol_version": 3,
         "client_version": "0.1.0",
-        "client_capabilities": ["stream", "blob", "multiplex"],
+        "client_capabilities": ["stream", "session-restore"],
         "workspace": "file:///home/user/project",
         "resume_session": null,
     }
@@ -119,10 +124,10 @@ Request {
 Notification {
     method: "initialized",
     params: {
-        "protocol_version": 2,
+        "protocol_version": 3,
         "session_id": 7,
         "server_version": "0.1.0",
-        "server_capabilities": ["stream", "blob", "multiplex"],
+        "server_capabilities": ["stream", "session-restore"],
         "platform": { "os": "linux", "path_separator": "/" },
     }
 }
@@ -130,7 +135,16 @@ Notification {
 
 版が合わない場合は `UnsupportedProtocolVersion`
 で応答し、接続を閉じます。クライアントは `server_capabilities`
-にない機能を呼びません。
+にない機能を呼びません。現在の主な capability は次のとおりです。
+
+| capability        | 意味                                             |
+| :---------------- | :----------------------------------------------- |
+| `stream`          | `Stream` で分割したデータを送れる                |
+| `session-restore` | `sync/request` と `layout/get` で再開できる      |
+| `plugin`          | `plugin/*` を受け付けられる（Phase 6）           |
+
+`resume_session` は Phase 5 では使いません。接続が切れたら新しいセッションを作り、
+クライアントが `layout/get` と `sync/request` で状態を戻します。
 
 1つのサーバーは複数のセッションを持てます。ウィンドウごとかワークスペースごとにセッションを作り、すべての
 `Request` に `session_id` を付けます。`initialize` の `session_id` だけは 0
@@ -191,12 +205,20 @@ Notification {
 同じ文書に対する `Notification` は、`version`
 の昇順で送ります。別の文書の通知との順序は保証しません。
 
-接続が切れた場合、クライアントは自動で再接続し、`initialize` の `resume_session`
-に前のセッション ID
-を入れます。サーバーはセッションが残っていれば引き継ぎ、残っていなければ新しいセッションを返します。
+接続が切れた場合、クライアントは自動で再接続します。Phase 5 では `resume_session`
+を使わず、再接続を新しいセッションとして扱います。サーバーは `initialize` の
+`workspace` から保存済みのレイアウトを読み、開いていた文書をディスクから開きます。
 
-引き継げなかった場合は、クライアントが開いている文書の version を `sync/request`
-で送ります。サーバーは差分か全文を返します。購読はセッションに紐づくため、作り直しが必要です。
+1. クライアントは `initialize` を送り、`initialized` を受ける。
+2. クライアントは `layout/get` を送り、復元されたペインと document ID を受け取る。
+3. クライアントは開いている文書を `sync/request` で送る。未保存の文書だけ本文を含める。
+4. サーバーは各文書の全文と version を返す。クライアントは表示と version を合わせる。
+
+document ID と pane ID は接続ごとに変わり得ます。クライアントは URI で対応づけます。
+購読はセッションに紐づくため、作り直しが必要です。
+
+再接続のあいだ、クライアントは落ちません。自動再接続のほかに、利用者が
+`vy.reconnect_server` を実行して手動で試すこともできます。
 
 ## 8. ペインとレイアウト
 
@@ -207,6 +229,10 @@ Notification {
 クライアントは操作の意図を `pane/open` などで送り、確定した木を
 `layout/did_change` で受け取ります。受け取った `revision`
 が手元より新しいときだけ適用します。
+
+`layout/get` の `panes` には、ペインごとに `pane_id`、`view`、`document_id`、
+`uri` が入ります。再接続では、クライアントが `uri` で手元の文書と対応づけます。
+ファイルが見つからないペインは `document_id` を省略し、空のエディタとして描きます。
 
 ## 9. 主要なRPCメソッド例
 
@@ -306,7 +332,40 @@ Request {
 応答には、適用した逆編集と、戻したあとの選択が入ります。クライアントは本文と選択を同時に適用します。`buffer/redo`
 も同じ形です。`pane_id` は、戻したあとにフォーカスを移す先です。
 
-プロトコル版 2 では、`edits` は編集バッチの配列です。同じ `transaction_id`
+プロトコル版 2 以降では、`edits` は編集バッチの配列です。同じ `transaction_id`
 をまとめたアンドゥでは複数のバッチが返り、各バッチは直前のバッチを適用したあとの座標を使います。クライアントは配列の順に適用し、version
 は最後に 1 回だけ進めます。バッチを 1
 つに連結すると座標系が混ざり、重複や範囲外の位置になるためです。
+
+### (E) 再接続の同期 (`sync/request`)
+
+再接続したクライアントが、開いている文書を送ります。未保存の文書だけ `text` を含めます。
+保存済みの文書は `text` を省略し、サーバーがディスクから読み直します。
+
+```rust
+Request {
+    id: 104,
+    session_id: 8,
+    method: "sync/request",
+    params: {
+        "documents": [
+            {
+                "uri": "file:///home/user/project/src/main.rs",
+                "version": 42,
+                "saved_version": 40,
+                "text": "fn main() {}\n",
+            },
+            {
+                "uri": "file:///home/user/project/README.md",
+                "version": 0,
+                "saved_version": 0,
+            },
+        ],
+    },
+    deadline_ms: 30000,
+}
+```
+
+応答には、文書ごとの `document_id`、`uri`、`version`、`saved_version`、`text`
+が入ります。サーバーはアンドゥ履歴を捨ててバッファを作り直します。クライアントは
+返ってきた全文と version を表示に反映します。

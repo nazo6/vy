@@ -12,6 +12,7 @@ Vy
 ~/.config/vy/
   init.ts
   settings.json
+  connections.json
   plugins/
     <publisher>.<name>/
       plugin.json
@@ -45,6 +46,12 @@ Vy
 `trusted.json` には、承認したケイパビリティをプラグイン ID
 とバージョンの組で記録します。プラグインを更新してケイパビリティが増えた場合は、その差分だけを再承認します。
 
+`connections.json`
+には、リモート接続のプロファイルを置きます。`host`、`user`、`port`、`workspace`、
+`home`、`serverPath` を持ち、`vy-app --connect <name>` で選びます
+（[ADR 0010](./adr/0010-remote-connection.md)）。接続先の `vy-server`
+は導入済みのものを使い、自動では転送しません。
+
 OS ごとの既定の場所は次のとおりです。
 
 | OS      | 設定                               | キャッシュ                | データ                             |
@@ -73,6 +80,8 @@ OS ごとの既定の場所は次のとおりです。
   session.json
   state/
     <pluginId>.json
+  workspace-state/
+    <workspace-hash>.json
 ```
 
 `bundles/` には、プラグインの TypeScript を変換した結果を置きます。`queries/`
@@ -80,7 +89,8 @@ OS ごとの既定の場所は次のとおりです。
 のクエリを置きます。どちらも削除しても再生成できます。
 
 `session.json`
-には、開いていたウィンドウ、接続先、ウィンドウの大きさを保存します。ペインのレイアウト木はコアが保存するため、接続先が変わっても同じ形で復元できます。保存の単位は
+には、開いていたウィンドウ、接続先、ウィンドウの大きさを保存します。ペインのレイアウト木はコアが
+`workspace-state/` に保存するため、接続先が変わっても同じ形で復元できます。保存の単位は
 [`panes.md`](./panes.md) にまとめました。
 
 ## 3. プロジェクト

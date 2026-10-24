@@ -64,6 +64,11 @@ flowchart TB
 | local  | `vy-app`     | `vy-app` が起動した `vy-server` の子プロセス | 標準入出力       |
 | remote | `vy-app`     | SSH の先で起動した `vy-server`               | SSH の標準入出力 |
 
+リモート接続は `ssh -T [-p port] [user@]host -- <serverPath> --stdio` で起動します。
+接続先には導入済みの `vy-server` を使い、バイナリの自動転送は行いません。接続先は
+`~/.config/vy/connections.json` のプロファイルで選びます
+（[ADR 0010](./adr/0010-remote-connection.md)）。
+
 `fs`、`process`、検索、文書の読み書きは常にコアが行います。ローカル接続でも、ファイルを開くのはコアのプロセスです。クライアントが行うのは、キー入力の照合、描画、Webview
 の表示、クライアント側の QuickJS の実行です。
 
@@ -75,10 +80,14 @@ flowchart TB
   を子プロセスとして起動します。ワークスペース、ログの出力先、再開するセッションは
   `initialize` の params で渡します（[`protocol.md`](./protocol.md)）。
 - `vy-server`
-  が終了したとき、クライアントは落とさず、通知だけを出します。自動では再起動しません。利用者が
-  `vy.restartServer` を実行したときに起動し直します。
-- 未保存の編集はコアにだけあるため、再起動すると失われます。Phase 1
-  ではこれを許容し、復帰は Phase 4 の再接続で扱います。
+  が終了したとき、クライアントは落とさず、通知を出して自動で再接続します。手動の
+  `vy.reconnect_server` も用意します。
+- 再接続は新しいセッションです。コアはワークスペースごとに保存したレイアウトを
+  読み直し、クライアントは `layout/get` と `sync/request` で開いていた文書を戻します。
+  未保存の本文はクライアントから送り、アンドゥ履歴だけ捨てます
+  （[ADR 0010](./adr/0010-remote-connection.md)）。
+- 保存済みの文書はコアがディスクから読み直します。ディスク上の内容が変わっていた場合は、
+  コアが返した本文と version をクライアントが採用します。
 
 ### 1.3 実行基盤
 
@@ -189,7 +198,8 @@ Webview は最終手段です。Web の文書そのものを表示するとき�
 
 モデル、操作の意味論、API、メッセージ、保存の単位は [`panes.md`](./panes.md)
 にまとめました。ペインの中のフォーカスとキー入力は [`ui.md`](./ui.md)
-にまとめました。
+にまとめました。レイアウトと開いていた文書の URI は、ワークスペースごとに
+`<データ>/workspace-state/<workspace-hash>.json` へ保存します。
 
 ---
 
@@ -223,6 +233,7 @@ vy-app  --->  vy-proto
 
 vy-server ---> vy-core --->  ropey
           \--> vy-proto
+          \--> vy-js        (Phase 6 で追加)
 ```
 
 - `vy-app` だけが GPUI に依存します。CI で `cargo tree` を検査し、他のクレートが
@@ -261,8 +272,8 @@ vy-server ---> vy-core --->  ropey
 - クライアントの先読み描画をどこまで許すか。入力のたびに確定を待つと、リモートで遅延が見えます。
 - `vy-server`
   を1つのプロセスで複数のワークスペースに使うか、ワークスペースごとに分けるか。
-- SSH 接続のときに `vy-server`
-  をどう配備するか。バイナリを転送するか、接続先に導入済みのものを使うか。
+- 接続先の `vy-server` を自動で更新するか。Phase 5 では導入済みのものを使い、
+  版が合わなければエラーにします（[ADR 0010](./adr/0010-remote-connection.md)）。
 - `vy-server` の並行ディスパッチ。リクエストごとに `tokio::spawn`
   するか、version の順序を保つために文書ごとのキューにするか。大きな `pane/open`
   を `spawn_blocking` に回すかは、先に決めます。

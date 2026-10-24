@@ -68,8 +68,8 @@ Phase 3 以降、すべてのメソッドは params オブジェクトを 1
 | :----- | :-------------- | :--------------------------------------------------------------------------------------------------------- |
 | P0     | Phase 1 から 3  | 文書の読み取り、ペインとビューの骨格、キーバインド、コマンド（実行とパレット）、設定、ログ、通知、保存領域 |
 | P1     | Phase 3 から 4  | UI スロット（statusline, picker, gutter, hover）、検索、ファイル、プロセス、診断、装飾、実用プラグイン基盤 |
-| P2     | Phase 5         | LSP、補完、スニペット、整形、Git                                                                           |
-| P3     | Phase 7（最終） | Webview、Notebook、Markdown プレビュー                                                                     |
+| P2     | Phase 7         | LSP、補完、スニペット、整形、Git                                                                           |
+| P3     | Phase 8（最終） | Webview、Notebook、Markdown プレビュー                                                                     |
 
 ## 3. ライフサイクル
 
@@ -461,20 +461,64 @@ Webview は最終手段です。Notebook の出力、HTML
 ## 18. バックエンド API
 
 `backend.ts`
-は接続先のコアで動きます。重い処理、ファイル監視、外部プロセスの結合に使います。
+は接続先のコアで動きます。重い処理、ファイル監視、外部プロセスの結合に使います
+（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。フロントとバックエンドで
+コアの名前空間を共有し、`backend` はチャネルとライフサイクルだけを持ちます。
 
-| API                                         | 実行場所 | ケイパビリティ      | 優先度 |
-| :------------------------------------------ | :------- | :------------------ | :----- |
-| `backend.connect(channel)`                  | both     | なし                | P1     |
-| `backend.registerHandler(channel, handler)` | remote   | なし                | P1     |
-| `backend.postMessage(channel, message)`     | remote   | なし                | P1     |
-| `backend.onMessage(channel, listener)`      | remote   | なし                | P1     |
-| `backend.fs`                                | remote   | fs:read と fs:write | P1     |
-| `backend.process`                           | remote   | process:exec        | P1     |
-| `backend.workspace`                         | remote   | なし                | P1     |
-| `backend.cancel(handle)`                    | remote   | なし                | P2     |
+### 18.1 ライフサイクルとチャネル
+
+| API                                         | 呼べる側   | 優先度 |
+| :------------------------------------------ | :--------- | :----- |
+| `activate(ctx)`、`deactivate()`             | backend    | P1     |
+| `ctx.pluginId`、`ctx.version`               | backend    | P1     |
+| `ctx.capabilities.has()`                    | backend    | P1     |
+| `ctx.log`、`ctx.subscriptions`              | backend    | P1     |
+| `ctx.platform`                              | backend    | P1     |
+| `backend.connect(channel)`                  | frontend   | P1     |
+| `backend.registerHandler(channel, handler)` | backend    | P1     |
+| `channel.postMessage(message)`              | both       | P1     |
+| `channel.onMessage(listener)`               | both       | P1     |
+| `channel.request(message, options?)`        | frontend   | P1     |
+| `channel.onDidClose(listener)`              | frontend   | P1     |
+| `channel.dispose()`                         | both       | P1     |
+| `req.postMessage(message)`、`req.signal`    | backend    | P1     |
 
 チャネルは文字列で識別します。同じ名前のチャネルを2つのプラグインが登録した場合は、後の登録をエラーにします。
+`request` は handler の戻り値を返します。ストリーミングは `req.postMessage` を使います。
+チャネルごとに順序を保証し、1つのメッセージの上限を超えた場合は
+`ResourceLimit` で閉じます。
+
+### 18.2 コアの名前空間
+
+| 名前空間       | バックエンドで使える API                                                                 | 優先度 |
+| :------------- | :--------------------------------------------------------------------------------------- | :----- |
+| `workspace`    | `folders`、`rootUri`、`name`、`textDocuments`、`openTextDocument`、`findFiles`、`grep`、`createFileSystemWatcher`、`onDidChangeTextDocument` | P1     |
+| 文書           | `uri`、`version`、`languageId`、`lineCount`、`getText`、`lineAt`、`isDirty`、`eol`      | P1     |
+| `fs`           | `readFile`、`readTextFile`、`writeFile`、`readDir`、`stat`、`exists`、`createDir`、`remove`、`rename`、`copy` | P1     |
+| `process`      | `spawn`、`exec`、標準出力 / 標準エラー、stdin、kill、終了                               | P1     |
+| `config`       | `get`、`onDidChange`                                                                     | P1     |
+| `log`          | `createChannel`                                                                          | P1     |
+| `cancellation` | `createSource`                                                                           | P1     |
+| `workspace`    | `applyEdit`                                                                              | P2     |
+| `diagnostics`  | `set`、`clear`                                                                           | P2     |
+| `net`          | `fetch`                                                                                  | P2     |
+| `languages`    | `registerFormatter`、`registerCompletionProvider`                                        | P2     |
+| `lsp`          | `getClient`                                                                              | P2     |
+| `fs`           | `watch`                                                                                  | P2     |
+
+`backend.ts` には次の API を出しません。
+
+- UI: `ui`、`views`、`panes`、`windows`、`webview`、`notifications`、`progress`、`keymap`、
+  `commands.registerCommand`
+- クライアント状態: `editor.activeDocument`、`editor.mode`、`editor.selections`、
+  `editor.setMode`、`editor.open`、`editor.reveal`
+- クライアント側の資源: `localFs`、`localProcess`、`clipboard`、`openExternal`、
+  `workspace.state`
+- 設定の書き込み: `config.set`、`config.define`
+- `remote.*`: バックエンドは常にコア側なので、接続の有無ではなく `ctx.platform` を使う
+
+バックエンドの API は暗黙のアクティブ文書を使いません。URI と範囲を明示的に受け取ります。
+文書の変更イベントは差分で送り、初回だけ `openTextDocument(uri)` でスナップショットを取ります。
 
 ## 19. 型
 
@@ -557,7 +601,7 @@ JS の関数を呼ぶ経路ができるまで API から外しました（Phase 
   コマンド `vy.editor.open`（`:e`）と `vy.document.save`（`:w`）は実装済みです。
 - `document.onDidChangeContent`、`editor.onDidChangeSelection` などのイベント。
   発火するには UI から JS へのイベント経路がもう1本必要です（Phase 3）。
-- `config.define`、`ui` ビュー、スロット、テーマは Phase 3。Webview は Phase 6
+- `config.define`、`ui` ビュー、スロット、テーマは Phase 3。Webview は Phase 8
   です。
 - `editor.undo()` と `editor.redo()` は要求を送るところまでです。結果の適用は
   コアの応答で行うため、返り値は `void` です。

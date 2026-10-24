@@ -15,21 +15,22 @@ flowchart TD
     P2["Phase 2: TypeScript設定 & プラグイン実行基盤\n(QuickJS + Oxc, init.ts, keymap, capabilities)"]
     P3["Phase 3: 画面の骨格とユーザー制御 UI の完成\n(レイアウト木, panes/views API, statusline/picker/gutter/hover スロット, コマンド)"]
     P4["Phase 4: プラグイン拡充と実用拡張の基盤\n(外部プラグイン読み込み, 承認UI, イベントAPI, nvim-tree等の実用プラグイン実現)"]
-    P5["Phase 5: 実用エディタ化と言語機能拡充\n(Tree-sitterハイライト, 非同期LSPクライアント, 補完)"]
-    P6["Phase 6: リモート接続\n(SSH起動, 再接続と再同期, 配備)"]
-    P7["Phase 7: Webview・Notebook (最終段階)\n(Markdownプレビュー, セル描画, gpui-kit/webview)"]
+    P5["Phase 5: リモート接続\n(SSH起動, 接続プロファイル, 再接続と再同期)"]
+    P6["Phase 6: リモートプラグイン\n(backend.ts, バンドル転送, チャネル, コア側API)"]
+    P7["Phase 7: 実用エディタ化と言語機能拡充\n(Tree-sitterハイライト, 非同期LSPクライアント, 補完)"]
+    P8["Phase 8: Webview・Notebook (最終段階)\n(Markdownプレビュー, セル描画, gpui-kit/webview)"]
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
 ```
 
 画面の骨格を早く固めるため、ペインとビュー、ユーザー制御 UI スロット群を Phase 3
 で完成させます。 Phase 4 では外部プラグインのマニフェスト読み込みや承認
 UI、エディタ・ワークスペースイベントを整備し、`nvim-tree`
 のようなファイラーをはじめとする実用プラグインを実際に実装できるようにします。
-Phase 5 では Tree-sitter と LSP
-による言語機能を拡充して日常的に使える実用エディタに仕上げます。 Phase 6
-でリモート接続（SSH起動・再同期）を通し、Webview と Notebook は最後の手段として
-Phase 7 で扱います。
+Phase 5 で SSH 接続と再接続・再同期を通し、Phase 6 で接続先で動く
+`backend.ts` とチャネルを実装します。言語機能は、リモートでも同じ経路で検証できる
+状態になってから Phase 7 で拡充します。Webview と Notebook は最後の手段として
+Phase 8 で扱います。
 
 ### Phase 1: 2プロセスの骨格と編集の最小経路
 
@@ -120,7 +121,7 @@ Phase 7 で扱います。
 - [x] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
   - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row,
-    stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 7
+    stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 8
 - [x] `ui` ビューのウィジェット木と、キーマップからのアクション解決
   - GPUI によるネイティブウィジェット描画とコマンドバインド対応
 - [x] ユーザー制御 UI
@@ -160,7 +161,35 @@ Phase 7 で扱います。
     ウィジェット木を用いた `nvim-tree`
     相当のファイルエクスプローラー）の実装と検証
 
-### Phase 5: 実用エディタ化と言語機能拡充
+### Phase 5: リモート接続
+
+ローカルと同じ RPC を SSH の標準入出力で流し、接続が切れても作業を続けられる
+ようにします。方式は [ADR 0010](./adr/0010-remote-connection.md) に記録しました。
+
+- [ ] Transport をローカルと SSH で切り替えられるようにする
+- [ ] `~/.config/vy/connections.json` と `vy-app --connect <name>` を追加する
+- [ ] SSH 経由で導入済みの `vy-server` を起動する
+- [ ] 接続先の workspace を `initialize` で渡し、`file:` URI を不透明に扱う
+- [ ] コアがワークスペースごとにレイアウトと開いていた文書を保存する
+- [ ] 再接続と再同期（`layout/get`、`sync/request`、version の突き合わせ）
+- [ ] 未保存の本文をクライアントから復元する
+- [ ] 遅延の計測と、先読み描画の範囲の調整
+
+### Phase 6: リモートプラグイン
+
+`backend.ts` を接続先のコアで動かし、フロントとはチャネルで通信します。API と
+配布の方式は [ADR 0011](./adr/0011-backend-plugins-on-core.md) に記録しました。
+
+- [ ] `vy-server` に `vy-js` を組み込み、プラグインごとにランタイムを作る
+- [ ] `plugin/load`、`plugin/unload`、`plugin/message` を実装する
+- [ ] バンドルのハッシュとサイズを検証し、メモリにキャッシュする
+- [ ] `backend.connect` と `backend.registerHandler` を実装する
+- [ ] `workspace`、文書、`fs`、`process`、`config`、`log` のコア側 API を実装する
+- [ ] コア側でケイパビリティを検査し、実行時間とメモリを制限する
+- [ ] `vy-api/backend` の型を生成し、UI 系の API を出さない
+- [ ] 検索プラグインを参照実装として動かす
+
+### Phase 7: 実用エディタ化と言語機能拡充
 
 エディタを本格的に日常利用できるようにするための言語機能と言語サーバー連携を実装します。
 
@@ -170,14 +199,7 @@ Phase 7 で扱います。
 - [ ] 診断表示（Diagnostics）とガター・ホバー連携
 - [ ] 定義ジャンプ・参照検索・フォーマット
 
-### Phase 6: リモート接続
-
-- [ ] SSH 経由で `vy-server` を起動する
-- [ ] バイナリの配備方法を決めて実装する
-- [ ] 再接続と再同期（`resume_session`、`layout/get`、version の突き合わせ）
-- [ ] 遅延の計測と、先読み描画の範囲の調整
-
-### Phase 7: Webview・Notebook (最終段階)
+### Phase 8: Webview・Notebook (最終段階)
 
 Webview は Web の文書そのものを表示するときだけ使います。操作を伴う UI は Phase
 3 の `ui` ビューで作ります（[`ui.md`](./ui.md)）。
@@ -222,6 +244,10 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./plugin-system.md)                                           |
 | 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
 | Ex コマンド            | パレットと同じ実行層を使い、`:` はオーバーレイ。Ex 名は明示的な別名で解決する       | [`ex-commands.md`](./ex-commands.md)                                               |
+| リモート接続           | SSH の標準入出力を使い、接続先に導入済みの `vy-server` を起動する                   | [ADR 0010](./adr/0010-remote-connection.md)                                        |
+| 再接続                 | サーバーを起動し直し、レイアウトと未保存の本文をクライアントから再同期する          | [ADR 0010](./adr/0010-remote-connection.md)                                        |
+| 接続プロファイル       | `~/.config/vy/connections.json` に置き、`--connect` で選ぶ                          | [ADR 0010](./adr/0010-remote-connection.md)                                        |
+| バックエンドプラグイン | `vy-server` で動かし、バンドルはクライアントから送る                                | [ADR 0011](./adr/0011-backend-plugins-on-core.md)                                  |
 
 ## 残っている論点
 
@@ -230,13 +256,13 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 2. **補完プロバイダの実行場所**
    - 入力の遅延を抑えるならクライアント、言語サーバーに近い方がよければリモートです。
 3. **プラグインの配布**
-   - レジストリを作るか、Git のリポジトリ指定だけで済ませるか。Phase 5
+   - レジストリを作るか、Git のリポジトリ指定だけで済ませるか。Phase 7
      以降に決めます。
 4. **先読み描画の範囲**
    - リモート接続で入力の遅延を隠すため、クライアントがどこまで先に描くか。
-5. **`vy-server` の多重化と配備**
-   - 1プロセスで複数のワークスペースを持つか。SSH
-     接続でバイナリをどう用意するか。
+5. **`vy-server` の多重化**
+   - 1プロセスで複数のワークスペースを持つか。配備は接続先に導入済みの
+     バイナリを使うことにしました（[ADR 0010](./adr/0010-remote-connection.md)）。
 6. **CRLF と EOL**
    - `document.eol` と改行コードの保持をどこで行うか。Phase 2
      では扱わず、Windows 対応と合わせて決めます。

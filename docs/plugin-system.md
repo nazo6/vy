@@ -255,13 +255,13 @@ QuickJS のモジュールは ESM として読み込みます。CommonJS の `re
 ## 4. バックエンドプラグイン
 
 検索結果が数十万行に及ぶ場合、生のテキストをすべてクライアントへ送ると帯域とメモリを使い切ります。そのため、プラグインは接続先で動く
-`backend.ts` を併設できます。
+`backend.ts` を併設できます（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。
 
 - `frontend.ts` は UI の登録（`ui`
   ビューのウィジェット木）、Webview、キー入力、設定を扱います。
 - `backend.ts`
   は重いデータの解析、ファイル監視、外部プロセスとの結合を扱います。
-- 2つの間は `postMessage` で通信します。チャネル名は文字列で指定します。
+- 2つの間はチャネルで通信します。チャネル名は文字列で指定します。
 
 ```typescript
 // frontend.ts
@@ -274,15 +274,31 @@ worker.postMessage({ query: "main", maxResults: 100 });
 
 ```typescript
 // backend.ts
-backend.registerHandler("search", async (message) => {
-  for await (const chunk of backend.workspace.grep(message.query)) {
-    backend.postMessage("search", chunk);
-  }
-});
+export function activate(ctx: BackendContext) {
+  ctx.subscriptions.push(
+    backend.registerHandler("search", async (message, req) => {
+      for await (const chunk of workspace.grep(message.query, {
+        signal: req.signal,
+      })) {
+        req.postMessage(chunk);
+      }
+    }),
+  );
+}
 ```
 
+バックエンドのコードは、クライアントが `plugin/load` で送ります。コアはハッシュと
+サイズを検証し、メモリにキャッシュします。接続先にプラグインをインストールする必要は
+ありません。バンドルは1ファイルの JavaScript で、相対 import と `node_modules`
+は解決しません。
+
+バックエンドには、UI とクライアント状態の API を出しません。`fs`、`process`、
+`workspace`、文書の読み取り、`config.get`、`log`、`cancellation` を使えます。
+承認はクライアントの `trusted.json` で行い、検査はコアで行います。`${workspace}` と
+`${home}` は接続先のルートで展開します。
+
 メッセージは JSON
-に変換できる値に限ります。関数と循環参照は送れません。1つのメッセージの上限を決め、超えた場合は分割を求めます。
+に変換できる値に限ります。関数と循環参照は送れません。1つのメッセージの上限を決め、超えた場合はストリームに分割します。
 
 ## 5. リロードと隔離
 
