@@ -3,9 +3,17 @@
 /// Shows notifications to the user.
 #[vy_api_schema::vy_api_namespace("notifications")]
 mod api {
-    use vy_api_schema::NotificationsShowParams;
+    use serde::{Deserialize, Serialize};
+    use ts_rs::TS;
 
     use crate::api::{Call, CallError, Reply};
+
+    /// `notifications.show` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(deny_unknown_fields)]
+    pub struct NotificationsShowParams {
+        pub message: String,
+    }
 
     /// Shows a notification to the user.
     #[vy_api_schema::vy_api_method]

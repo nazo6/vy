@@ -5,10 +5,41 @@
 mod api {
     use std::path::Path;
 
+    use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
-    use vy_api_schema::LogWriteParams;
+    use ts_rs::TS;
 
     use crate::api::{Call, CallError, Reply};
+
+    /// Severity of a log line or notification.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "lowercase")]
+    pub enum LogLevel {
+        Info,
+        Warn,
+        Error,
+    }
+
+    impl LogLevel {
+        pub fn as_str(self) -> &'static str {
+            match self {
+                Self::Info => "info",
+                Self::Warn => "warn",
+                Self::Error => "error",
+            }
+        }
+    }
+
+    /// `log.write` parameters.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+    pub struct LogWriteParams {
+        pub channel: String,
+        pub level: LogLevel,
+        pub message: String,
+        #[serde(default)]
+        #[ts(type = "unknown")]
+        pub data: Value,
+    }
 
     /// Writes one entry to a log channel.
     #[vy_api_schema::vy_api_method]

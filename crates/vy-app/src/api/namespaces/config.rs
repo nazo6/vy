@@ -3,13 +3,61 @@
 /// Reads and writes settings.
 #[vy_api_schema::vy_api_namespace("config")]
 mod api {
+    use serde::{Deserialize, Serialize};
     use serde_json::Value;
-    use vy_api_schema::{
-        ConfigChange, ConfigGetParams, ConfigInspectParams, ConfigInspectReply, ConfigSetParams,
-        ConfigSetReply, Json,
-    };
+    use ts_rs::TS;
+    use vy_api_schema::Json;
 
     use crate::api::{Call, CallError, Reply};
+
+    /// `config.get` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ConfigGetParams {
+        pub key: String,
+    }
+
+    /// `config.set` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ConfigSetParams {
+        #[ts(type = "Record<string, unknown>")]
+        pub values: serde_json::Map<String, Value>,
+    }
+
+    /// `config.set` reply.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ConfigSetReply {
+        pub changed: Vec<String>,
+    }
+
+    /// `config.inspect` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ConfigInspectParams {
+        pub key: String,
+    }
+
+    /// `config.inspect` reply: every layer's value plus the effective one.
+    ///
+    /// Layers are listed from lowest to highest precedence: `default`, `user`,
+    /// `project`, `memory`. A layer that does not define the key is `null`.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+    pub struct ConfigInspectReply {
+        #[ts(type = "unknown")]
+        pub default: Option<Value>,
+        #[ts(type = "unknown")]
+        pub user: Option<Value>,
+        #[ts(type = "unknown")]
+        pub project: Option<Value>,
+        #[ts(type = "unknown")]
+        pub memory: Option<Value>,
+        #[ts(type = "unknown")]
+        pub effective: Option<Value>,
+    }
+
+    /// Payload of `config.onDidChange`.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct ConfigChange {
+        pub key: String,
+    }
 
     /// Returns the effective value of a setting key.
     #[vy_api_schema::vy_api_method(typed_key = SettingsMap)]

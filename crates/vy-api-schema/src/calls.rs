@@ -13,114 +13,6 @@ pub use vy_proto::{DirEntry, FileStat, ProcessExecParams, ProcessOutput};
 
 use crate::{Mode, PickerItem, StatuslineAlignment, ThemeColor, WidgetNode};
 
-// Configuration.
-
-/// `config.get` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigGetParams {
-    pub key: String,
-}
-
-/// `config.set` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigSetParams {
-    #[ts(type = "Record<string, unknown>")]
-    pub values: serde_json::Map<String, Value>,
-}
-
-/// `config.set` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigSetReply {
-    pub changed: Vec<String>,
-}
-
-/// `config.inspect` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigInspectParams {
-    pub key: String,
-}
-
-/// `config.inspect` reply: every layer's value plus the effective one.
-///
-/// Layers are listed from lowest to highest precedence: `default`, `user`,
-/// `project`, `memory`. A layer that does not define the key is `null`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigInspectReply {
-    #[ts(type = "unknown")]
-    pub default: Option<Value>,
-    #[ts(type = "unknown")]
-    pub user: Option<Value>,
-    #[ts(type = "unknown")]
-    pub project: Option<Value>,
-    #[ts(type = "unknown")]
-    pub memory: Option<Value>,
-    #[ts(type = "unknown")]
-    pub effective: Option<Value>,
-}
-
-// Commands.
-
-/// `commands.registerCommand` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct CommandsRegisterParams {
-    pub id: String,
-}
-
-/// `commands.execute` parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct CommandsExecuteParams {
-    pub id: String,
-    #[serde(default)]
-    #[ts(type = "unknown")]
-    pub args: Value,
-}
-
-// Keymap.
-
-/// `keymap.bind` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct KeymapBindParams {
-    pub keys: String,
-    pub command: String,
-    #[ts(optional = nullable)]
-    pub when: Option<String>,
-}
-
-/// `keymap.unbind` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct KeymapUnbindParams {
-    pub keys: String,
-}
-
-/// A value visible to a `when` expression, set by `keymap.setContext`.
-///
-/// A context value is a boolean, a string, or a number.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
-pub enum KeyContextValue {
-    Bool(bool),
-    Text(String),
-    Number(f64),
-}
-
-/// `keymap.setContext` parameters.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
-#[ts(export)]
-pub struct KeymapSetContextParams {
-    pub key: String,
-    pub value: KeyContextValue,
-}
-
 // Editor.
 
 /// `editor.setMode` parameters.
@@ -212,48 +104,6 @@ pub struct DocumentOffsetAtParams {
     #[ts(optional = nullable)]
     pub document_id: Option<u64>,
     pub position: Position,
-}
-
-// Notifications and logs.
-
-/// Severity of a log line or notification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "lowercase")]
-#[ts(export)]
-pub enum LogLevel {
-    Info,
-    Warn,
-    Error,
-}
-
-impl LogLevel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Info => "info",
-            Self::Warn => "warn",
-            Self::Error => "error",
-        }
-    }
-}
-
-/// `notifications.show` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(deny_unknown_fields)]
-#[ts(export)]
-pub struct NotificationsShowParams {
-    pub message: String,
-}
-
-/// `log.write` parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct LogWriteParams {
-    pub channel: String,
-    pub level: LogLevel,
-    pub message: String,
-    #[serde(default)]
-    #[ts(type = "unknown")]
-    pub data: Value,
 }
 
 // Slots: statusline, gutter, hover, picker, views.
@@ -665,37 +515,9 @@ pub struct WorkspaceInfoReply {
     pub trusted: bool,
 }
 
-/// `context.info` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct PluginContextReply {
-    pub plugin_id: String,
-    pub version: String,
-    pub remote: RemoteInfo,
-}
-
-/// Information about the remote connection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct RemoteInfo {
-    pub is_remote: bool,
-    pub name: String,
-    pub os: String,
-    pub path_separator: String,
-}
-
 // Events. The topic of an event is `<namespace>.<subscription name>`, and the
 // subscription name starts with `on`; the shim relies on that to tell events
 // from methods.
-
-/// Payload of `config.onDidChange`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConfigChange {
-    pub key: String,
-}
 
 /// Payload of `editor.onDidChangeSelection`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -3,14 +3,30 @@
 /// Registers command handlers and runs commands by id.
 #[vy_api_schema::vy_api_namespace("commands", sugar = CommandsSugar)]
 mod api {
+    use serde::{Deserialize, Serialize};
     use serde_json::Value;
-    use vy_api_schema::{CommandsExecuteParams, CommandsRegisterParams};
+    use ts_rs::TS;
 
     use crate::api::{Call, CallError, Reply};
     use crate::commands::{
         BuiltinCommand, CommandArgs, DocumentCommand, Owner, PaneCommand, UiCommand,
     };
     use crate::plugin_host::HostAction;
+
+    /// `commands.registerCommand` parameters.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct CommandsRegisterParams {
+        pub id: String,
+    }
+
+    /// `commands.execute` parameters.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+    pub struct CommandsExecuteParams {
+        pub id: String,
+        #[serde(default)]
+        #[ts(type = "unknown")]
+        pub args: Value,
+    }
 
     /// Registers a command handler and returns a disposable registration.
     #[vy_api_schema::vy_api_method(manual)]
