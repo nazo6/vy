@@ -37,6 +37,7 @@ pub trait WorkspaceApi {
 
 - メソッドごとの `MethodDecl`（ワイヤー名、params / reply 型、JSDoc）
 - `METHODS`
+- イベントごとの `EventDecl` と `EVENTS`
 - `NAMESPACE`
 - `dispatch<H: Trait + ?Sized>(host, method, params)`
 
@@ -44,28 +45,55 @@ pub trait WorkspaceApi {
 
 ### 2. facade trait で dispatch を1か所にする
 
-共有側は `vy-host-api` の `HostApi` が名前空間 trait を束ねます。
+`host_api!` が facade trait、dispatch、コード生成用の関数をまとめて生成します。
 
 ```rust
-pub trait HostApi: workspace::WorkspaceApi {
-    fn dispatch(&mut self, method: &str, params: &Value)
-        -> Option<Result<Reply<Value>, CallError>>;
+host_api! {
+    trait HostApi: HostRoot {
+        base_methods_fn = host_root_methods;
+        base_namespaces_fn = host_root_namespaces;
+        base_events_fn = host_root_events;
+        traits = [
+            config => ConfigReadApi,
+            fs => FsApi,
+            workspace => WorkspaceApi,
+        ];
+        methods_fn = host_api_methods;
+        namespaces_fn = host_api_namespaces;
+        events_fn = host_api_events;
+    }
 }
 ```
 
-クライアント側は `vy-client-api` の `ClientHostApi` が `HostApi` を拡張します。
+クライアント側は `HostApi` を base にして、クライアント専用の trait を足します。
 
 ```rust
-pub trait ClientHostApi:
-    vy_host_api::HostApi + notifications::NotificationsApi
-{
-    fn dispatch(&mut self, method: &str, params: &Value)
-        -> Option<Result<Reply<Value>, CallError>>;
+host_api! {
+    trait ClientHostApi: vy_host_api::HostApi {
+        base_methods_fn = vy_host_api::host_api_methods;
+        base_namespaces_fn = vy_host_api::host_api_namespaces;
+        base_events_fn = vy_host_api::host_api_events;
+        traits = [
+            commands => CommandsApi,
+            config => ConfigApi,
+            notifications => NotificationsApi,
+            views => ViewsApi,
+        ];
+        methods_fn = client_host_api_methods;
+        namespaces_fn = client_host_api_namespaces;
+        events_fn = client_host_api_events;
+    }
 }
 ```
 
-`dispatch` は default method にし、名前空間の dispatch を順に呼びます。
-実装側は名前空間 trait を実装するだけで、メソッドごとの adapter は書きません。
+生成されるもの:
+
+- facade trait の supertrait と `dispatch`
+- `host_api_methods()` / `host_api_namespaces()` / `host_api_events()`
+- クライアント側は base の関数にクライアント専用の宣言を足す
+
+同じ名前空間が共有側とクライアント側の両方にある場合（`config`）は、
+namespace を path で重複排除します。
 
 ### 3. ホスト構造体に実装する
 
@@ -75,7 +103,13 @@ pub struct ClientHost<'a, 'b, 'c> {
 }
 
 impl WorkspaceApi for ClientHost<'_, '_, '_> { ... }
+impl FsApi for ClientHost<'_, '_, '_> { ... }
+impl ConfigReadApi for ClientHost<'_, '_, '_> { ... }
+impl ConfigApi for ClientHost<'_, '_, '_> { ... }
+impl CommandsApi for ClientHost<'_, '_, '_> { ... }
 impl NotificationsApi for ClientHost<'_, '_, '_> { ... }
+impl ViewsApi for ClientHost<'_, '_, '_> { ... }
+impl vy_host_api::HostRoot for ClientHost<'_, '_, '_> {}
 impl vy_host_api::HostApi for ClientHost<'_, '_, '_> {}
 impl ClientHostApi for ClientHost<'_, '_, '_> {}
 ```
@@ -83,10 +117,32 @@ impl ClientHostApi for ClientHost<'_, '_, '_> {}
 `vy-app` の dispatch は `ClientHostApi::dispatch` を呼び、残りの
 宣言ベースの名前空間は従来の registry にフォールバックします。
 
-### 4. イベントは trait の外に置く
+### 4. イベントは trait の関連定数として宣言する
 
-イベントはハンドラではないため、`event_decl!` と `EVENTS` で宣言します。
-trait マクロはメソッドのメタデータだけを生成します。
+イベントはハンドラではないので、trait 内の `#[vy_api_event]` 付き関連定数として
+宣言します。
+
+```rust
+#[vy_api_trait("workspace")]
+pub trait WorkspaceApi {
+    // methods ...
+
+    /// Fires when the workspace folders change.
+    #[vy_api_event(
+        "workspace.onDidChangeWorkspaceFolders",
+        payload = WorkspaceFoldersChange
+    )]
+    const ON_DID_CHANGE_WORKSPACE_FOLDERS: ();
+}
+```
+
+`#[vy_api_trait]` は関連定数を trait から取り除き、`EventDecl` と `EVENTS` を
+生成します。`host_api!` は `module::EVENTS` を集めるので、facade ごとの
+`events_fn` が共有イベントとクライアントイベントをまとめます。
+
+まだ trait 化していない名前空間（`process`、`editor` など）は、従来どおり
+`event_decl!` と `EVENTS` を使います。`vy-app` のコード生成は、facade の
+イベントと宣言ベースのイベントを合わせて出力します。
 
 ## 検証した範囲
 
@@ -95,6 +151,8 @@ trait マクロはメソッドのメタデータだけを生成します。
 - `views` を trait 化し、`HostAction::Ui` と `RenderWidgetTree` を確認
 - `config` を `ConfigReadApi`（共有）と `ConfigApi`（クライアント）に分割
 - `commands` を trait 化し、`manual` と `typed_args` を確認
+- `host_api!` で facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集を生成
+- イベントを trait の `#[vy_api_event]` 関連定数として宣言
 - `vy-server` に検証用の `CoreHost` を追加し、`workspace.info` と `fs.readFile` を
   コアの状態から直接実装
 - `fs` のケイパビリティ許可と拒否を確認
