@@ -41,8 +41,8 @@ commands.registerCommand("user.uppercase-selection", async () => {
 });
 ```
 
-`vy-api` の型定義は `packages/vy-api` が提供します。Rust の型から `vy-api-types`
-を生成するため、プロトコルの変更と型定義がずれません。
+`vy-api` の型定義は `packages/vy-api` が提供します。Rust の型から
+`packages/vy-api/types` を生成するため、プロトコルの変更と型定義がずれません。
 
 ### 1.2 settings.json
 

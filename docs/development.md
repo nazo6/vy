@@ -73,11 +73,11 @@ cargo fmt --all --check
   で確かめます。キーマップ、設定、コマンド、`init.ts`
   のホストは画面なしで動きます。
 - プロトコル境界とプラグイン境界の型を変えたら、
-  `cargo run -p vy-api-codegen -- client` を実行し、`packages/vy-api-types` と
-  `packages/vy-api` を一緒にコミットします。CI では
-  `cargo run -p vy-api-codegen -- client --check` と
-  `git diff --exit-code packages` で差分がないことを確かめます。生成先は
-  `.cargo/config.toml` の `TS_RS_EXPORT_DIR` です。クライアントとコアで共有する
+  `cargo run -p vy-api-codegen -- client` を実行し、`packages/vy-api` を
+  コミットします。CI では `cargo run -p vy-api-codegen -- client --check` と
+  `git diff --exit-code packages` で差分がないことを確かめます。出力先は
+  `codegen::Output::packages()` が決め、型は `packages/vy-api/types`、名前空間の
+  宣言は `packages/vy-api/index.d.ts` に置きます。クライアントとコアで共有する
   API の params / reply / イベント payload 型とメソッド宣言は `vy-host-api` に
   置きます。クライアント専用の型と宣言は `vy-client-api` に置きます。名前空間は
   `#[vy_api_trait]` で trait として宣言し、`vy-app` / `vy-server` が実装します。
@@ -88,7 +88,7 @@ cargo fmt --all --check
   trait 内の `#[vy_api_event]` 関連定数で宣言します
   （[ADR 0013](./adr/0013-host-api-traits.md)）。
   `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
-  `HostEvents.ts`、`packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
+  `HostEvents.ts`、`packages/vy-api/types/index.ts`、`packages/vy-api/index.d.ts`
   は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`ts-rs` の
   自動テストに頼らず、型ファイルも `codegen::export_to` が書きます。手で書くのは
   糖衣の `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と

@@ -153,7 +153,7 @@ commands.registerCommand("user.uppercase-document", async () => {
 のようにキーを割り当てられます。評価できる API は [`docs/api.md`](./docs/api.md)
 の「Phase 2 の実装状況」にまとめました。型定義は
 [`packages/vy-api/index.d.ts`](./packages/vy-api/index.d.ts) にあり、プロトコル
-の型は [`packages/vy-api-types`](./packages/vy-api-types) に Rust
+とプラグイン境界の型は [`packages/vy-api/types`](./packages/vy-api/types) に Rust
 から生成します。`examples/init.ts` も参照してください。
 
 初期化は 1 秒、コマンド実行は 5 秒で打ち切り、メモリは 64 MiB に制限します。

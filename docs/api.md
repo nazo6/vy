@@ -22,7 +22,7 @@ Phase に分けます。
   は、マニフェストの宣言と初回の承認を必要とします。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
-- 境界の型は Rust を正とします。params / reply / イベント payload 型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は `vy-app` の対応するモジュールに置きます。`packages/vy-api` と `packages/vy-api-types` の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
+- 境界の型は Rust を正とします。params / reply / イベント payload 型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は `vy-app` の対応するモジュールに置きます。`packages/vy-api`（生成された型は `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
 
 ## 2. 表記の約束
 
@@ -53,7 +53,7 @@ API と、コアが状態の正を持つ API です。
 つ渡します。`editor.setMode({ mode: "insert" })`、`config.get({ key: "ui.fontSize" })`、`ui.hover.show({ line, character, text })`
 のように、メソッドごとの params
 型がそのまま引数になります。パラメータの無いメソッドは引数を取りません（`editor.mode()`）。型は
-[`packages/vy-api-types`](../packages/vy-api-types)
+[`packages/vy-api/types`](../packages/vy-api/types)
 に生成され、メソッド名と型の対応は `HostMethods` が持ちます。
 
 Phase 3 以降、すべてのメソッドは params オブジェクトを 1

@@ -66,8 +66,8 @@ facade と dispatch を生成します。詳細は
 ### 4. 型生成の入口
 
 現在は `vy-api-codegen` が、共有宣言を参照するクライアントの `methods()` と、
-クライアント専用名前空間の宣言をまとめて `packages/vy-api` と
-`packages/vy-api-types` に書きます（[0014](./0014-api-codegen-cli.md)）。
+クライアント専用名前空間の宣言をまとめて `packages/vy-api`（型は `types/`）に
+書きます（[0014](./0014-api-codegen-cli.md)、[0015](./0015-api-output-layout.md)）。
 
 バックエンド用の `backend.d.ts` を出す段階でも、同じ `codegen::export_to` に
 `vy-host-api` の宣言とバックエンド専用宣言を渡します。実行時には誰も

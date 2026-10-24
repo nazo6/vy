@@ -1,6 +1,7 @@
 # ADR 0014: API バインディングの生成を CLI に分離する
 
-- 状態: 採用
+- 状態: 採用（出力レイアウトは
+  [0015](./0015-api-output-layout.md) で置き換え）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -50,7 +51,7 @@ cargo run -p vy-api-codegen -- client
 cargo run -p vy-api-codegen -- client --check
 ```
 
-`client` は現在の `packages/vy-api` と `packages/vy-api-types` を書きます。
+`client` は現在の `packages/vy-api`（型は `types/`）を書きます。
 `--check` は一時ディレクトリに生成し、コミット済みのファイルと比較するだけで、
 リポジトリを書き換えません。
 
@@ -111,7 +112,7 @@ cargo run -p vy-api-codegen -- client --check
 
 ## 見直しの条件
 
-1. バックエンド用の型を `vy-api-types` と分ける必要が出たとき。
+1. バックエンド用の型をクライアントの `types/` と分ける必要が出たとき。
 2. 生成対象のファイルが増え、`--check` の比較だけでは不足するとき。
 3. 生成をビルドスクリプトやパッケージ管理ツールへ統合するとき。
 

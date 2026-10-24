@@ -124,8 +124,8 @@ crates/
   vy-capabilities/   ケイパビリティの定義、承認の記録、検査
 
 packages/
-  vy-api/            手書きの型定義（index.d.ts）。ランタイムのシムは vy-js が持つ
-  vy-api-types/      ts-rs が生成した型定義（手で編集しない）
+  vy-api/            プラグイン API の型パッケージ。types/ は生成物、直下は手書きの糖衣
+                     ランタイムのシムは vy-js が持つ
   vy-cli/            プラグインのビルド、インストール、doctor
   create-vy-plugin/  雛形の生成
 

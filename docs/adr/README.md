@@ -38,4 +38,5 @@ ADR を追加します。古い ADR
 | [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす             | 採用（実装は Phase 6）                     |
 | [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く | 採用（型の置き場所。宣言方法は 0013） |
 | [0013](./0013-host-api-traits.md)                | 名前空間 trait と `HostApi` facade で実装する    | 採用（すべての名前空間）                   |
-| [0014](./0014-api-codegen-cli.md)                | API バインディングの生成を CLI に分離する        | 採用                                       |
+| [0014](./0014-api-codegen-cli.md)                | API バインディングの生成を CLI に分離する        | 採用（出力レイアウトは 0015 で置き換え）   |
+| [0015](./0015-api-output-layout.md)              | API の生成物は `packages/vy-api` にまとめる      | 採用                                       |
