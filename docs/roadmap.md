@@ -221,7 +221,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 ## UI・エディタの改善バックログ
 
 機能追加ではなく、すでにある画面と編集の正しさ、使い勝手、性能を上げる作業です。
-優先度は P0（不具合・データの危険）、P1（日常の操作感）、P2（性能・保守）です。
+優先度は P0（不具合・データの危険）、P1（表示と操作の質）、P2（性能・保守）です。
 各項目には実装の入口になるファイルを添えています。着手したらチェックを付けます。
 
 ### P0: 正しさと安全性
@@ -232,8 +232,8 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       `close_active_pane`、`crates/vy-server/src/session/pane.rs` の `close_pane`）。
       `:q!` も未実装です。
 - [ ] 列を UTF-16 コード単位ではなく表示セルで数える。折り返しの幅、横スクロール、
-      ホバーの x 座標が 1 文字 = 1 セルの前提で、全角文字、絵文字、タブがはみ出します
-      （`crates/vy-app/src/text_layout.rs` の `chunk_line` と
+      ホバーの x 座標が 1 文字 = 1 セルの前提で、全角文字やタブでは実際の描画幅と
+      合いません（`crates/vy-app/src/text_layout.rs` の `chunk_line` と
       `scroll_to_show_horizontal`、`crates/vy-app/src/ui/pane.rs`、
       `crates/vy-app/src/view/render.rs` のホバー）。
 - [ ] IME の候補ウィンドウの位置を、横スクロール、折り返し、サブ行を考慮して返す。
@@ -253,8 +253,8 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 
 - [ ] カーソルの見た目: 点滅、Select 系のカーソル、現在行のハイライト
       （`crates/vy-app/src/ui/pane.rs`、`crates/vy-app/src/theme.rs`）。
-- [ ] ステータスライン: 長いパスの切り詰め。今は省略や `overflow` の指定がなく、長い URI が
-      右側の項目と重なります（`crates/vy-app/src/ui/statusline.rs`）。
+- [ ] ステータスライン: 長いパスの切り詰め。今は省略や `overflow` の指定がなく、長い URI は
+      折り返すか、右側の項目にはみ出します（`crates/vy-app/src/ui/statusline.rs`）。
 - [ ] 通知: 自動消去と重なりの扱い。`notifications.show` は `message` だけを受け取り、
       状態行に置くだけで消えません（`crates/vy-app/src/api/host/notifications.rs`、
       [`api.md`](./api.md)）。
