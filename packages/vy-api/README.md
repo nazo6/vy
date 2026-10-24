@@ -27,11 +27,12 @@ as a file. Point the TypeScript compiler at this package when you write an
 }
 ```
 
-`index.d.ts` is generated from the `#[vy_api_namespace]` declarations in
-`crates/vy-app`; do not edit it. The only hand-written declaration is the
-command callback wrapper in `overrides.d.ts`. Types shared with the Rust
-protocol live in [`packages/vy-api-types`](../vy-api-types/README.md). Both are
-refreshed by `cargo test --workspace export_bindings`.
+`index.d.ts` is generated from the `#[vy_api_trait]` declarations in
+`crates/vy-host-api` and `crates/vy-client-api`; do not edit it. The only
+hand-written declaration is the command callback wrapper in `overrides.d.ts`.
+Types shared with the Rust protocol live in
+[`packages/vy-api-types`](../vy-api-types/README.md). Both are refreshed by
+`cargo test --workspace export_bindings`.
 
 ## API reference
 

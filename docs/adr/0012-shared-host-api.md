@@ -1,6 +1,7 @@
 # ADR 0012: 共有するホスト API の型と宣言は `vy-host-api` に置く
 
-- 状態: 採用（共有APIとクライアント専用APIを分離済み）
+- 状態: 採用（型の置き場所は有効。宣言の共有方法は
+  [0013](./0013-host-api-traits.md) の trait に置き換え）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -41,14 +42,15 @@ Rust の両方でずれが生まれます。
 ハンドラは置きません。クライアントは `vy-app/src/api`、コアは
 `vy-server/src/api` に実装します。
 
-### 2. クライアント側は共有宣言を参照する
+### 2. 名前空間は trait として宣言する
 
-`#[vy_api_namespace("fs", shared = vy_host_api::fs)]` を付けると、マクロは
-`vy_host_api::fs::READ_FILE` のような共有宣言を `HandlerDecl` に結びつけます。
-名前空間とイベントの宣言も共有モジュールから再エクスポートします。
+共有APIは `vy-host-api` の trait、クライアント専用APIは `vy-client-api` の trait
+として宣言します。`vy-app` と `vy-server` は trait を実装し、`host_api!` が
+facade と dispatch を生成します。詳細は
+[0013](./0013-host-api-traits.md) にあります。
 
-これにより、クライアントのハンドラを書いても、ワイヤー名・params / reply 型・
-JSDoc の正は `vy-host-api` の1か所に残ります。
+これにより、ワイヤー名・params / reply 型・JSDoc の正は API クレートの1か所に
+残ります。
 
 ### 3. クライアント専用 API は `vy-client-api` に置く
 
@@ -72,8 +74,8 @@ JSDoc の正は `vy-host-api` の1か所に残ります。
 
 ### 5. バックエンド実装
 
-`vy-server` は `vy-host-api` の型と宣言を使い、同じ `shared = ...` の仕組みで
-コア用のハンドラを結びつけます。ケイパビリティの検査はコア側で行います。
+`vy-server` は `vy-host-api` の trait をコア用のホストに実装します。
+ケイパビリティの検査はコア側で行います。
 
 ## 今回の範囲
 

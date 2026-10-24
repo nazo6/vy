@@ -1,8 +1,8 @@
 // Hand-written declarations for `vy-api`.
 //
-// Everything else in `index.d.ts` is generated from the
-// `#[vy_api_namespace]` declarations in `crates/vy-app`. This file only holds
-// the command callback wrapper, which needs a JavaScript function.
+// Everything else in `index.d.ts` is generated from the `#[vy_api_trait]`
+// declarations in `crates/vy-host-api` and `crates/vy-client-api`. This file
+// only holds the command callback wrapper, which needs a JavaScript function.
 
 import type { CommandId } from "../vy-api-types";
 import type { Disposable } from "./index";

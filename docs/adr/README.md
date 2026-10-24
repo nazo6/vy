@@ -32,9 +32,9 @@ ADR を追加します。古い ADR
 | [0005](./0005-native-plugin-ui.md)               | プラグイン UI はネイティブのウィジェット木で作る | 採用                                       |
 | [0006](./0006-user-controlled-ui-and-slots.md)   | ユーザー制御 UI とスロットによるステータスライン | 採用                                       |
 | [0007](./0007-rust-typed-plugin-api.md)          | プラグイン境界の型は Rust を正とする             | 採用（メソッド表の一部は 0008 で置き換え） |
-| [0008](./0008-declare-plugin-api-with-macros.md) | プラグイン API を宣言マクロで一本化する          | 採用                                       |
+| [0008](./0008-declare-plugin-api-with-macros.md) | プラグイン API を宣言マクロで一本化する          | 置き換え済み（0013）                       |
 | [0009](./0009-api-types-live-with-handlers.md)   | API の型はハンドラの隣に置き、生成を集約する     | 採用                                       |
 | [0010](./0010-remote-connection.md)              | SSH で接続し、再起動と再同期でセッションを戻す   | 採用                                       |
 | [0011](./0011-backend-plugins-on-core.md)        | バックエンドプラグインはコアで動かす             | 採用（実装は Phase 6）                     |
-| [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く | 採用（`fs` と `workspace` から実装中） |
-| [0013](./0013-host-api-traits.md)                | 名前空間 trait と `HostApi` facade で実装する    | 採用（`workspace`、`fs`、`config`、`commands`、`views`、`notifications`） |
+| [0012](./0012-shared-host-api.md)                | 共有するホスト API の型と宣言は `vy-host-api` に置く | 採用（型の置き場所。宣言方法は 0013） |
+| [0013](./0013-host-api-traits.md)                | 名前空間 trait と `HostApi` facade で実装する    | 採用（すべての名前空間）                   |

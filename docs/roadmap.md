@@ -73,7 +73,7 @@ Phase 8 で扱います。
     `init.ts` の評価・再評価を実装した
 - [x] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
   - シムは `crates/vy-js/src/shim.js`。プロトコル境界の型は ts-rs で
-    `packages/vy-api-types` に生成し、名前空間の API は `#[vy_api_namespace]`
+    `packages/vy-api-types` に生成し、名前空間の API は `#[vy_api_trait]`
     の宣言から生成する
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`

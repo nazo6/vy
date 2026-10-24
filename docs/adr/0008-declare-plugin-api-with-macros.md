@@ -1,7 +1,8 @@
 # ADR 0008: プラグイン API を宣言マクロで一本化する
 
-- 状態: 採用（0007 のメソッド表・dispatch・codegen の一部を置き換え。型の置き場所と
-  生成の入り口は [0009](./0009-api-types-live-with-handlers.md) で置き換え）
+- 状態: 置き換え済み（名前空間の宣言方法は [0013](./0013-host-api-traits.md) で
+  trait に置き換え。0007 のメソッド表・dispatch・codegen の一部を置き換え、型の
+  置き場所と生成の入り口は [0009](./0009-api-types-live-with-handlers.md) で置き換え）
 - 日付: 2026-10-24
 
 ## 文脈

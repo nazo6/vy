@@ -142,8 +142,7 @@ pub trait WorkspaceApi {
 `events_fn` が共有イベントとクライアントイベントをまとめます。
 
 すべての名前空間を trait 化したため、イベントもすべて trait の関連定数として
-宣言されています。`event_decl!` は、今後 trait ではない場所でイベントを宣言する
-場合のために残しています。
+宣言されています。宣言専用の `method_decl!` / `event_decl!` は削除しました。
 
 ## 検証した範囲
 

@@ -40,21 +40,25 @@ ADR 0007 はプラグイン境界の型を `crates/vy-api-schema` に集め、AD
 
 ## 決定
 
-### 1. params / reply / イベント payload はハンドラと同じモジュールに置く
+### 1. params / reply / イベント payload は名前空間の宣言と同じモジュールに置く
 
-`#[vy_api_namespace]` の `mod api` の中に型を定義します。JSDoc、serde 属性、
-`ts-rs` の派生がハンドラの隣に並び、型と実装の対応がファイル内で完結します。
+`vy-host-api` / `vy-client-api` の名前空間 trait と同じモジュールに型を定義します。
+JSDoc、serde 属性、`ts-rs` の派生がメソッド宣言の隣に並び、型と API の対応が
+ファイル内で完結します（[0013](./0013-host-api-traits.md)）。
 
-### 2. 共有する値型は `vy-app` の自然なモジュールに置く
+### 2. 共有する値型は API クレートの自然なモジュールに置く
 
 `Mode` は `keymap`、`ThemeColor` は `color`、`WidgetNode` 一式は `widget`、
 `StatuslineAlignment` は `statusline`、`PickerItem` は `palette` です。
-GPUI に依存する `theme` と、GPUI 非依存の lib を分けるため、`ThemeColor` は
-lib 側の `color` に置き、バイナリ側の `theme` から再エクスポートします。
+API 境界を越える値型は `vy-client-api` に置き、`vy-app` の対応するモジュールから
+再エクスポートします（[0012](./0012-shared-host-api.md)）。
 
-### 3. `DocumentInfoReply` は `vy-js` に置く
+### 3. `DocumentInfoReply` は `vy-host-api` に置く
 
-`vy-js` が唯一の外部利用者で、`vy-app` は `vy-js` に依存できます。逆向きの依存は
+`DocumentInfoReply` はクライアントとコアの両方が使うため、`vy-host-api` に置き、
+`vy-js` から再エクスポートします（[0012](./0012-shared-host-api.md)）。
+
+以前は `vy-js` が唯一の外部利用者で、`vy-app` は `vy-js` に依存できました。逆向きの依存は
 作りません。`vy-js` は `ts-rs` を依存に持ちます。
 
 ### 4. 宣言が型の生成情報を持つ
