@@ -284,8 +284,8 @@ impl EditorView {
                 self.send_transaction(transaction);
                 self.clamp_active_views();
             }
-            HostAction::Undo => self.send_history("buffer/undo", Pending::Undo),
-            HostAction::Redo => self.send_history("buffer/redo", Pending::Redo),
+            HostAction::Undo => self.send_history::<vy_proto::BufferUndo>(Pending::Undo),
+            HostAction::Redo => self.send_history::<vy_proto::BufferRedo>(Pending::Redo),
             HostAction::Pane(command) => self.run_pane_command(command),
             HostAction::Document { command, args } => {
                 let invocation = args
@@ -316,16 +316,12 @@ impl EditorView {
             } => {
                 self.open_custom_picker(id, items, placeholder, request);
             }
-            HostAction::ServerRpc {
-                method,
-                params,
-                request,
-            } => {
+            HostAction::ServerRpc { call, request } => {
                 let Some(client) = self.client.as_mut() else {
                     request.respond_error("RemoteDisconnected", "not connected to vy-server");
                     return;
                 };
-                let id = client.request(&method, params);
+                let id = client.request_call(call);
                 self.pending.insert(id, Pending::HostCall { request });
             }
         }

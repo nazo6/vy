@@ -14,9 +14,15 @@ use std::path::PathBuf;
 
 use rmpv::Value;
 use vy_core::{Applied, Buffer, DocumentId, Layout, PaneId, Uri};
-use vy_proto::ErrorCode;
-use vy_proto::RpcMessage;
+#[cfg(test)]
 pub(super) use vy_proto::value::get;
+use vy_proto::{
+    BufferDidChange, BufferRedo, BufferSnapshot, BufferUndo, DocumentSave, EditorOpen, ErrorCode,
+    FsCopy, FsCreateDir, FsExists, FsReadDir, FsReadFile, FsReadTextFile, FsRemove, FsRename,
+    FsStat, FsWriteFile, Initialize, LayoutGet, PaneClose, PaneFocus, PaneOpen, ProcessExec,
+    ProcessKill, ProcessSpawn, ProcessStdin, RpcMessage, RpcMethod, RpcNotification, SyncRequest,
+};
+#[cfg(test)]
 pub(super) use vy_proto::{decode_value as decode_params, to_value};
 
 /// One pane in the layout tree.
@@ -84,6 +90,32 @@ impl Outcome {
     }
 }
 
+/// Decodes a request's typed params, turning a mismatch into an `InvalidParams` reply.
+fn decode_request<M: RpcMethod>(id: u64, params: &Value) -> Result<M::Params, Outcome> {
+    vy_proto::decode_params::<M>(params).ok_or_else(|| {
+        Outcome::one(RpcMessage::err(
+            id,
+            ErrorCode::InvalidParams,
+            format!("invalid {} params", M::METHOD),
+        ))
+    })
+}
+
+/// Builds an `Ok` reply message for a typed method.
+fn ok_message<M: RpcMethod>(id: u64, reply: &M::Reply) -> RpcMessage {
+    vy_proto::ok::<M>(id, reply)
+}
+
+/// Builds an `Ok` outcome for a typed method.
+fn ok_response<M: RpcMethod>(id: u64, reply: &M::Reply) -> Outcome {
+    Outcome::one(ok_message::<M>(id, reply))
+}
+
+/// Builds a typed notification.
+fn notification<N: RpcNotification>(params: &N::Params) -> RpcMessage {
+    vy_proto::notification::<N>(params)
+}
+
 impl Session {
     pub fn new() -> Self {
         Self {
@@ -132,7 +164,7 @@ impl Session {
     }
 
     fn request(&mut self, id: u64, session_id: u64, method: &str, params: Value) -> Outcome {
-        if method == "initialize" {
+        if method == Initialize::METHOD {
             if matches!(self.state, State::Ready { .. }) {
                 return Outcome::one(RpcMessage::err(
                     id,
@@ -140,6 +172,16 @@ impl Session {
                     "initialize can only be sent once per connection",
                 ));
             }
+            let params = match vy_proto::decode_params::<Initialize>(&params) {
+                Some(params) => params,
+                None => {
+                    return Outcome::closing(RpcMessage::err(
+                        id,
+                        ErrorCode::UnsupportedProtocolVersion,
+                        "missing protocol_version".to_string(),
+                    ));
+                }
+            };
             return self.initialize(id, params);
         }
 
@@ -162,36 +204,45 @@ impl Session {
             ));
         }
 
+        macro_rules! call {
+            ($method:ty => $handler:ident) => {
+                match decode_request::<$method>(id, &params) {
+                    Ok(params) => self.$handler(id, params),
+                    Err(outcome) => outcome,
+                }
+            };
+        }
+
         match method {
-            "pane/open" => self.open_pane(id, params),
-            "pane/focus" => self.focus_pane(id, params),
-            "pane/close" => self.close_pane(id, params),
+            m if m == PaneOpen::METHOD => call!(PaneOpen => open_pane),
+            m if m == PaneFocus::METHOD => call!(PaneFocus => focus_pane),
+            m if m == PaneClose::METHOD => call!(PaneClose => close_pane),
             "pane/resize" => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::UnsupportedFeature,
                 "pane/resize is not implemented yet",
             )),
-            "layout/get" => self.layout_get(id),
-            "editor/open" => self.editor_open(id, params),
-            "document/save" => self.save_document(id, params),
-            "buffer/snapshot" => self.snapshot(id, params),
-            "sync/request" => self.sync_request(id, params),
-            "buffer/undo" => self.undo(id, params),
-            "buffer/redo" => self.redo(id, params),
-            "fs/read_file" => self.fs_read_file(id, params),
-            "fs/read_text_file" => self.fs_read_text_file(id, params),
-            "fs/write_file" => self.fs_write_file(id, params),
-            "fs/read_dir" => self.fs_read_dir(id, params),
-            "fs/stat" => self.fs_stat(id, params),
-            "fs/exists" => self.fs_exists(id, params),
-            "fs/create_dir" => self.fs_create_dir(id, params),
-            "fs/remove" => self.fs_remove(id, params),
-            "fs/rename" => self.fs_rename(id, params),
-            "fs/copy" => self.fs_copy(id, params),
-            "process/exec" => self.process_exec(id, params),
-            "process/spawn" => self.process_spawn(id, params),
-            "process/kill" => self.process_kill(id, params),
-            "process/stdin" => self.process_stdin(id, params),
+            m if m == LayoutGet::METHOD => self.layout_get(id),
+            m if m == EditorOpen::METHOD => call!(EditorOpen => editor_open),
+            m if m == DocumentSave::METHOD => call!(DocumentSave => save_document),
+            m if m == BufferSnapshot::METHOD => call!(BufferSnapshot => snapshot),
+            m if m == SyncRequest::METHOD => call!(SyncRequest => sync_request),
+            m if m == BufferUndo::METHOD => call!(BufferUndo => undo),
+            m if m == BufferRedo::METHOD => call!(BufferRedo => redo),
+            m if m == FsReadFile::METHOD => call!(FsReadFile => fs_read_file),
+            m if m == FsReadTextFile::METHOD => call!(FsReadTextFile => fs_read_text_file),
+            m if m == FsWriteFile::METHOD => call!(FsWriteFile => fs_write_file),
+            m if m == FsReadDir::METHOD => call!(FsReadDir => fs_read_dir),
+            m if m == FsStat::METHOD => call!(FsStat => fs_stat),
+            m if m == FsExists::METHOD => call!(FsExists => fs_exists),
+            m if m == FsCreateDir::METHOD => call!(FsCreateDir => fs_create_dir),
+            m if m == FsRemove::METHOD => call!(FsRemove => fs_remove),
+            m if m == FsRename::METHOD => call!(FsRename => fs_rename),
+            m if m == FsCopy::METHOD => call!(FsCopy => fs_copy),
+            m if m == ProcessExec::METHOD => call!(ProcessExec => process_exec),
+            m if m == ProcessSpawn::METHOD => call!(ProcessSpawn => process_spawn),
+            m if m == ProcessKill::METHOD => call!(ProcessKill => process_kill),
+            m if m == ProcessStdin::METHOD => call!(ProcessStdin => process_stdin),
             "shutdown" => Outcome {
                 messages: vec![RpcMessage::ok(id, Value::Map(Vec::new()))],
                 close: true,
@@ -205,12 +256,17 @@ impl Session {
     }
 
     fn notification(&mut self, method: &str, params: Value) -> Outcome {
-        match method {
-            "buffer/did_change" => self.did_change(params),
-            other => {
-                tracing::debug!(method = other, "unknown notification");
-                Outcome::empty()
+        if method == BufferDidChange::METHOD {
+            match vy_proto::decode_notification::<BufferDidChange>(&params) {
+                Some(change) => self.did_change(change),
+                None => {
+                    tracing::warn!("buffer/did_change could not be decoded");
+                    Outcome::empty()
+                }
             }
+        } else {
+            tracing::debug!(method, "unknown notification");
+            Outcome::empty()
         }
     }
 }
@@ -221,20 +277,14 @@ impl Default for Session {
     }
 }
 
-fn document_id(params: &Value) -> Option<u64> {
-    get(params, "document_id")
-        .or_else(|| get(params, "buffer_id"))
-        .and_then(Value::as_u64)
-}
-
-/// Returns the value in the shape described by `docs/protocol.md`.
-fn applied_value(document_id: u64, applied: &Applied) -> Value {
-    to_value(&vy_proto::HistoryResult {
+/// Returns the history result in the shape described by `docs/protocol.md`.
+fn applied_result(document_id: u64, applied: &Applied) -> vy_proto::HistoryResult {
+    vy_proto::HistoryResult {
         document_id,
         version: applied.version,
         edits: applied.edits.clone(),
         selection: applied.selection.clone(),
-    })
+    }
 }
 
 #[cfg(test)]

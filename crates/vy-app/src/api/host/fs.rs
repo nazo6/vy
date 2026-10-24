@@ -6,7 +6,7 @@ use vy_host_api::fs::{
     FsReadTextFileParams, FsReadTextFileReply, FsRemoveParams, FsRemoveReply, FsRenameParams,
     FsRenameReply, FsStatParams, FsStatReply, FsWriteFileParams, FsWriteFileReply,
 };
-use vy_proto::to_value;
+use vy_proto::RpcCall;
 
 use super::ClientHost;
 use crate::api::{CallError, Reply, check_capability};
@@ -16,8 +16,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     fn read_file(&mut self, params: FsReadFileParams) -> Result<Reply<FsReadFileReply>, CallError> {
         check_capability(self.call.context, "fs:read", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/read_file".into(),
-            params: to_value(&vy_proto::FsReadFileParams {
+            call: RpcCall::new::<vy_proto::FsReadFile>(vy_proto::FsReadFileParams {
                 uri: params.uri.to_string(),
             }),
             request: self.call.request.clone(),
@@ -31,8 +30,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     ) -> Result<Reply<FsReadTextFileReply>, CallError> {
         check_capability(self.call.context, "fs:read", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/read_text_file".into(),
-            params: to_value(&vy_proto::FsReadTextFileParams {
+            call: RpcCall::new::<vy_proto::FsReadTextFile>(vy_proto::FsReadTextFileParams {
                 uri: params.uri.to_string(),
             }),
             request: self.call.request.clone(),
@@ -46,8 +44,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     ) -> Result<Reply<FsWriteFileReply>, CallError> {
         check_capability(self.call.context, "fs:write", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/write_file".into(),
-            params: to_value(&vy_proto::FsWriteFileParams {
+            call: RpcCall::new::<vy_proto::FsWriteFile>(vy_proto::FsWriteFileParams {
                 uri: params.uri.to_string(),
                 bytes: params.bytes,
                 text: params.text,
@@ -60,8 +57,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     fn read_dir(&mut self, params: FsReadDirParams) -> Result<Reply<FsReadDirReply>, CallError> {
         check_capability(self.call.context, "fs:read", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/read_dir".into(),
-            params: to_value(&vy_proto::FsReadDirParams {
+            call: RpcCall::new::<vy_proto::FsReadDir>(vy_proto::FsReadDirParams {
                 uri: params.uri.to_string(),
             }),
             request: self.call.request.clone(),
@@ -72,8 +68,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     fn stat(&mut self, params: FsStatParams) -> Result<Reply<FsStatReply>, CallError> {
         check_capability(self.call.context, "fs:read", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/stat".into(),
-            params: to_value(&vy_proto::FsStatParams {
+            call: RpcCall::new::<vy_proto::FsStat>(vy_proto::FsStatParams {
                 uri: params.uri.to_string(),
             }),
             request: self.call.request.clone(),
@@ -84,8 +79,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     fn exists(&mut self, params: FsExistsParams) -> Result<Reply<FsExistsReply>, CallError> {
         check_capability(self.call.context, "fs:read", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/exists".into(),
-            params: to_value(&vy_proto::FsExistsParams {
+            call: RpcCall::new::<vy_proto::FsExists>(vy_proto::FsExistsParams {
                 uri: params.uri.to_string(),
             }),
             request: self.call.request.clone(),
@@ -99,8 +93,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     ) -> Result<Reply<FsCreateDirReply>, CallError> {
         check_capability(self.call.context, "fs:write", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/create_dir".into(),
-            params: to_value(&vy_proto::FsCreateDirParams {
+            call: RpcCall::new::<vy_proto::FsCreateDir>(vy_proto::FsCreateDirParams {
                 uri: params.uri.to_string(),
                 recursive: params.recursive.unwrap_or(false),
             }),
@@ -112,8 +105,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
     fn remove(&mut self, params: FsRemoveParams) -> Result<Reply<FsRemoveReply>, CallError> {
         check_capability(self.call.context, "fs:write", Some(params.uri.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/remove".into(),
-            params: to_value(&vy_proto::FsRemoveParams {
+            call: RpcCall::new::<vy_proto::FsRemove>(vy_proto::FsRemoveParams {
                 uri: params.uri.to_string(),
                 recursive: params.recursive.unwrap_or(false),
             }),
@@ -126,8 +118,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
         check_capability(self.call.context, "fs:write", Some(params.from.as_str()))?;
         check_capability(self.call.context, "fs:write", Some(params.to.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/rename".into(),
-            params: to_value(&vy_proto::FsRenameParams {
+            call: RpcCall::new::<vy_proto::FsRename>(vy_proto::FsRenameParams {
                 from: params.from.to_string(),
                 to: params.to.to_string(),
             }),
@@ -140,8 +131,7 @@ impl FsApi for ClientHost<'_, '_, '_> {
         check_capability(self.call.context, "fs:read", Some(params.from.as_str()))?;
         check_capability(self.call.context, "fs:write", Some(params.to.as_str()))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "fs/copy".into(),
-            params: to_value(&vy_proto::FsCopyParams {
+            call: RpcCall::new::<vy_proto::FsCopy>(vy_proto::FsCopyParams {
                 from: params.from.to_string(),
                 to: params.to.to_string(),
             }),

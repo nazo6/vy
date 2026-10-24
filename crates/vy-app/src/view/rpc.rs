@@ -9,10 +9,12 @@ use vy_app::geometry::collect_pane_ids;
 use vy_app::rpc::Client;
 use vy_app::state::{DocumentState, PaneState};
 use vy_proto::{
-    DidChangeParams, DocumentIdParams, DocumentSavedResult, EditorOpenParams, HistoryResult,
-    InitializeParams, InitializeResult, LayoutDidChangeNotification, LayoutGetResult,
-    PROTOCOL_VERSION, PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult, SnapshotResult,
-    SyncDocument, SyncRequestParams, SyncRequestResult, decode_value, to_value,
+    BufferDidChange, BufferResync, BufferSnapshot, BufferUndo, DidChangeParams, DocumentIdParams,
+    DocumentSave, DocumentSavedResult, EditorOpen, EditorOpenParams, HistoryResult, Initialize,
+    InitializeParams, Initialized, LayoutDidChange, LayoutDidChangeNotification, LayoutGet,
+    LayoutGetResult, PROTOCOL_VERSION, PaneOpen, PaneOpenParams, PaneOpenResult, RpcMessage,
+    RpcMethod, RpcNotification, RpcResult, SnapshotResult, SyncDocument, SyncRequest,
+    SyncRequestParams, SyncRequestResult, decode_notification, decode_reply, decode_value,
 };
 
 use super::{EditorView, Pending};
@@ -23,16 +25,13 @@ impl EditorView {
         self.connection_generation += 1;
         match Client::connect(self.connection.clone()) {
             Ok(mut client) => {
-                let id = client.request(
-                    "initialize",
-                    to_value(&InitializeParams {
-                        protocol_version: PROTOCOL_VERSION,
-                        client_version: env!("CARGO_PKG_VERSION").into(),
-                        client_capabilities: vec!["session-restore".to_string()],
-                        workspace: Some(self.workspace_uri.clone()),
-                        resume_session: None,
-                    }),
-                );
+                let id = client.request::<Initialize>(InitializeParams {
+                    protocol_version: PROTOCOL_VERSION,
+                    client_version: env!("CARGO_PKG_VERSION").into(),
+                    client_capabilities: vec!["session-restore".to_string()],
+                    workspace: Some(self.workspace_uri.clone()),
+                    resume_session: None,
+                });
                 self.pending.clear();
                 self.pending.insert(id, Pending::Initialize);
                 self.client = Some(client);
@@ -149,16 +148,13 @@ impl EditorView {
         match Client::connect(self.connection.clone()) {
             Ok(mut client) => {
                 self.connection_generation += 1;
-                let id = client.request(
-                    "initialize",
-                    to_value(&InitializeParams {
-                        protocol_version: PROTOCOL_VERSION,
-                        client_version: env!("CARGO_PKG_VERSION").into(),
-                        client_capabilities: vec!["session-restore".to_string()],
-                        workspace: Some(self.workspace_uri.clone()),
-                        resume_session: None,
-                    }),
-                );
+                let id = client.request::<Initialize>(InitializeParams {
+                    protocol_version: PROTOCOL_VERSION,
+                    client_version: env!("CARGO_PKG_VERSION").into(),
+                    client_capabilities: vec!["session-restore".to_string()],
+                    workspace: Some(self.workspace_uri.clone()),
+                    resume_session: None,
+                });
                 self.pending.clear();
                 self.pending.insert(id, Pending::Initialize);
                 self.client = Some(client);
@@ -212,20 +208,41 @@ impl EditorView {
                     request.respond_value(json_val);
                 }
                 Pending::Initialize => {
-                    if let Some(init) = decode_value::<InitializeResult>(&value)
+                    if let Some(init) = decode_reply::<Initialize>(&value)
                         && let Some(client) = self.client.as_mut()
                     {
                         client.set_session_id(init.session_id);
                     }
                 }
-                Pending::Layout => self.received_layout_get(&value),
-                Pending::Sync => self.received_sync(&value),
-                Pending::Open => self.opened(&value),
-                Pending::Snapshot => self.received_snapshot(&value),
-                Pending::Undo | Pending::Redo => self.received_history(&value),
+                Pending::Layout => match decode_reply::<LayoutGet>(&value) {
+                    Some(result) => self.received_layout_get(result),
+                    None => self.status = "layout/get response could not be decoded".into(),
+                },
+                Pending::Sync => match decode_reply::<SyncRequest>(&value) {
+                    Some(result) => self.received_sync(result),
+                    None => self.status = "sync/request response could not be decoded".into(),
+                },
+                Pending::Open => match decode_reply::<PaneOpen>(&value) {
+                    Some(opened) => self.opened(opened),
+                    None => self.status = "pane/open response has no pane or document".into(),
+                },
+                Pending::Snapshot => match decode_reply::<BufferSnapshot>(&value) {
+                    Some(snapshot) => self.received_snapshot(snapshot),
+                    None => self.status = "snapshot could not be decoded".into(),
+                },
+                Pending::Undo | Pending::Redo => match decode_reply::<BufferUndo>(&value) {
+                    Some(history) => self.received_history(history),
+                    None => self.status = "history could not be decoded".into(),
+                },
                 Pending::Close | Pending::Focus => {}
-                Pending::EditorOpen => self.editor_opened(&value),
-                Pending::Save => self.saved(&value),
+                Pending::EditorOpen => match decode_reply::<EditorOpen>(&value) {
+                    Some(opened) => self.editor_opened(opened),
+                    None => self.status = "editor/open response has no pane or document".into(),
+                },
+                Pending::Save => match decode_reply::<DocumentSave>(&value) {
+                    Some(saved) => self.saved(saved),
+                    None => self.status = "saved -".into(),
+                },
             },
         }
     }
@@ -282,25 +299,32 @@ impl EditorView {
     }
 
     fn handle_notification(&mut self, method: &str, params: Value) {
-        match method {
-            "initialized" => {
-                self.status = "connected; restoring the session".into();
-                self.request("layout/get", Value::Nil, Pending::Layout);
+        if method == Initialized::METHOD {
+            self.status = "connected; restoring the session".into();
+            self.request::<LayoutGet>((), Pending::Layout);
+        } else if method == BufferResync::METHOD {
+            match decode_notification::<BufferResync>(&params) {
+                Some(resync) => self.received_snapshot(SnapshotResult {
+                    document_id: resync.document_id,
+                    version: resync.version,
+                    line_count: None,
+                    text: resync.text,
+                }),
+                None => self.status = "buffer/resync could not be decoded".into(),
             }
-            "buffer/resync" => self.received_snapshot(&params),
-            "layout/did_change" => self.received_layout(&params),
-            other => {
-                eprintln!("vy: unsupported notification: {other}");
+        } else if method == LayoutDidChange::METHOD {
+            match decode_notification::<LayoutDidChange>(&params) {
+                Some(layout) => self.received_layout(layout),
+                None => self.status = "layout/did_change could not be decoded".into(),
             }
+        } else {
+            eprintln!("vy: unsupported notification: {method}");
         }
     }
 
     /// Applies the layout the core confirmed. The client never draws a tree the core
     /// has not accepted, so this is the only place panes are added or removed.
-    fn received_layout(&mut self, params: &Value) {
-        let Some(layout_msg) = decode_value::<LayoutDidChangeNotification>(params) else {
-            return;
-        };
+    fn received_layout(&mut self, layout_msg: LayoutDidChangeNotification) {
         if layout_msg.revision < self.layout_revision {
             return;
         }
@@ -335,13 +359,12 @@ impl EditorView {
 
     fn open_document(&mut self) {
         let uri = self.initial_uri.clone();
-        self.request(
-            "pane/open",
-            to_value(&PaneOpenParams {
+        self.request::<PaneOpen>(
+            PaneOpenParams {
                 view: Some("editor".into()),
                 uri,
                 placement: None,
-            }),
+            },
             Pending::Open,
         );
     }
@@ -350,12 +373,7 @@ impl EditorView {
     ///
     /// The client keeps its text and cursor by URI; document and pane IDs may
     /// differ from the previous connection.
-    fn received_layout_get(&mut self, value: &Value) {
-        let Some(result) = decode_value::<LayoutGetResult>(value) else {
-            self.status = "layout/get response could not be decoded".into();
-            return;
-        };
-
+    fn received_layout_get(&mut self, result: LayoutGetResult) {
         if result.layout.is_none() && result.panes.is_empty() {
             self.layout = None;
             self.layout_revision = 0;
@@ -429,20 +447,11 @@ impl EditorView {
         }
 
         self.status = format!("restoring {} document(s)", documents.len()).into();
-        self.request(
-            "sync/request",
-            to_value(&SyncRequestParams { documents }),
-            Pending::Sync,
-        );
+        self.request::<SyncRequest>(SyncRequestParams { documents }, Pending::Sync);
     }
 
     /// Applies the text and versions returned by `sync/request`.
-    fn received_sync(&mut self, value: &Value) {
-        let Some(result) = decode_value::<SyncRequestResult>(value) else {
-            self.status = "sync/request response could not be decoded".into();
-            return;
-        };
-
+    fn received_sync(&mut self, result: SyncRequestResult) {
         let idle = Duration::from_millis(self.config.transaction_idle_ms());
         let mut documents = std::collections::HashMap::new();
         for document in result.documents {
@@ -481,23 +490,18 @@ impl EditorView {
                 .values()
                 .any(|document| document.uri == self.initial_uri);
             if !already_open && self.initial_uri != "vy:untitled" {
-                self.request(
-                    "editor/open",
-                    to_value(&EditorOpenParams {
+                self.request::<EditorOpen>(
+                    EditorOpenParams {
                         uri: self.initial_uri.clone(),
                         pane_id: self.active_pane,
-                    }),
+                    },
                     Pending::EditorOpen,
                 );
             }
         }
     }
 
-    fn opened(&mut self, value: &Value) {
-        let Some(opened) = decode_value::<PaneOpenResult>(value) else {
-            self.status = "pane/open response has no pane or document".into();
-            return;
-        };
+    fn opened(&mut self, opened: PaneOpenResult) {
         let pane_id = opened.pane_id;
         let document_id = opened.document_id;
 
@@ -550,18 +554,10 @@ impl EditorView {
             self.documents.insert(document_id, document);
         }
 
-        self.request(
-            "buffer/snapshot",
-            to_value(&DocumentIdParams { document_id }),
-            Pending::Snapshot,
-        );
+        self.request::<BufferSnapshot>(DocumentIdParams { document_id }, Pending::Snapshot);
     }
 
-    fn editor_opened(&mut self, value: &Value) {
-        let Some(opened) = decode_value::<PaneOpenResult>(value) else {
-            self.status = "editor/open response has no pane or document".into();
-            return;
-        };
+    fn editor_opened(&mut self, opened: PaneOpenResult) {
         let pane_id = opened.pane_id;
         let document_id = opened.document_id;
         let replaced = opened.replaced;
@@ -595,30 +591,18 @@ impl EditorView {
 
         self.active_pane = Some(pane_id);
         self.activate_active_view();
-        self.request(
-            "buffer/snapshot",
-            to_value(&DocumentIdParams { document_id }),
-            Pending::Snapshot,
-        );
+        self.request::<BufferSnapshot>(DocumentIdParams { document_id }, Pending::Snapshot);
     }
 
-    fn saved(&mut self, value: &Value) {
-        if let Some(saved) = decode_value::<DocumentSavedResult>(value) {
-            if let Some(document) = self.documents.get_mut(&saved.document_id) {
-                document.saved_version = saved.version;
-            }
-            self.status = format!("saved {}", saved.path).into();
-        } else {
-            self.status = "saved -".into();
+    fn saved(&mut self, saved: DocumentSavedResult) {
+        if let Some(document) = self.documents.get_mut(&saved.document_id) {
+            document.saved_version = saved.version;
         }
+        self.status = format!("saved {}", saved.path).into();
     }
 
-    fn received_snapshot(&mut self, value: &Value) {
+    fn received_snapshot(&mut self, snapshot: SnapshotResult) {
         let started = Instant::now();
-        let Some(snapshot) = decode_value::<SnapshotResult>(value) else {
-            self.status = "snapshot could not be decoded".into();
-            return;
-        };
         let document_id = snapshot.document_id;
         let text = snapshot.text;
         let version = snapshot.version;
@@ -674,12 +658,8 @@ impl EditorView {
         }
     }
 
-    fn received_history(&mut self, value: &Value) {
+    fn received_history(&mut self, history: HistoryResult) {
         self.activate_active_view();
-        let Some(history) = decode_value::<HistoryResult>(value) else {
-            self.status = "history could not be decoded".into();
-            return;
-        };
         let version = history.version;
         let batches = history.edits;
         let selection = history.selection;
@@ -701,11 +681,11 @@ impl EditorView {
         }
     }
 
-    pub(super) fn request(&mut self, method: &str, params: Value, pending: Pending) {
+    pub(super) fn request<M: RpcMethod>(&mut self, params: M::Params, pending: Pending) {
         let Some(client) = self.client.as_mut() else {
             return;
         };
-        let id = client.request(method, params);
+        let id = client.request::<M>(params);
         self.pending.insert(id, pending);
     }
 
@@ -717,21 +697,21 @@ impl EditorView {
             return;
         };
 
-        client.notify(
-            "buffer/did_change",
-            to_value(&DidChangeParams {
-                document_id,
-                base_version: transaction.base_version,
-                version: transaction.base_version + 1,
-                transaction_id: transaction.transaction_id,
-                edits: transaction.edits,
-                selection_before: transaction.selection_before,
-                selection_after: transaction.selection_after,
-            }),
-        );
+        client.notify::<BufferDidChange>(DidChangeParams {
+            document_id,
+            base_version: transaction.base_version,
+            version: transaction.base_version + 1,
+            transaction_id: transaction.transaction_id,
+            edits: transaction.edits,
+            selection_before: transaction.selection_before,
+            selection_after: transaction.selection_after,
+        });
     }
 
-    pub(super) fn send_history(&mut self, method: &str, pending: Pending) {
+    pub(super) fn send_history<M: RpcMethod<Params = DocumentIdParams>>(
+        &mut self,
+        pending: Pending,
+    ) {
         let Some(document_id) = self.active_document_id() else {
             return;
         };
@@ -739,7 +719,7 @@ impl EditorView {
             return;
         };
 
-        let id = client.request(method, to_value(&DocumentIdParams { document_id }));
+        let id = client.request::<M>(DocumentIdParams { document_id });
         self.pending.insert(id, pending);
     }
 }

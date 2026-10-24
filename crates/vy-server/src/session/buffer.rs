@@ -1,22 +1,16 @@
-use rmpv::Value;
 use vy_core::Uri;
 use vy_proto::{
-    DidChangeParams, DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage,
-    SnapshotResult, SyncRequestParams, SyncRequestResult, SyncedDocument,
+    BufferResync, BufferSnapshot, DidChangeParams, DocumentIdParams, DocumentSave,
+    DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage, SnapshotResult, SyncRequest,
+    SyncRequestParams, SyncRequestResult, SyncedDocument,
 };
 
-use super::{Outcome, Session, decode_params, document_id, to_value};
+use super::{Outcome, Session, notification, ok_response};
 
 impl Session {
     /// Writes a document back to its file.
-    pub(super) fn save_document(&mut self, id: u64, params: Value) -> Outcome {
-        let Some(document_id) = document_id(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "a document_id is required",
-            ));
-        };
+    pub(super) fn save_document(&mut self, id: u64, params: DocumentIdParams) -> Outcome {
+        let document_id = params.document_id;
 
         let Some(buffer) = self.documents.get(&document_id) else {
             return Outcome::one(RpcMessage::err(
@@ -51,24 +45,18 @@ impl Session {
         };
         buffer.mark_saved();
 
-        Outcome::one(RpcMessage::ok(
+        ok_response::<DocumentSave>(
             id,
-            to_value(&DocumentSavedResult {
+            &DocumentSavedResult {
                 document_id,
                 version: buffer.version(),
                 path: path.display().to_string(),
-            }),
-        ))
+            },
+        )
     }
 
-    pub(super) fn snapshot(&self, id: u64, params: Value) -> Outcome {
-        let Some(document_id) = document_id(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "a document_id is required",
-            ));
-        };
+    pub(super) fn snapshot(&self, id: u64, params: DocumentIdParams) -> Outcome {
+        let document_id = params.document_id;
 
         let Some(buffer) = self.documents.get(&document_id) else {
             return Outcome::one(RpcMessage::err(
@@ -78,30 +66,22 @@ impl Session {
             ));
         };
 
-        Outcome::one(RpcMessage::ok(
+        ok_response::<BufferSnapshot>(
             id,
-            to_value(&SnapshotResult {
+            &SnapshotResult {
                 document_id,
                 version: buffer.version(),
                 line_count: Some(buffer.line_count() as u64),
                 text: buffer.text(),
-            }),
-        ))
+            },
+        )
     }
 
     /// Rebuilds the documents a reconnecting client sends.
     ///
     /// Unsaved text is authoritative and replaces the file contents. Documents
     /// without text are read from disk so a changed file is picked up.
-    pub(super) fn sync_request(&mut self, id: u64, params: Value) -> Outcome {
-        let Some(params) = decode_params::<SyncRequestParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "could not decode sync/request",
-            ));
-        };
-
+    pub(super) fn sync_request(&mut self, id: u64, params: SyncRequestParams) -> Outcome {
         let mut documents = Vec::with_capacity(params.documents.len());
         for document in params.documents {
             let uri = match Uri::parse(document.uri.clone()) {
@@ -144,18 +124,10 @@ impl Session {
             }
         }
 
-        Outcome::one(RpcMessage::ok(
-            id,
-            to_value(&SyncRequestResult { documents }),
-        ))
+        ok_response::<SyncRequest>(id, &SyncRequestResult { documents })
     }
 
-    pub(super) fn did_change(&mut self, params: Value) -> Outcome {
-        let Some(change) = decode_params::<DidChangeParams>(&params) else {
-            tracing::warn!("buffer/did_change could not be decoded");
-            return Outcome::empty();
-        };
-
+    pub(super) fn did_change(&mut self, change: DidChangeParams) -> Outcome {
         let result = {
             let Some(buffer) = self.documents.get_mut(&change.document_id) else {
                 tracing::warn!(change.document_id, "change for a document that is not open");
@@ -190,14 +162,11 @@ impl Session {
                     .get(&change.document_id)
                     .map(|buffer| (buffer.version(), buffer.text()))
                     .unwrap_or((0, String::new()));
-                Outcome::one(RpcMessage::notification(
-                    "buffer/resync",
-                    to_value(&ResyncNotification {
-                        document_id: change.document_id,
-                        version,
-                        text,
-                    }),
-                ))
+                Outcome::one(notification::<BufferResync>(&ResyncNotification {
+                    document_id: change.document_id,
+                    version,
+                    text,
+                }))
             }
         }
     }

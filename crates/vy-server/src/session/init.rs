@@ -1,25 +1,13 @@
-use rmpv::Value;
 use vy_core::Uri;
 use vy_proto::{
-    ErrorCode, InitializeParams, InitializeResult, InitializedNotification, PROTOCOL_VERSION,
-    PlatformInfo, RpcMessage, decode_value, to_value,
+    ErrorCode, InitializeParams, InitializeResult, Initialized, InitializedNotification,
+    PROTOCOL_VERSION, PlatformInfo, RpcMessage,
 };
 
-use super::{Outcome, Session, State};
+use super::{Outcome, Session, State, notification, ok_message};
 
 impl Session {
-    pub(super) fn initialize(&mut self, id: u64, params: Value) -> Outcome {
-        let params: InitializeParams = match decode_value(&params) {
-            Some(params) => params,
-            None => {
-                return Outcome::closing(RpcMessage::err(
-                    id,
-                    ErrorCode::UnsupportedProtocolVersion,
-                    "missing protocol_version".to_string(),
-                ));
-            }
-        };
-
+    pub(super) fn initialize(&mut self, id: u64, params: InitializeParams) -> Outcome {
         if params.protocol_version != PROTOCOL_VERSION {
             return Outcome::closing(RpcMessage::err(
                 id,
@@ -56,20 +44,17 @@ impl Session {
         self.next_session_id += 1;
         self.state = State::Ready { session_id };
 
-        let response = RpcMessage::ok(id, to_value(&InitializeResult { session_id }));
-        let initialized = RpcMessage::notification(
-            "initialized",
-            to_value(&InitializedNotification {
-                protocol_version: PROTOCOL_VERSION,
-                session_id,
-                server_version: env!("CARGO_PKG_VERSION").into(),
-                server_capabilities: vec!["stream".into(), "session-restore".into()],
-                platform: PlatformInfo {
-                    os: std::env::consts::OS.into(),
-                    path_separator: std::path::MAIN_SEPARATOR.to_string(),
-                },
-            }),
-        );
+        let response = ok_message::<vy_proto::Initialize>(id, &InitializeResult { session_id });
+        let initialized = notification::<Initialized>(&InitializedNotification {
+            protocol_version: PROTOCOL_VERSION,
+            session_id,
+            server_version: env!("CARGO_PKG_VERSION").into(),
+            server_capabilities: vec!["stream".into(), "session-restore".into()],
+            platform: PlatformInfo {
+                os: std::env::consts::OS.into(),
+                path_separator: std::path::MAIN_SEPARATOR.to_string(),
+            },
+        });
 
         Outcome {
             messages: vec![response, initialized],

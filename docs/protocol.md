@@ -100,6 +100,20 @@ pub enum StreamPayload {
 }
 ```
 
+### 実装上の型
+
+エンベロープのメソッド名と `params` / 応答は、実装では `vy-proto` の
+`RpcMethod` / `RpcNotification` で結びつけます。ワイヤーの形は上のままで、
+メソッド名の文字列と型の対応を1か所に置くだけです。
+
+```rust
+client.request::<PaneOpen>(PaneOpenParams { .. });
+client.notify::<BufferDidChange>(DidChangeParams { .. });
+```
+
+サーバーは `PaneOpen::METHOD` で分岐し、`decode_params` と `ok` で型付きの
+params / 応答を扱います。詳細は [ADR 0018](./adr/0018-typed-rpc.md) にあります。
+
 ## 3. 接続の開始
 
 接続したら、クライアントは `initialize` を送ります。サーバーは `initialized`

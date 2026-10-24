@@ -18,8 +18,8 @@ use vy_app::text_layout::{
 };
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_proto::{
-    DocumentIdParams, EditorOpenParams, PaneCloseParams, PaneFocusParams, PaneOpenParams,
-    PanePlacement, to_value,
+    DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
+    PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement,
 };
 
 use super::{EditorView, Pending};
@@ -105,12 +105,11 @@ impl EditorView {
                 } else {
                     uri_from_argument_with_base(&path_or_uri, Some(&self.workspace_uri))
                 };
-                self.request(
-                    "editor/open",
-                    to_value(&EditorOpenParams {
+                self.request::<EditorOpen>(
+                    EditorOpenParams {
                         uri,
                         pane_id: target_pane,
-                    }),
+                    },
                     Pending::EditorOpen,
                 );
             }
@@ -126,11 +125,7 @@ impl EditorView {
                     self.status = "there is no active document".into();
                     return;
                 };
-                self.request(
-                    "document/save",
-                    to_value(&DocumentIdParams { document_id }),
-                    Pending::Save,
-                );
+                self.request::<DocumentSave>(DocumentIdParams { document_id }, Pending::Save);
             }
             DocumentCommand::Switch => {
                 if let Some(raw) = invocation.ex_raw() {
@@ -148,9 +143,8 @@ impl EditorView {
                             }
                         });
                         if let Some(uri) = matched_uri {
-                            self.request(
-                                "editor/open",
-                                to_value(&EditorOpenParams { uri, pane_id: None }),
+                            self.request::<EditorOpen>(
+                                EditorOpenParams { uri, pane_id: None },
                                 Pending::EditorOpen,
                             );
                             return;
@@ -231,9 +225,8 @@ impl EditorView {
             return;
         };
 
-        self.request(
-            "pane/open",
-            to_value(&PaneOpenParams {
+        self.request::<PaneOpen>(
+            PaneOpenParams {
                 view: Some("editor".into()),
                 uri,
                 placement: Some(PanePlacement {
@@ -241,7 +234,7 @@ impl EditorView {
                     direction: Some(direction.to_string()),
                     ratio: None,
                 }),
-            }),
+            },
             Pending::Open,
         );
         self.status = format!("splitting pane {target} {direction}").into();
@@ -251,11 +244,7 @@ impl EditorView {
         let Some(pane_id) = self.active_pane else {
             return;
         };
-        self.request(
-            "pane/close",
-            to_value(&PaneCloseParams { pane_id }),
-            Pending::Close,
-        );
+        self.request::<PaneClose>(PaneCloseParams { pane_id }, Pending::Close);
     }
 
     pub(super) fn focus_direction(&mut self, direction: &str) {
@@ -265,11 +254,7 @@ impl EditorView {
         let Some(pane_id) = focus_neighbor(layout, active, direction) else {
             return;
         };
-        self.request(
-            "pane/focus",
-            to_value(&PaneFocusParams { pane_id }),
-            Pending::Focus,
-        );
+        self.request::<PaneFocus>(PaneFocusParams { pane_id }, Pending::Focus);
     }
 
     pub(super) fn focus_next_pane(&mut self) {
@@ -282,11 +267,7 @@ impl EditorView {
             return;
         };
         let next = pane_ids[(index + 1) % pane_ids.len()];
-        self.request(
-            "pane/focus",
-            to_value(&PaneFocusParams { pane_id: next }),
-            Pending::Focus,
-        );
+        self.request::<PaneFocus>(PaneFocusParams { pane_id: next }, Pending::Focus);
     }
 
     pub(super) fn palette_items(&self) -> Vec<PickerItem> {
@@ -504,12 +485,11 @@ impl EditorView {
                         self.enqueue_command(Invocation::palette(id));
                     }
                     PaletteMode::Documents => {
-                        self.request(
-                            "editor/open",
-                            to_value(&EditorOpenParams {
+                        self.request::<EditorOpen>(
+                            EditorOpenParams {
                                 uri: id,
                                 pane_id: None,
-                            }),
+                            },
                             Pending::EditorOpen,
                         );
                     }
@@ -634,8 +614,8 @@ impl EditorView {
             match action {
                 Action::None => {}
                 Action::Edit(transaction) => self.send_transaction(transaction),
-                Action::Undo => self.send_history("buffer/undo", Pending::Undo),
-                Action::Redo => self.send_history("buffer/redo", Pending::Redo),
+                Action::Undo => self.send_history::<vy_proto::BufferUndo>(Pending::Undo),
+                Action::Redo => self.send_history::<vy_proto::BufferRedo>(Pending::Redo),
             }
             self.ensure_cursor_visible();
             return false;
@@ -760,9 +740,8 @@ impl EditorView {
             });
 
         self.pending_view_for_next_open = Some(view_id.to_string());
-        self.request(
-            "pane/open",
-            to_value(&PaneOpenParams {
+        self.request::<PaneOpen>(
+            PaneOpenParams {
                 view: Some(view_id.to_string()),
                 uri,
                 placement: Some(PanePlacement {
@@ -770,7 +749,7 @@ impl EditorView {
                     direction: Some(direction.to_string()),
                     ratio: Some(0.25),
                 }),
-            }),
+            },
             Pending::Open,
         );
     }
@@ -778,11 +757,7 @@ impl EditorView {
     pub(super) fn close_view_pane(&mut self, view_id: &str) {
         if let Some((pane_id, _)) = self.panes.iter().find(|(_, p)| p.view_type == view_id) {
             let pid = *pane_id;
-            self.request(
-                "pane/close",
-                to_value(&PaneCloseParams { pane_id: pid }),
-                Pending::Close,
-            );
+            self.request::<PaneClose>(PaneCloseParams { pane_id: pid }, Pending::Close);
         }
     }
 

@@ -42,3 +42,4 @@ ADR を追加します。古い ADR
 | [0015](./0015-api-output-layout.md)              | API の生成物は `packages/vy-api` にまとめる            | 採用（一部は 0016 で置き換え）             |
 | [0016](./0016-command-types-and-ts-shim.md)      | コマンド型を分離し、JS API の型を TS shim から生成する | 採用                                       |
 | [0017](./0017-cli-parsing-with-usage-rs.md)      | CLI 引数の解析に usage-rs を使う                       | 採用                                       |
+| [0018](./0018-typed-rpc.md)                      | クライアント・コア間の RPC は型付き marker で送る      | 採用                                       |

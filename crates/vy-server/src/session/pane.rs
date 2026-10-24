@@ -1,9 +1,10 @@
-use rmpv::Value;
 use vy_core::{Buffer, DocumentId, SplitDirection, Uri};
-use vy_proto::value::get;
-use vy_proto::{ErrorCode, PaneCloseResult, PaneFocusResult, PaneOpenResult, RpcMessage};
+use vy_proto::{
+    EditorOpen, EditorOpenParams, ErrorCode, PaneClose, PaneCloseResult, PaneFocus,
+    PaneFocusResult, PaneOpen, PaneOpenResult, RpcMessage,
+};
 
-use super::{Outcome, Pane, Session, to_value};
+use super::{Outcome, Pane, Session, ok_message, ok_response};
 
 impl Session {
     /// Returns the document for a URI, opening it when needed.
@@ -62,20 +63,10 @@ impl Session {
     }
 
     /// Opens a document in a new pane. The placement decides where the pane goes.
-    pub(super) fn open_pane(&mut self, id: u64, params: Value) -> Outcome {
-        let view = get(&params, "view")
-            .and_then(Value::as_str)
-            .unwrap_or("editor");
+    pub(super) fn open_pane(&mut self, id: u64, params: vy_proto::PaneOpenParams) -> Outcome {
+        let view = params.view.unwrap_or_else(|| "editor".to_string());
 
-        let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "pane/open requires a uri",
-            ));
-        };
-
-        let uri = match Uri::parse(value) {
+        let uri = match Uri::parse(params.uri.clone()) {
             Ok(uri) => uri,
             Err(error) => {
                 return Outcome::one(RpcMessage::err(
@@ -86,14 +77,9 @@ impl Session {
             }
         };
 
-        let placement = get(&params, "placement");
-        let target = placement
-            .and_then(|value| get(value, "target"))
-            .and_then(Value::as_u64);
-        let position = placement
-            .and_then(|value| get(value, "direction"))
-            .and_then(Value::as_str)
-            .unwrap_or("right");
+        let placement = params.placement.unwrap_or_default();
+        let target = placement.target;
+        let position = placement.direction.as_deref().unwrap_or("right");
         let Some(direction) = SplitDirection::parse(position) else {
             return Outcome::one(RpcMessage::err(
                 id,
@@ -101,9 +87,7 @@ impl Session {
                 format!("unknown placement direction: {position}"),
             ));
         };
-        if let Some(ratio) = placement
-            .and_then(|value| get(value, "ratio"))
-            .and_then(Value::as_f64)
+        if let Some(ratio) = placement.ratio
             && !(0.0 < ratio && ratio < 1.0)
         {
             return Outcome::one(RpcMessage::err(
@@ -142,22 +126,22 @@ impl Session {
         self.panes.insert(
             pane_id,
             Pane {
-                view: view.to_string(),
+                view,
                 document_id: Some(document_id),
             },
         );
         self.persist_session();
 
-        let response = RpcMessage::ok(
+        let response = ok_message::<PaneOpen>(
             id,
-            to_value(&PaneOpenResult {
+            &PaneOpenResult {
                 pane_id,
                 document_id,
                 version,
                 line_count: line_count as u64,
-                uri: value.to_string(),
+                uri: params.uri,
                 replaced: false,
-            }),
+            },
         );
 
         Outcome {
@@ -167,14 +151,8 @@ impl Session {
     }
 
     /// Focuses a pane. The client only moves the caret after the confirmation.
-    pub(super) fn focus_pane(&mut self, id: u64, params: Value) -> Outcome {
-        let Some(pane_id) = get(&params, "pane_id").and_then(Value::as_u64) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "pane/focus requires a pane_id",
-            ));
-        };
+    pub(super) fn focus_pane(&mut self, id: u64, params: vy_proto::PaneFocusParams) -> Outcome {
+        let pane_id = params.pane_id;
 
         if let Err(error) = self.layout.focus(pane_id) {
             return Outcome::one(RpcMessage::err(id, ErrorCode::NotFound, error.to_string()));
@@ -183,7 +161,7 @@ impl Session {
 
         Outcome {
             messages: vec![
-                RpcMessage::ok(id, to_value(&PaneFocusResult { pane_id })),
+                ok_message::<PaneFocus>(id, &PaneFocusResult { pane_id }),
                 self.layout_notification("focus"),
             ],
             close: false,
@@ -191,14 +169,8 @@ impl Session {
     }
 
     /// Closes a pane. The layout collapses the split that becomes empty.
-    pub(super) fn close_pane(&mut self, id: u64, params: Value) -> Outcome {
-        let Some(pane_id) = get(&params, "pane_id").and_then(Value::as_u64) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "pane/close requires a pane_id",
-            ));
-        };
+    pub(super) fn close_pane(&mut self, id: u64, params: vy_proto::PaneCloseParams) -> Outcome {
+        let pane_id = params.pane_id;
 
         if let Err(error) = self.layout.close(pane_id) {
             return Outcome::one(RpcMessage::err(
@@ -228,7 +200,7 @@ impl Session {
 
         Outcome {
             messages: vec![
-                RpcMessage::ok(id, to_value(&PaneCloseResult { pane_id })),
+                ok_message::<PaneClose>(id, &PaneCloseResult { pane_id }),
                 self.layout_notification("close"),
             ],
             close: false,
@@ -236,15 +208,8 @@ impl Session {
     }
 
     /// Opens a document in an existing pane. Used by `:e` and `editor.open`.
-    pub(super) fn editor_open(&mut self, id: u64, params: Value) -> Outcome {
-        let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidRequest,
-                "editor/open requires a uri",
-            ));
-        };
-        let uri = match Uri::parse(value) {
+    pub(super) fn editor_open(&mut self, id: u64, params: EditorOpenParams) -> Outcome {
+        let uri = match Uri::parse(params.uri.clone()) {
             Ok(uri) => uri,
             Err(error) => {
                 return Outcome::one(RpcMessage::err(
@@ -255,9 +220,7 @@ impl Session {
             }
         };
 
-        let pane_id = get(&params, "pane_id")
-            .and_then(Value::as_u64)
-            .or_else(|| self.layout.active_pane());
+        let pane_id = params.pane_id.or_else(|| self.layout.active_pane());
         let Some(pane_id) = pane_id else {
             return Outcome::one(RpcMessage::err(
                 id,
@@ -285,16 +248,16 @@ impl Session {
         }
         self.persist_session();
 
-        Outcome::one(RpcMessage::ok(
+        ok_response::<EditorOpen>(
             id,
-            to_value(&PaneOpenResult {
+            &PaneOpenResult {
                 pane_id,
                 document_id,
                 version,
                 line_count: line_count as u64,
-                uri: value.to_string(),
+                uri: params.uri,
                 replaced: previous != document_id,
-            }),
-        ))
+            },
+        )
     }
 }

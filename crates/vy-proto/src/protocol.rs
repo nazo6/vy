@@ -45,7 +45,7 @@ pub struct InitializedNotification {
 }
 
 /// Placement options when opening a pane.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PanePlacement {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<u64>,

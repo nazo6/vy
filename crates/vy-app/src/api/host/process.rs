@@ -5,7 +5,7 @@ use vy_host_api::process::{
     ProcessStdinParams, ProcessStdinReply,
 };
 use vy_host_api::{CallError, Reply};
-use vy_proto::{ProcessExecParams, ProcessOutput, to_value};
+use vy_proto::{ProcessExecParams, ProcessOutput, RpcCall};
 
 use super::ClientHost;
 use crate::api::check_capability;
@@ -15,8 +15,7 @@ impl ProcessApi for ClientHost<'_, '_, '_> {
     fn exec(&mut self, params: ProcessExecParams) -> Result<Reply<ProcessOutput>, CallError> {
         check_capability(self.call.context, "process:exec", Some(&params.command))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "process/exec".into(),
-            params: to_value(&params),
+            call: RpcCall::new::<vy_proto::ProcessExec>(params),
             request: self.call.request.clone(),
         };
         Ok(Reply::Deferred)
@@ -25,8 +24,7 @@ impl ProcessApi for ClientHost<'_, '_, '_> {
     fn spawn(&mut self, params: ProcessSpawnParams) -> Result<Reply<ProcessSpawnReply>, CallError> {
         check_capability(self.call.context, "process:exec", Some(&params.command))?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "process/spawn".into(),
-            params: to_value(&vy_proto::ProcessSpawnParams {
+            call: RpcCall::new::<vy_proto::ProcessSpawn>(vy_proto::ProcessSpawnParams {
                 command: params.command,
                 args: params.args,
                 cwd: params.cwd,
@@ -40,8 +38,7 @@ impl ProcessApi for ClientHost<'_, '_, '_> {
     fn kill(&mut self, params: ProcessKillParams) -> Result<Reply<ProcessKillReply>, CallError> {
         check_capability(self.call.context, "process:exec", None)?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "process/kill".into(),
-            params: to_value(&vy_proto::ProcessKillParams {
+            call: RpcCall::new::<vy_proto::ProcessKill>(vy_proto::ProcessKillParams {
                 pid: params.pid,
                 signal: params.signal,
             }),
@@ -56,8 +53,7 @@ impl ProcessApi for ClientHost<'_, '_, '_> {
     ) -> Result<Reply<ProcessStdinReply>, CallError> {
         check_capability(self.call.context, "process:exec", None)?;
         self.call.outcome.action = HostAction::ServerRpc {
-            method: "process/stdin".into(),
-            params: to_value(&vy_proto::ProcessStdinParams {
+            call: RpcCall::new::<vy_proto::ProcessStdin>(vy_proto::ProcessStdinParams {
                 pid: params.pid,
                 data: params.data,
             }),

@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use vy_proto::{
-    ErrorCode, ProcessExecParams, ProcessKillParams, ProcessKillResult, ProcessOutput,
-    ProcessSpawnParams, ProcessSpawnResult, ProcessStdinParams, ProcessStdinResult, RpcMessage,
-    StreamPayload, decode_value, to_value,
+    ErrorCode, ProcessExec, ProcessExecParams, ProcessKill, ProcessKillParams, ProcessKillResult,
+    ProcessOutput, ProcessSpawn, ProcessSpawnParams, ProcessSpawnResult, ProcessStdin,
+    ProcessStdinParams, ProcessStdinResult, RpcMessage, StreamPayload, to_value,
 };
 
-use super::{Outcome, Session};
+use super::{Outcome, Session, ok_response};
 
 /// State for a running child process.
 pub(super) struct RunningProcess {
@@ -23,14 +23,7 @@ pub(super) struct RunningProcess {
 pub(super) type ProcessTable = HashMap<u32, RunningProcess>;
 
 impl Session {
-    pub(super) fn process_exec(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<ProcessExecParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid process/exec params",
-            ));
-        };
+    pub(super) fn process_exec(&self, id: u64, params: ProcessExecParams) -> Outcome {
         let mut cmd = Command::new(&params.command);
         cmd.args(&params.args);
         if let Some(cwd) = &params.cwd {
@@ -48,7 +41,7 @@ impl Session {
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                     stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                 };
-                Outcome::one(RpcMessage::ok(id, to_value(&res)))
+                ok_response::<ProcessExec>(id, &res)
             }
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
@@ -58,14 +51,7 @@ impl Session {
         }
     }
 
-    pub(super) fn process_spawn(&mut self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<ProcessSpawnParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid process/spawn params",
-            ));
-        };
+    pub(super) fn process_spawn(&mut self, id: u64, params: ProcessSpawnParams) -> Outcome {
         let mut cmd = Command::new(&params.command);
         cmd.args(&params.args);
         if let Some(cwd) = &params.cwd {
@@ -182,17 +168,10 @@ impl Session {
             },
         );
 
-        Outcome::one(RpcMessage::ok(id, to_value(&ProcessSpawnResult { pid })))
+        ok_response::<ProcessSpawn>(id, &ProcessSpawnResult { pid })
     }
 
-    pub(super) fn process_kill(&mut self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<ProcessKillParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid process/kill params",
-            ));
-        };
+    pub(super) fn process_kill(&mut self, id: u64, params: ProcessKillParams) -> Outcome {
         let Some(proc) = self.processes.remove(&params.pid) else {
             return Outcome::one(RpcMessage::err(
                 id,
@@ -205,20 +184,10 @@ impl Session {
         {
             let _ = child.kill();
         }
-        Outcome::one(RpcMessage::ok(
-            id,
-            to_value(&ProcessKillResult { success: true }),
-        ))
+        ok_response::<ProcessKill>(id, &ProcessKillResult { success: true })
     }
 
-    pub(super) fn process_stdin(&mut self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<ProcessStdinParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid process/stdin params",
-            ));
-        };
+    pub(super) fn process_stdin(&mut self, id: u64, params: ProcessStdinParams) -> Outcome {
         let Some(proc) = self.processes.get_mut(&params.pid) else {
             return Outcome::one(RpcMessage::err(
                 id,
@@ -237,10 +206,7 @@ impl Session {
             .write_all(params.data.as_bytes())
             .and_then(|()| stdin.flush())
         {
-            Ok(()) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&ProcessStdinResult { success: true }),
-            )),
+            Ok(()) => ok_response::<ProcessStdin>(id, &ProcessStdinResult { success: true }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,

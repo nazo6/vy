@@ -15,7 +15,7 @@ use serde_json::Value;
 use vy_capabilities::TrustedStore;
 use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
-use vy_proto::ErrorCode;
+use vy_proto::{ErrorCode, RpcCall};
 
 use crate::commands::{CommandRegistry, DocumentCommand, PaneCommand, UiCommand};
 use crate::config::Config;
@@ -256,8 +256,7 @@ pub enum HostAction {
         request: vy_js::HostRequest,
     },
     ServerRpc {
-        method: String,
-        params: rmpv::Value,
+        call: RpcCall,
         request: vy_js::HostRequest,
     },
 }
@@ -1049,9 +1048,10 @@ commands.registerCommand("user.hello", async () => {
         );
         let outcome = handle_request(ctx, req);
         match outcome.action {
-            HostAction::ServerRpc { method, params, .. } => {
-                assert_eq!(method, "fs/read_dir");
-                let decoded: vy_proto::FsReadDirParams = vy_proto::decode_value(&params).unwrap();
+            HostAction::ServerRpc { call, .. } => {
+                assert_eq!(call.method, "fs/read_dir");
+                let decoded: vy_proto::FsReadDirParams =
+                    vy_proto::decode_value(&call.params).unwrap();
                 assert_eq!(decoded.uri, "file:///tmp/vy-test");
             }
             other => panic!("expected ServerRpc action, got {other:?}"),
@@ -1075,9 +1075,10 @@ commands.registerCommand("user.hello", async () => {
         );
         let outcome = handle_request(ctx, req);
         match outcome.action {
-            HostAction::ServerRpc { method, params, .. } => {
-                assert_eq!(method, "process/exec");
-                let decoded: vy_proto::ProcessExecParams = vy_proto::decode_value(&params).unwrap();
+            HostAction::ServerRpc { call, .. } => {
+                assert_eq!(call.method, "process/exec");
+                let decoded: vy_proto::ProcessExecParams =
+                    vy_proto::decode_value(&call.params).unwrap();
                 assert_eq!(decoded.command, "git");
                 assert_eq!(decoded.args, vec!["status"]);
             }

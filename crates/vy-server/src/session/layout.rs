@@ -1,8 +1,9 @@
 use vy_proto::{
-    LayoutDidChangeNotification, LayoutGetResult, LayoutPaneInfo, RpcMessage, to_value,
+    LayoutDidChange, LayoutDidChangeNotification, LayoutGet, LayoutGetResult, LayoutPaneInfo,
+    RpcMessage,
 };
 
-use super::{Outcome, Session};
+use super::{Outcome, Session, notification, ok_response};
 
 impl Session {
     /// Returns the whole layout. The client uses this after reconnecting.
@@ -33,20 +34,17 @@ impl Session {
             panes,
         };
 
-        Outcome::one(RpcMessage::ok(id, to_value(&result)))
+        ok_response::<LayoutGet>(id, &result)
     }
 
     pub(super) fn layout_notification(&self, reason: &str) -> RpcMessage {
-        RpcMessage::notification(
-            "layout/did_change",
-            to_value(&LayoutDidChangeNotification {
-                window_id: Some(self.layout.window_id()),
-                revision: self.layout.revision(),
-                layout: self.layout.root().cloned(),
-                floating: Vec::new(),
-                active_pane: self.layout.active_pane(),
-                reason: Some(reason.to_string()),
-            }),
-        )
+        notification::<LayoutDidChange>(&LayoutDidChangeNotification {
+            window_id: Some(self.layout.window_id()),
+            revision: self.layout.revision(),
+            layout: self.layout.root().cloned(),
+            floating: Vec::new(),
+            active_pane: self.layout.active_pane(),
+            reason: Some(reason.to_string()),
+        })
     }
 }

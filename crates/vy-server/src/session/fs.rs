@@ -4,14 +4,15 @@ use std::path::PathBuf;
 
 use vy_core::Uri;
 use vy_proto::{
-    DirEntry, ErrorCode, FileStat, FsCopyParams, FsCopyResult, FsCreateDirParams,
-    FsCreateDirResult, FsExistsParams, FsExistsResult, FsReadDirParams, FsReadDirResult,
-    FsReadFileParams, FsReadFileResult, FsReadTextFileParams, FsReadTextFileResult, FsRemoveParams,
-    FsRemoveResult, FsRenameParams, FsRenameResult, FsStatParams, FsStatResult, FsWriteFileParams,
-    FsWriteFileResult, RpcMessage, decode_value, to_value,
+    DirEntry, ErrorCode, FileStat, FsCopy, FsCopyParams, FsCopyResult, FsCreateDir,
+    FsCreateDirParams, FsCreateDirResult, FsExists, FsExistsParams, FsExistsResult, FsReadDir,
+    FsReadDirParams, FsReadDirResult, FsReadFile, FsReadFileParams, FsReadFileResult,
+    FsReadTextFile, FsReadTextFileParams, FsReadTextFileResult, FsRemove, FsRemoveParams,
+    FsRemoveResult, FsRename, FsRenameParams, FsRenameResult, FsStat, FsStatParams, FsStatResult,
+    FsWriteFile, FsWriteFileParams, FsWriteFileResult, RpcMessage,
 };
 
-use super::{Outcome, Session};
+use super::{Outcome, Session, ok_response};
 
 /// Converts a URI or file path into a local `PathBuf`.
 pub fn uri_to_path(uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
@@ -43,20 +44,13 @@ pub fn uri_to_path(uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
 }
 
 impl Session {
-    pub(super) fn fs_read_file(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsReadFileParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/read_file params",
-            ));
-        };
+    pub(super) fn fs_read_file(&self, id: u64, params: FsReadFileParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
         match std::fs::read(&path) {
-            Ok(bytes) => Outcome::one(RpcMessage::ok(id, to_value(&FsReadFileResult { bytes }))),
+            Ok(bytes) => ok_response::<FsReadFile>(id, &FsReadFileResult { bytes }),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 Outcome::one(RpcMessage::err(
                     id,
@@ -72,20 +66,13 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_read_text_file(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsReadTextFileParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/read_text_file params",
-            ));
-        };
+    pub(super) fn fs_read_text_file(&self, id: u64, params: FsReadTextFileParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
         match std::fs::read_to_string(&path) {
-            Ok(text) => Outcome::one(RpcMessage::ok(id, to_value(&FsReadTextFileResult { text }))),
+            Ok(text) => ok_response::<FsReadTextFile>(id, &FsReadTextFileResult { text }),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 Outcome::one(RpcMessage::err(
                     id,
@@ -101,14 +88,7 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_write_file(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsWriteFileParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/write_file params",
-            ));
-        };
+    pub(super) fn fs_write_file(&self, id: u64, params: FsWriteFileParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -122,10 +102,7 @@ impl Session {
         };
         let len = bytes_to_write.len() as u64;
         match std::fs::write(&path, bytes_to_write) {
-            Ok(()) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&FsWriteFileResult { bytes_written: len }),
-            )),
+            Ok(()) => ok_response::<FsWriteFile>(id, &FsWriteFileResult { bytes_written: len }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,
@@ -134,14 +111,7 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_read_dir(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsReadDirParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/read_dir params",
-            ));
-        };
+    pub(super) fn fs_read_dir(&self, id: u64, params: FsReadDirParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -179,17 +149,10 @@ impl Session {
             });
         }
         entries.sort_by(|a, b| a.name.cmp(&b.name));
-        Outcome::one(RpcMessage::ok(id, to_value(&FsReadDirResult { entries })))
+        ok_response::<FsReadDir>(id, &FsReadDirResult { entries })
     }
 
-    pub(super) fn fs_stat(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsStatParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/stat params",
-            ));
-        };
+    pub(super) fn fs_stat(&self, id: u64, params: FsStatParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -224,32 +187,18 @@ impl Session {
             size: metadata.len(),
             mtime_ms,
         };
-        Outcome::one(RpcMessage::ok(id, to_value(&FsStatResult { stat })))
+        ok_response::<FsStat>(id, &FsStatResult { stat })
     }
 
-    pub(super) fn fs_exists(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsExistsParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/exists params",
-            ));
-        };
+    pub(super) fn fs_exists(&self, id: u64, params: FsExistsParams) -> Outcome {
         let exists = match uri_to_path(&params.uri) {
             Ok(path) => path.exists(),
             Err(_) => false,
         };
-        Outcome::one(RpcMessage::ok(id, to_value(&FsExistsResult { exists })))
+        ok_response::<FsExists>(id, &FsExistsResult { exists })
     }
 
-    pub(super) fn fs_create_dir(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsCreateDirParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/create_dir params",
-            ));
-        };
+    pub(super) fn fs_create_dir(&self, id: u64, params: FsCreateDirParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -260,10 +209,7 @@ impl Session {
             std::fs::create_dir(&path)
         };
         match result {
-            Ok(()) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&FsCreateDirResult { success: true }),
-            )),
+            Ok(()) => ok_response::<FsCreateDir>(id, &FsCreateDirResult { success: true }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,
@@ -272,14 +218,7 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_remove(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsRemoveParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/remove params",
-            ));
-        };
+    pub(super) fn fs_remove(&self, id: u64, params: FsRemoveParams) -> Outcome {
         let path = match uri_to_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -294,10 +233,7 @@ impl Session {
             std::fs::remove_file(&path)
         };
         match result {
-            Ok(()) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&FsRemoveResult { success: true }),
-            )),
+            Ok(()) => ok_response::<FsRemove>(id, &FsRemoveResult { success: true }),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 Outcome::one(RpcMessage::err(
                     id,
@@ -313,14 +249,7 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_rename(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsRenameParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/rename params",
-            ));
-        };
+    pub(super) fn fs_rename(&self, id: u64, params: FsRenameParams) -> Outcome {
         let from = match uri_to_path(&params.from) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -330,10 +259,7 @@ impl Session {
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
         match std::fs::rename(&from, &to) {
-            Ok(()) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&FsRenameResult { success: true }),
-            )),
+            Ok(()) => ok_response::<FsRename>(id, &FsRenameResult { success: true }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,
@@ -342,14 +268,7 @@ impl Session {
         }
     }
 
-    pub(super) fn fs_copy(&self, id: u64, params: rmpv::Value) -> Outcome {
-        let Some(params) = decode_value::<FsCopyParams>(&params) else {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::InvalidParams,
-                "invalid fs/copy params",
-            ));
-        };
+    pub(super) fn fs_copy(&self, id: u64, params: FsCopyParams) -> Outcome {
         let from = match uri_to_path(&params.from) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
@@ -359,10 +278,7 @@ impl Session {
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
         match std::fs::copy(&from, &to) {
-            Ok(_) => Outcome::one(RpcMessage::ok(
-                id,
-                to_value(&FsCopyResult { success: true }),
-            )),
+            Ok(_) => ok_response::<FsCopy>(id, &FsCopyResult { success: true }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,

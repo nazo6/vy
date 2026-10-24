@@ -8,7 +8,10 @@ use std::process::{Child, ChildStdin, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use rmpv::Value;
-use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
+use vy_proto::{
+    FrameDecoder, RpcCall, RpcMessage, RpcMethod, RpcNotification, decode_message, encode_frame,
+    encode_message,
+};
 
 use crate::connection::ConnectionSpec;
 
@@ -65,8 +68,22 @@ impl Client {
         })
     }
 
-    /// Sends a request and returns its id.
-    pub fn request(&mut self, method: &str, params: Value) -> u64 {
+    /// Sends a typed request and returns its id.
+    pub fn request<M: RpcMethod>(&mut self, params: M::Params) -> u64 {
+        self.send(M::METHOD, vy_proto::encode_params::<M>(&params))
+    }
+
+    /// Sends a request built at a dynamic dispatch point.
+    pub fn request_call(&mut self, call: RpcCall) -> u64 {
+        self.send(call.method, call.params)
+    }
+
+    /// Sends a typed notification that expects no response.
+    pub fn notify<N: RpcNotification>(&mut self, params: N::Params) {
+        self.send_notification(N::METHOD, vy_proto::encode_notification::<N>(&params));
+    }
+
+    fn send(&mut self, method: &'static str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -77,8 +94,7 @@ impl Client {
         id
     }
 
-    /// Sends a notification that expects no response.
-    pub fn notify(&mut self, method: &str, params: Value) {
+    fn send_notification(&mut self, method: &'static str, params: Value) {
         let message = RpcMessage::notification(method, params);
         if let Err(error) = self.write(message) {
             eprintln!("vy: could not send the notification: {error}");

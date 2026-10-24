@@ -8,6 +8,7 @@ pub mod error;
 pub mod frame;
 pub mod message;
 pub mod protocol;
+pub mod rpc;
 pub mod value;
 
 pub use error::{ErrorCode, ProtoError};
@@ -16,4 +17,5 @@ pub use frame::{
 };
 pub use message::{PROTOCOL_VERSION, RpcMessage, RpcResult, StreamPayload};
 pub use protocol::*;
+pub use rpc::*;
 pub use value::{decode_value, get, object, to_value, value_of};
