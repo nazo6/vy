@@ -16,6 +16,10 @@ impl Session {
                     pane_id,
                     view: pane.view.clone(),
                     document_id: pane.document_id,
+                    uri: pane
+                        .document_id
+                        .and_then(|document_id| self.documents.get(&document_id))
+                        .map(|buffer| buffer.uri().as_str().to_string()),
                 })
             })
             .collect();

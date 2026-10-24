@@ -11,6 +11,16 @@ impl Session {
         &mut self,
         uri: Uri,
     ) -> Result<(DocumentId, u64, usize, bool), (ErrorCode, String)> {
+        self.document_for_uri_with_text(uri, None)
+    }
+
+    /// Returns the document for a URI, using `provided` instead of the file when
+    /// the client is restoring unsaved text.
+    pub(super) fn document_for_uri_with_text(
+        &mut self,
+        uri: Uri,
+        provided: Option<&str>,
+    ) -> Result<(DocumentId, u64, usize, bool), (ErrorCode, String)> {
         let key = uri.as_str().to_string();
         if let Some(document_id) = self.documents_by_uri.get(&key).copied() {
             let buffer = self
@@ -20,23 +30,25 @@ impl Session {
             return Ok((document_id, buffer.version(), buffer.line_count(), false));
         }
 
-        let text = if uri.scheme() == "file" {
-            let Some(path) = uri.file_path() else {
-                return Err((
-                    ErrorCode::InvalidRequest,
-                    format!("cannot convert to a path: {uri}"),
-                ));
-            };
-            // Phase 1 reads synchronously. Move this to spawn_blocking when large
-            // files arrive.
-            match std::fs::read_to_string(&path) {
-                Ok(text) => text,
-                Err(error) => {
-                    return Err((ErrorCode::NotFound, format!("{}: {error}", path.display())));
+        let text = match provided {
+            Some(text) => text.to_string(),
+            None if uri.scheme() == "file" => {
+                let Some(path) = uri.file_path() else {
+                    return Err((
+                        ErrorCode::InvalidRequest,
+                        format!("cannot convert to a path: {uri}"),
+                    ));
+                };
+                // Phase 1 reads synchronously. Move this to spawn_blocking when large
+                // files arrive.
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => text,
+                    Err(error) => {
+                        return Err((ErrorCode::NotFound, format!("{}: {error}", path.display())));
+                    }
                 }
             }
-        } else {
-            String::new()
+            None => String::new(),
         };
 
         let document_id = self.next_document_id;
@@ -134,6 +146,7 @@ impl Session {
                 document_id: Some(document_id),
             },
         );
+        self.persist_session();
 
         let response = RpcMessage::ok(
             id,
@@ -166,6 +179,7 @@ impl Session {
         if let Err(error) = self.layout.focus(pane_id) {
             return Outcome::one(RpcMessage::err(id, ErrorCode::NotFound, error.to_string()));
         }
+        self.persist_session();
 
         Outcome {
             messages: vec![
@@ -210,6 +224,7 @@ impl Session {
                 self.documents_by_uri.retain(|_, id| *id != document_id);
             }
         }
+        self.persist_session();
 
         Outcome {
             messages: vec![
@@ -268,6 +283,7 @@ impl Session {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.document_id = Some(document_id);
         }
+        self.persist_session();
 
         Outcome::one(RpcMessage::ok(
             id,

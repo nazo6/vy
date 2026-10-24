@@ -1,6 +1,8 @@
 use rmpv::Value;
+use vy_core::Uri;
 use vy_proto::{
-    DidChangeParams, DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage, SnapshotResult,
+    DidChangeParams, DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage,
+    SnapshotResult, SyncRequestParams, SyncRequestResult, SyncedDocument,
 };
 
 use super::{Outcome, Session, decode_params, document_id, to_value};
@@ -84,6 +86,67 @@ impl Session {
                 line_count: Some(buffer.line_count() as u64),
                 text: buffer.text(),
             }),
+        ))
+    }
+
+    /// Rebuilds the documents a reconnecting client sends.
+    ///
+    /// Unsaved text is authoritative and replaces the file contents. Documents
+    /// without text are read from disk so a changed file is picked up.
+    pub(super) fn sync_request(&mut self, id: u64, params: Value) -> Outcome {
+        let Some(params) = decode_params::<SyncRequestParams>(&params) else {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidParams,
+                "could not decode sync/request",
+            ));
+        };
+
+        let mut documents = Vec::with_capacity(params.documents.len());
+        for document in params.documents {
+            let uri = match Uri::parse(document.uri.clone()) {
+                Ok(uri) => uri,
+                Err(error) => {
+                    return Outcome::one(RpcMessage::err(
+                        id,
+                        ErrorCode::InvalidParams,
+                        error.to_string(),
+                    ));
+                }
+            };
+
+            let (document_id, _, _, _) = match self
+                .document_for_uri_with_text(uri, document.text.as_deref())
+            {
+                Ok(document) => document,
+                Err((code, message)) => {
+                    // A saved file that disappeared should not block the rest
+                    // of the reconnect. Leave an empty buffer in its place.
+                    tracing::warn!(uri = %document.uri, %code, %message, "could not reopen a document");
+                    continue;
+                }
+            };
+
+            if let Some(text) = document.text.as_deref()
+                && let Some(buffer) = self.documents.get_mut(&document_id)
+            {
+                buffer.restore(text, document.version, document.saved_version);
+            }
+
+            if let Some(buffer) = self.documents.get(&document_id) {
+                documents.push(SyncedDocument {
+                    uri: buffer.uri().as_str().to_string(),
+                    document_id,
+                    version: buffer.version(),
+                    saved_version: buffer.saved_version(),
+                    text: buffer.text(),
+                });
+            }
+        }
+
+        Outcome::one(RpcMessage::ok(
+            id,
+            to_value(&SyncRequestResult { documents }),
         ))
     }
 

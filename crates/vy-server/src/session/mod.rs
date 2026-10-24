@@ -5,8 +5,10 @@ mod init;
 mod layout;
 mod pane;
 mod process;
+mod state;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use rmpv::Value;
 use vy_core::{Applied, Buffer, DocumentId, Layout, PaneId, Uri};
@@ -39,6 +41,8 @@ pub struct Session {
     layout: Layout,
     processes: process::ProcessTable,
     outgoing: Option<tokio::sync::mpsc::UnboundedSender<RpcMessage>>,
+    data_dir: Option<PathBuf>,
+    state_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -92,7 +96,14 @@ impl Session {
             layout: Layout::new(1),
             processes: HashMap::new(),
             outgoing: None,
+            data_dir: None,
+            state_path: None,
         }
+    }
+
+    /// Enables the saved layout under `data_dir`.
+    pub fn set_data_dir(&mut self, data_dir: PathBuf) {
+        self.data_dir = Some(data_dir);
     }
 
     pub fn set_outgoing(&mut self, sender: tokio::sync::mpsc::UnboundedSender<RpcMessage>) {
@@ -162,6 +173,7 @@ impl Session {
             "editor/open" => self.editor_open(id, params),
             "document/save" => self.save_document(id, params),
             "buffer/snapshot" => self.snapshot(id, params),
+            "sync/request" => self.sync_request(id, params),
             "buffer/undo" => self.undo(id, params),
             "buffer/redo" => self.redo(id, params),
             "fs/read_file" => self.fs_read_file(id, params),

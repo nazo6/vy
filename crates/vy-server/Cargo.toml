@@ -10,6 +10,7 @@ name = "vy-server"
 path = "src/main.rs"
 
 [dependencies]
+dirs.workspace = true
 rmp-serde.workspace = true
 rmpv.workspace = true
 serde.workspace = true

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use vy_proto::{FrameDecoder, RpcMessage, decode_message, encode_frame, encode_message};
@@ -7,14 +9,18 @@ use crate::session::Session;
 /// Handles RPC over stdio.
 ///
 /// Logs always go to stderr. Stdout is reserved for frames.
-pub async fn serve() -> std::io::Result<()> {
+pub async fn serve(data_dir: PathBuf) -> std::io::Result<()> {
     let mut input = tokio::io::stdin();
     let mut output = tokio::io::stdout();
-    serve_with(&mut input, &mut output).await
+    serve_with(&mut input, &mut output, Some(data_dir)).await
 }
 
 /// Core loop with swappable I/O. Used by tests.
-pub async fn serve_with<R, W>(input: &mut R, output: &mut W) -> std::io::Result<()>
+pub async fn serve_with<R, W>(
+    input: &mut R,
+    output: &mut W,
+    data_dir: Option<PathBuf>,
+) -> std::io::Result<()>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -23,6 +29,9 @@ where
     let mut chunk = vec![0u8; 8 * 1024];
     let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut session = Session::new();
+    if let Some(data_dir) = data_dir {
+        session.set_data_dir(data_dir);
+    }
     session.set_outgoing(outgoing_tx);
 
     loop {

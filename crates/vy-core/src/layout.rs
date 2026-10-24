@@ -79,6 +79,28 @@ impl Layout {
         }
     }
 
+    /// Rebuilds a layout from a saved tree.
+    ///
+    /// An active pane that is not in the tree falls back to the first leaf.
+    pub fn restore(
+        window_id: WindowId,
+        root: Option<LayoutNode>,
+        active_pane: Option<PaneId>,
+        revision: u64,
+    ) -> Self {
+        let mut layout = Self {
+            window_id,
+            root,
+            active_pane: None,
+            revision,
+        };
+        let leaves = layout.leaves();
+        layout.active_pane = active_pane
+            .filter(|pane| leaves.contains(pane))
+            .or_else(|| leaves.first().copied());
+        layout
+    }
+
     pub fn window_id(&self) -> WindowId {
         self.window_id
     }
@@ -244,6 +266,35 @@ fn remove_leaf(node: &mut LayoutNode, pane: PaneId) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restores_a_saved_tree_and_active_pane() {
+        let root = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.3,
+            first: Box::new(LayoutNode::Leaf { pane_id: 4 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 5 }),
+        };
+        let layout = Layout::restore(7, Some(root.clone()), Some(5), 12);
+
+        assert_eq!(layout.window_id(), 7);
+        assert_eq!(layout.root(), Some(&root));
+        assert_eq!(layout.active_pane(), Some(5));
+        assert_eq!(layout.revision(), 12);
+        assert_eq!(layout.leaves(), vec![4, 5]);
+    }
+
+    #[test]
+    fn restore_falls_back_when_the_active_pane_is_missing() {
+        let root = LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+        };
+        let layout = Layout::restore(1, Some(root), Some(99), 0);
+        assert_eq!(layout.active_pane(), Some(1));
+    }
 
     #[test]
     fn first_open_becomes_the_root() {

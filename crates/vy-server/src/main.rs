@@ -4,6 +4,7 @@
 //! `--version`. The workspace and the log destination come in the `initialize`
 //! params (`docs/protocol.md`).
 
+mod paths;
 mod session;
 mod stdio;
 
@@ -45,7 +46,7 @@ async fn main() -> ExitCode {
 
     init_tracing();
 
-    match stdio::serve().await {
+    match stdio::serve(paths::data_dir()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "failed to process stdio");

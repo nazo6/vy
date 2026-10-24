@@ -143,6 +143,43 @@ pub struct ResyncNotification {
     pub text: String,
 }
 
+/// One document in a `sync/request`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncDocument {
+    pub uri: String,
+    pub version: u64,
+    #[serde(default)]
+    pub saved_version: u64,
+    /// Present only when the client has unsaved edits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// Parameters for `sync/request`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncRequestParams {
+    #[serde(default)]
+    pub documents: Vec<SyncDocument>,
+}
+
+/// One synchronized document in the reply to `sync/request`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncedDocument {
+    pub uri: String,
+    pub document_id: u64,
+    pub version: u64,
+    #[serde(default)]
+    pub saved_version: u64,
+    pub text: String,
+}
+
+/// Reply to `sync/request`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncRequestResult {
+    #[serde(default)]
+    pub documents: Vec<SyncedDocument>,
+}
+
 /// Notification payload for `buffer/did_change`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DidChangeParams {
@@ -177,6 +214,9 @@ pub struct LayoutPaneInfo {
     pub view: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_id: Option<u64>,
+    /// URI of the document shown in the pane, used to remap after a reconnect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
 }
 
 /// Response from `layout/get`.

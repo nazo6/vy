@@ -92,6 +92,22 @@ impl Buffer {
         self.version
     }
 
+    pub fn saved_version(&self) -> Version {
+        self.saved_version
+    }
+
+    /// Replaces the contents without recording an undo entry.
+    ///
+    /// Used when a client reconnects and restores unsaved text. The history is
+    /// dropped because the previous core session is gone.
+    pub fn restore(&mut self, text: impl AsRef<str>, version: Version, saved_version: Version) {
+        self.text = Text::new(text);
+        self.version = version;
+        self.saved_version = saved_version;
+        self.undo.clear();
+        self.redo.clear();
+    }
+
     pub fn line_count(&self) -> usize {
         self.text.line_count()
     }
@@ -530,5 +546,20 @@ mod tests {
         buffer.undo().expect("undo").expect("b");
         assert_eq!(buffer.undo().expect("undo"), None);
         assert_eq!(buffer.text(), "a");
+    }
+
+    #[test]
+    fn restore_replaces_the_text_and_drops_history() {
+        let mut buffer = buffer("old\n");
+        apply(&mut buffer, vec![edit(at(0, 0), at(0, 3), "new")]);
+        assert_eq!(buffer.version(), 1);
+
+        buffer.restore("restored", 42, 40);
+
+        assert_eq!(buffer.text(), "restored");
+        assert_eq!(buffer.version(), 42);
+        assert_eq!(buffer.saved_version(), 40);
+        assert!(buffer.is_dirty());
+        assert_eq!(buffer.undo().expect("undo"), None);
     }
 }

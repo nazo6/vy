@@ -45,6 +45,12 @@ impl Session {
             None => None,
         };
         self.workspace = workspace;
+        self.state_path = self
+            .data_dir
+            .as_ref()
+            .zip(self.workspace.as_ref())
+            .map(|(data_dir, workspace)| super::state::workspace_state_path(data_dir, workspace));
+        self.restore_session();
 
         let session_id = self.next_session_id;
         self.next_session_id += 1;
@@ -57,7 +63,7 @@ impl Session {
                 protocol_version: PROTOCOL_VERSION,
                 session_id,
                 server_version: env!("CARGO_PKG_VERSION").into(),
-                server_capabilities: Vec::new(),
+                server_capabilities: vec!["stream".into(), "session-restore".into()],
                 platform: PlatformInfo {
                     os: std::env::consts::OS.into(),
                     path_separator: std::path::MAIN_SEPARATOR.to_string(),

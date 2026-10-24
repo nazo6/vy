@@ -6504,6 +6504,7 @@ dependencies = [
 name = "vy-server"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "rmp-serde",
  "rmpv",
  "serde",

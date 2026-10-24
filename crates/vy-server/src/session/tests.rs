@@ -2,7 +2,8 @@ use super::*;
 use vy_core::{Position, Range, Selection, SplitDirection, TextEdit};
 use vy_proto::value::object;
 use vy_proto::{
-    DidChangeParams, InitializeParams, PROTOCOL_VERSION, PaneOpenParams, PaneOpenResult, RpcResult,
+    DidChangeParams, InitializeParams, LayoutGetResult, PROTOCOL_VERSION, PaneOpenParams,
+    PaneOpenResult, RpcResult, SyncDocument, SyncRequestParams, SyncRequestResult,
 };
 
 fn request(session: &mut Session, id: u64, method: &str, params: Value) -> Outcome {
@@ -620,4 +621,142 @@ fn fs_and_process_operations() {
 
     // Clean up
     std::fs::remove_dir_all(&temp_dir).ok();
+}
+
+fn temp_session(name: &str, workspace: &std::path::Path) -> (std::path::PathBuf, Session) {
+    let data = std::env::temp_dir().join(format!(
+        "vy-session-{name}-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&data);
+    std::fs::create_dir_all(&data).expect("data dir");
+    let mut session = Session::new();
+    session.set_data_dir(data.clone());
+    let workspace_uri = format!("file://{}", workspace.display());
+    session.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        to_value(&InitializeParams {
+            protocol_version: PROTOCOL_VERSION,
+            client_version: "0.1.0".into(),
+            client_capabilities: Vec::new(),
+            workspace: Some(workspace_uri),
+            resume_session: None,
+        }),
+    ));
+    (data, session)
+}
+
+#[test]
+fn restores_the_layout_and_open_documents_for_a_workspace() {
+    let workspace =
+        std::env::temp_dir().join(format!("vy-workspace-restore-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&workspace);
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let file = workspace.join("note.txt");
+    std::fs::write(&file, "hello").expect("write file");
+    let file_uri = format!("file://{}", file.display());
+
+    let (data, mut first) = temp_session("restore-first", &workspace);
+    let outcome = request(
+        &mut first,
+        2,
+        "pane/open",
+        to_value(&PaneOpenParams {
+            view: None,
+            uri: file_uri.clone(),
+            placement: None,
+        }),
+    );
+    let opened: PaneOpenResult = decode_params(ok_value(&outcome.messages[0])).expect("open");
+    assert!(!outcome.close);
+
+    let mut second = Session::new();
+    second.set_data_dir(data.clone());
+    second.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        to_value(&InitializeParams {
+            protocol_version: PROTOCOL_VERSION,
+            client_version: "0.1.0".into(),
+            client_capabilities: Vec::new(),
+            workspace: Some(format!("file://{}", workspace.display())),
+            resume_session: None,
+        }),
+    ));
+
+    let outcome = request(&mut second, 2, "layout/get", Value::Nil);
+    let layout: LayoutGetResult = decode_params(ok_value(&outcome.messages[0])).expect("layout");
+    assert_eq!(layout.active_pane, Some(opened.pane_id));
+    assert_eq!(layout.panes.len(), 1);
+    assert_eq!(layout.panes[0].pane_id, opened.pane_id);
+    assert_eq!(layout.panes[0].uri.as_deref(), Some(file_uri.as_str()));
+    assert!(layout.panes[0].document_id.is_some());
+
+    let _ = std::fs::remove_dir_all(&data);
+    let _ = std::fs::remove_dir_all(&workspace);
+}
+
+#[test]
+fn sync_request_replaces_unsaved_text_and_keeps_saved_version() {
+    let workspace = std::env::temp_dir().join(format!("vy-workspace-sync-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&workspace);
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let file = workspace.join("note.txt");
+    std::fs::write(&file, "from disk").expect("write file");
+    let file_uri = format!("file://{}", file.display());
+
+    let (data, mut first) = temp_session("sync-first", &workspace);
+    let outcome = request(
+        &mut first,
+        2,
+        "pane/open",
+        to_value(&PaneOpenParams {
+            view: None,
+            uri: file_uri.clone(),
+            placement: None,
+        }),
+    );
+    let opened: PaneOpenResult = decode_params(ok_value(&outcome.messages[0])).expect("open");
+
+    let mut second = Session::new();
+    second.set_data_dir(data.clone());
+    second.handle(RpcMessage::request(
+        1,
+        0,
+        "initialize",
+        to_value(&InitializeParams {
+            protocol_version: PROTOCOL_VERSION,
+            client_version: "0.1.0".into(),
+            client_capabilities: Vec::new(),
+            workspace: Some(format!("file://{}", workspace.display())),
+            resume_session: None,
+        }),
+    ));
+
+    let outcome = request(
+        &mut second,
+        2,
+        "sync/request",
+        to_value(&SyncRequestParams {
+            documents: vec![SyncDocument {
+                uri: file_uri.clone(),
+                version: 7,
+                saved_version: 5,
+                text: Some("unsaved text".into()),
+            }],
+        }),
+    );
+    let synced: SyncRequestResult = decode_params(ok_value(&outcome.messages[0])).expect("sync");
+    assert_eq!(synced.documents.len(), 1);
+    assert_eq!(synced.documents[0].text, "unsaved text");
+    assert_eq!(synced.documents[0].version, 7);
+    assert_eq!(synced.documents[0].saved_version, 5);
+    assert_eq!(synced.documents[0].document_id, opened.document_id);
+
+    let _ = std::fs::remove_dir_all(&data);
+    let _ = std::fs::remove_dir_all(&workspace);
 }
