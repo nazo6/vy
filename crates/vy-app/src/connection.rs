@@ -66,8 +66,11 @@ impl ConnectionSpec {
                     Some(user) => format!("{user}@{host}"),
                     None => host.clone(),
                 };
-                command.arg(destination);
+                // `--` ends local option parsing, so it must come before the
+                // destination. Everything after the destination is the remote
+                // command.
                 command.arg("--");
+                command.arg(destination);
                 command.arg(server_path);
                 command.arg("--stdio");
                 command
@@ -303,8 +306,8 @@ mod tests {
                 "-T",
                 "-p",
                 "2222",
-                "nazo@example.com",
                 "--",
+                "nazo@example.com",
                 "/usr/local/bin/vy-server",
                 "--stdio",
             ]
@@ -327,7 +330,7 @@ mod tests {
             .collect();
         assert_eq!(
             args,
-            vec!["-T", "example.com", "--", "vy-server", "--stdio"]
+            vec!["-T", "--", "example.com", "vy-server", "--stdio"]
         );
     }
 
