@@ -6,7 +6,6 @@ use crate::position::{Position, Range};
 
 /// One change to the text: replaces `range` with `text`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct TextEdit {
     pub range: Range,
     pub text: String,

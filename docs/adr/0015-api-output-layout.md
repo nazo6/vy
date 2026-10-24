@@ -48,8 +48,9 @@ ADR 0009 と [0014](./0014-api-codegen-cli.md) で生成元は
 渡します。
 
 `TS_RS_EXPORT_DIR` は、`ts-rs` の自動テストに出力先を教えるための環境変数
-でした。現在は `#[ts(export)]` の自動テストを使っておらず、codegen が
-`Output.types_dir` に直接書くため、環境変数は不要です。
+でした。`vy-core` と `vy-proto` に残っていた `#[ts(export)]` も外し、codegen が
+`Output.types_dir` に直接書くため、環境変数は不要です。これで `cargo test` が
+生成物を書き換える経路もなくなります。
 
 ### 3. パッケージの公開面を1つにする
 

@@ -253,7 +253,6 @@ pub struct LayoutDidChangeNotification {
 
 /// Information about a directory entry returned by `fs/read_dir`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct DirEntry {
     pub name: String,
     pub uri: String,
@@ -264,7 +263,6 @@ pub struct DirEntry {
 
 /// File metadata returned by `fs/stat`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct FileStat {
     pub is_file: bool,
     pub is_directory: bool,
@@ -406,7 +404,6 @@ pub struct FsCopyResult {
 
 /// Parameters for `process/exec`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct ProcessExecParams {
     pub command: String,
     #[serde(default)]
@@ -419,7 +416,6 @@ pub struct ProcessExecParams {
 
 /// Output of a completed process.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct ProcessOutput {
     pub exit_code: i32,
     pub stdout: String,

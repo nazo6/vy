@@ -7,7 +7,6 @@ use ts_rs::TS;
 /// internally and converts to this type at the boundary (see "Position representation"
 /// in `docs/architecture.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct Position {
     pub line: u32,
     pub character: u32,
@@ -21,7 +20,6 @@ impl Position {
 
 /// A range between two positions. The end is exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct Range {
     pub start: Position,
     pub end: Position,
@@ -40,7 +38,6 @@ impl Range {
 
 /// A cursor. A point when `anchor` and `head` are equal, otherwise a selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct Selection {
     pub anchor: Position,
     pub head: Position,
