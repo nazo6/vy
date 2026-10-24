@@ -306,6 +306,18 @@ impl EditorView {
             } => {
                 self.open_custom_picker(id, items, placeholder, request);
             }
+            HostAction::ServerRpc {
+                method,
+                params,
+                request,
+            } => {
+                let Some(client) = self.client.as_mut() else {
+                    request.respond_error("RemoteDisconnected", "not connected to vy-server");
+                    return;
+                };
+                let id = client.request(&method, params);
+                self.pending.insert(id, Pending::HostCall { request });
+            }
         }
 
         self.ensure_cursor_visible();

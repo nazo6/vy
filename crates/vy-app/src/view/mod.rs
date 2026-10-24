@@ -34,7 +34,7 @@ use vy_core::{LayoutNode, PaneId};
 use vy_proto::{InitializeParams, PROTOCOL_VERSION, to_value};
 
 /// The kind of request we are waiting for a response to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) enum Pending {
     Initialize,
     Open,
@@ -45,6 +45,7 @@ pub(super) enum Pending {
     Focus,
     EditorOpen,
     Save,
+    HostCall { request: vy_js::HostRequest },
 }
 
 pub struct EditorView {

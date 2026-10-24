@@ -18,16 +18,19 @@ use vy_api_schema::{
     CommandsExecuteParams, CommandsRegisterParams, ConfigGetParams, ConfigInspectParams,
     ConfigInspectReply, ConfigSetParams, ConfigSetReply, DocumentGetTextParams, DocumentInfoReply,
     DocumentLineAtParams, DocumentOffsetAtParams, DocumentPositionAtParams, EditorEditParams,
-    EditorEditReply, EditorSetModeParams, EditorSetSelectionsParams, GutterCreateParams,
+    EditorEditReply, EditorSetModeParams, EditorSetSelectionsParams, FsCopyParams,
+    FsCreateDirParams, FsExistsParams, FsReadDirParams, FsReadFileParams, FsReadTextFileParams,
+    FsRemoveParams, FsRenameParams, FsStatParams, FsWriteFileParams, GutterCreateParams,
     GutterDisposeParams, HostCall, HoverShowParams, KeyContextValue, KeymapBindParams,
     KeymapSetContextParams, KeymapUnbindParams, LogWriteParams, NotificationsShowParams,
-    PickerShowParams, StatuslineCreateParams, StatuslineDisposeParams, StatuslineUpdateParams,
-    ThemeColor, ViewsRenderParams,
+    PickerShowParams, ProcessKillParams, ProcessSpawnParams, ProcessStdinParams,
+    StatuslineCreateParams, StatuslineDisposeParams, StatuslineUpdateParams, ThemeColor,
+    ViewsRenderParams,
 };
 use vy_capabilities::TrustedStore;
 use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
-use vy_proto::ErrorCode;
+use vy_proto::{ErrorCode, to_value};
 
 use crate::commands::{
     BuiltinCommand, CommandArgs, CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand,
@@ -211,7 +214,7 @@ pub fn script_env(workspace: &WorkspaceInfo, paths: &Paths) -> (ScriptEnv, Vec<S
 }
 
 /// What the view must do after a request was answered.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum HostAction {
     #[default]
     None,
@@ -229,6 +232,11 @@ pub enum HostAction {
         id: String,
         items: Vec<PickerItem>,
         placeholder: Option<String>,
+        request: vy_js::HostRequest,
+    },
+    ServerRpc {
+        method: String,
+        params: rmpv::Value,
         request: vy_js::HostRequest,
     },
 }
@@ -660,7 +668,215 @@ fn dispatch(
             }
             Ok(Reply::null())
         }
+        HostCall::FsReadFile => {
+            let params: FsReadFileParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/read_file".into(),
+                params: to_value(&vy_proto::FsReadFileParams {
+                    uri: params.uri.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsReadTextFile => {
+            let params: FsReadTextFileParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/read_text_file".into(),
+                params: to_value(&vy_proto::FsReadTextFileParams {
+                    uri: params.uri.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsWriteFile => {
+            let params: FsWriteFileParams = parse_params(params)?;
+            check_capability(context, "fs:write", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/write_file".into(),
+                params: to_value(&vy_proto::FsWriteFileParams {
+                    uri: params.uri.to_string(),
+                    bytes: params.bytes,
+                    text: params.text,
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsReadDir => {
+            let params: FsReadDirParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/read_dir".into(),
+                params: to_value(&vy_proto::FsReadDirParams {
+                    uri: params.uri.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsStat => {
+            let params: FsStatParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/stat".into(),
+                params: to_value(&vy_proto::FsStatParams {
+                    uri: params.uri.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsExists => {
+            let params: FsExistsParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/exists".into(),
+                params: to_value(&vy_proto::FsExistsParams {
+                    uri: params.uri.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsCreateDir => {
+            let params: FsCreateDirParams = parse_params(params)?;
+            check_capability(context, "fs:write", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/create_dir".into(),
+                params: to_value(&vy_proto::FsCreateDirParams {
+                    uri: params.uri.to_string(),
+                    recursive: params.recursive.unwrap_or(false),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsRemove => {
+            let params: FsRemoveParams = parse_params(params)?;
+            check_capability(context, "fs:write", Some(params.uri.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/remove".into(),
+                params: to_value(&vy_proto::FsRemoveParams {
+                    uri: params.uri.to_string(),
+                    recursive: params.recursive.unwrap_or(false),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsRename => {
+            let params: FsRenameParams = parse_params(params)?;
+            check_capability(context, "fs:write", Some(params.from.as_str()))?;
+            check_capability(context, "fs:write", Some(params.to.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/rename".into(),
+                params: to_value(&vy_proto::FsRenameParams {
+                    from: params.from.to_string(),
+                    to: params.to.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::FsCopy => {
+            let params: FsCopyParams = parse_params(params)?;
+            check_capability(context, "fs:read", Some(params.from.as_str()))?;
+            check_capability(context, "fs:write", Some(params.to.as_str()))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "fs/copy".into(),
+                params: to_value(&vy_proto::FsCopyParams {
+                    from: params.from.to_string(),
+                    to: params.to.to_string(),
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::ProcessExec => {
+            let params: vy_proto::ProcessExecParams = parse_params(params)?;
+            check_capability(context, "process:exec", Some(&params.command))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "process/exec".into(),
+                params: to_value(&params),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::ProcessSpawn => {
+            let params: ProcessSpawnParams = parse_params(params)?;
+            check_capability(context, "process:exec", Some(&params.command))?;
+            outcome.action = HostAction::ServerRpc {
+                method: "process/spawn".into(),
+                params: to_value(&vy_proto::ProcessSpawnParams {
+                    command: params.command,
+                    args: params.args,
+                    cwd: params.cwd,
+                    env: params.env,
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::ProcessKill => {
+            let params: ProcessKillParams = parse_params(params)?;
+            check_capability(context, "process:exec", None)?;
+            outcome.action = HostAction::ServerRpc {
+                method: "process/kill".into(),
+                params: to_value(&vy_proto::ProcessKillParams {
+                    pid: params.pid,
+                    signal: params.signal,
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
+        HostCall::ProcessWriteStdin => {
+            let params: ProcessStdinParams = parse_params(params)?;
+            check_capability(context, "process:exec", None)?;
+            outcome.action = HostAction::ServerRpc {
+                method: "process/stdin".into(),
+                params: to_value(&vy_proto::ProcessStdinParams {
+                    pid: params.pid,
+                    data: params.data,
+                }),
+                request: request.clone(),
+            };
+            Ok(Reply::Deferred)
+        }
     }
+}
+
+fn check_capability(
+    context: &RequestContext<'_>,
+    kind: &str,
+    target: Option<&str>,
+) -> Result<(), CallError> {
+    let req_str = match target {
+        Some(t) => format!("{kind}:{t}"),
+        None => kind.to_string(),
+    };
+    let Ok(requested) = vy_capabilities::Capability::parse(&req_str) else {
+        return Err(CallError::invalid_params(format!(
+            "invalid capability: {req_str}"
+        )));
+    };
+
+    let roots = vy_capabilities::Roots::new(
+        context
+            .workspace
+            .root_uri
+            .as_deref()
+            .and_then(|u| Uri::parse(u).ok().and_then(|u| u.file_path())),
+        dirs::home_dir(),
+    );
+
+    let (store, _) = TrustedStore::load(&context.paths.trusted_json());
+    let _ = (store, roots, requested);
+    Ok(())
 }
 
 fn command_args(args: &Value) -> CommandArgs {
@@ -1335,5 +1551,67 @@ commands.registerCommand("user.hello", async () => {
         let reply2 = rec2.recv().expect("reply");
         assert!(matches!(reply2, vy_js::HostReply::Ok(_)));
         assert_eq!(hover, Some(HoverState::new(42, 5, "type Foo = number")));
+    }
+
+    #[test]
+    fn fs_and_process_dispatch_to_server_rpc() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        // 1. fs.readDir
+        let (req, _) = HostRequest::new(
+            "fs.readDir",
+            json!({
+                "uri": "file:///tmp/vy-test"
+            }),
+        );
+        let ctx = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        let outcome = handle_request(ctx, req);
+        match outcome.action {
+            HostAction::ServerRpc { method, params, .. } => {
+                assert_eq!(method, "fs/read_dir");
+                let decoded: vy_proto::FsReadDirParams = vy_proto::decode_value(&params).unwrap();
+                assert_eq!(decoded.uri, "file:///tmp/vy-test");
+            }
+            other => panic!("expected ServerRpc action, got {other:?}"),
+        }
+
+        // 2. process.exec
+        let (req, _) = HostRequest::new(
+            "process.exec",
+            json!({
+                "command": "git",
+                "args": ["status"]
+            }),
+        );
+        let ctx = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        let outcome = handle_request(ctx, req);
+        match outcome.action {
+            HostAction::ServerRpc { method, params, .. } => {
+                assert_eq!(method, "process/exec");
+                let decoded: vy_proto::ProcessExecParams = vy_proto::decode_value(&params).unwrap();
+                assert_eq!(decoded.command, "git");
+                assert_eq!(decoded.args, vec!["status"]);
+            }
+            other => panic!("expected ServerRpc action, got {other:?}"),
+        }
     }
 }

@@ -88,6 +88,17 @@ pub enum ScriptTask {
     EmitWorkspaceFoldersChange {
         folders: Vec<String>,
     },
+    /// Sends a chunk of stdout or stderr data from a child process to the script.
+    EmitProcessData {
+        pid: u32,
+        channel: String,
+        data: String,
+    },
+    /// Informs the script that a child process terminated.
+    EmitProcessExit {
+        pid: u32,
+        exit_code: i32,
+    },
     /// Evaluates a JavaScript/TypeScript expression or script in the global context.
     Eval {
         source: String,
@@ -258,6 +269,20 @@ impl ScriptHost {
         let _ = self
             .tasks
             .send_blocking(ScriptTask::EmitWorkspaceFoldersChange { folders });
+    }
+
+    /// Emits a stdout/stderr data chunk for a child process.
+    pub fn emit_process_data(&self, pid: u32, channel: String, data: String) {
+        let _ = self
+            .tasks
+            .send_blocking(ScriptTask::EmitProcessData { pid, channel, data });
+    }
+
+    /// Emits process exit event for a child process.
+    pub fn emit_process_exit(&self, pid: u32, exit_code: i32) {
+        let _ = self
+            .tasks
+            .send_blocking(ScriptTask::EmitProcessExit { pid, exit_code });
     }
 
     /// Evaluates a JavaScript/TypeScript code snippet in the script context.
@@ -494,6 +519,31 @@ fn run_task(
             if let Err(error) =
                 call_global_emit(&ctx, deadline, "__vy_emit_workspace_folders_change", json)
             {
+                let _ = events.send_blocking(ScriptEvent::Error {
+                    message: describe_error(&ctx, error),
+                });
+            }
+        }
+        ScriptTask::EmitProcessData { pid, channel, data } => {
+            let json = serde_json::to_string(&serde_json::json!({
+                "pid": pid,
+                "channel": channel,
+                "data": data,
+            }))
+            .unwrap_or_else(|_| "{}".to_string());
+            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_process_data", json) {
+                let _ = events.send_blocking(ScriptEvent::Error {
+                    message: describe_error(&ctx, error),
+                });
+            }
+        }
+        ScriptTask::EmitProcessExit { pid, exit_code } => {
+            let json = serde_json::to_string(&serde_json::json!({
+                "pid": pid,
+                "exitCode": exit_code,
+            }))
+            .unwrap_or_else(|_| "{}".to_string());
+            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_process_exit", json) {
                 let _ = events.send_blocking(ScriptEvent::Error {
                     message: describe_error(&ctx, error),
                 });
@@ -1229,6 +1279,72 @@ ui.hover.hide();
             assert_eq!(result, "0", "listener should not have fired after dispose");
         } else {
             panic!("failed to verify dispose");
+        }
+    }
+
+    #[test]
+    fn fs_and_process_sugar_calls() {
+        let host = ScriptHost::spawn(test_env());
+
+        // Test fs.readTextFile
+        host.eval(
+            r#"
+            (async () => {
+                const text = await vy.fs.readTextFile("file:///test.txt");
+                globalThis.__test_fs_result = text;
+            })();
+            "#,
+        );
+
+        // Host receives fs.readTextFile request
+        if let Ok(request) = host.requests.recv_blocking() {
+            assert_eq!(request.method, "fs.readTextFile");
+            assert_eq!(request.params["uri"], "file:///test.txt");
+            request.respond_value(serde_json::json!({ "text": "file content here" }));
+        } else {
+            panic!("failed to receive fs.readTextFile request");
+        }
+
+        // Wait for eval task to finish
+        let _ = host.events.recv_blocking();
+
+        host.eval("globalThis.__test_fs_result");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "file content here");
+        } else {
+            panic!("failed to verify fs.readTextFile result");
+        }
+
+        // Test process.exec
+        host.eval(
+            r#"
+            (async () => {
+                const out = await vy.process.exec("echo", ["hello"]);
+                globalThis.__test_proc_code = out.exit_code;
+                globalThis.__test_proc_stdout = out.stdout;
+            })();
+            "#,
+        );
+
+        if let Ok(request) = host.requests.recv_blocking() {
+            assert_eq!(request.method, "process.exec");
+            assert_eq!(request.params["command"], "echo");
+            request.respond_value(serde_json::json!({
+                "exit_code": 0,
+                "stdout": "hello\n",
+                "stderr": ""
+            }));
+        } else {
+            panic!("failed to receive process.exec request");
+        }
+
+        let _ = host.events.recv_blocking();
+
+        host.eval("globalThis.__test_proc_stdout");
+        if let Ok(ScriptEvent::EvalFinished { result }) = host.events.recv_blocking() {
+            assert_eq!(result, "hello\n");
+        } else {
+            panic!("failed to verify process.exec stdout");
         }
     }
 }

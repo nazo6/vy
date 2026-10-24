@@ -19,9 +19,11 @@ import type {
   CommandsSugar,
   ConfigSugar,
   EditorSugar,
+  FsSugar,
   KeymapSugar,
   LogSugar,
   NotificationsSugar,
+  ProcessSugar,
   UiGutterSugar,
   UiPickerSugar,
   UiStatuslineSugar,
@@ -41,6 +43,7 @@ export type {
   ConfigSetParams,
   ConfigSetReply,
   ContainerKind,
+  DirEntry,
   DocumentGetTextParams,
   DocumentInfoReply,
   DocumentLineAtParams,
@@ -51,7 +54,28 @@ export type {
   EditorSetModeParams,
   EditorSetSelectionsParams,
   ErrorCode,
+  FileStat,
   Font,
+  FsCopyParams,
+  FsCopyReply,
+  FsCreateDirParams,
+  FsCreateDirReply,
+  FsExistsParams,
+  FsExistsReply,
+  FsReadDirParams,
+  FsReadDirReply,
+  FsReadFileParams,
+  FsReadFileReply,
+  FsReadTextFileParams,
+  FsReadTextFileReply,
+  FsRemoveParams,
+  FsRemoveReply,
+  FsRenameParams,
+  FsRenameReply,
+  FsStatParams,
+  FsStatReply,
+  FsWriteFileParams,
+  FsWriteFileReply,
   Gap,
   GutterCreateParams,
   GutterDisposeParams,
@@ -66,6 +90,14 @@ export type {
   PickerItem,
   PickerShowParams,
   Position,
+  ProcessExecParams,
+  ProcessKillParams,
+  ProcessKillReply,
+  ProcessOutput,
+  ProcessSpawnParams,
+  ProcessSpawnReply,
+  ProcessStdinParams,
+  ProcessStdinReply,
   Range,
   Selection,
   SettingsKey,
@@ -82,6 +114,7 @@ export type {
 } from "../vy-api-types";
 
 export type {
+  ChildProcess,
   Disposable,
   Document,
   EditorEditBuilder,
@@ -89,6 +122,7 @@ export type {
   GutterItemOptions,
   LogChannel,
   PluginContext,
+  ProcessOptions,
   RemoteApi,
   ShowPickerOptions,
   StatuslineItem,
@@ -207,6 +241,18 @@ export interface ViewsApi extends ViewsSugar {
 }
 /** Registers and looks up pane views. */
 export const views: ViewsApi;
+
+/** Reads, writes, and inspects files in the workspace. */
+export interface FsApi extends FsSugar {
+}
+/** Reads, writes, and inspects files in the workspace. */
+export const fs: FsApi;
+
+/** Runs and manages external processes. */
+export interface ProcessApi extends ProcessSugar {
+}
+/** Runs and manages external processes. */
+export const process: ProcessApi;
 
 export { context, remote } from "./overrides";
 

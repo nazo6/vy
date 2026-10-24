@@ -53,6 +53,11 @@ impl EditorView {
             RpcMessage::Notification { method, params } => {
                 self.handle_notification(&method, params)
             }
+            RpcMessage::Stream {
+                stream_id, payload, ..
+            } => {
+                self.handle_stream(stream_id, payload);
+            }
             other => {
                 eprintln!("vy: unsupported message: {other:?}");
             }
@@ -65,10 +70,20 @@ impl EditorView {
         };
 
         match result {
-            RpcResult::Err { code, message, .. } => {
-                self.status = format!("{code}: {message}").into();
-            }
+            RpcResult::Err { code, message, .. } => match pending {
+                Pending::HostCall { request } => {
+                    request.respond_error(&code.to_string(), message);
+                }
+                _ => {
+                    self.status = format!("{code}: {message}").into();
+                }
+            },
             RpcResult::Ok { value } => match pending {
+                Pending::HostCall { request } => {
+                    let json_val = decode_value::<serde_json::Value>(&value)
+                        .unwrap_or(serde_json::Value::Null);
+                    request.respond_value(json_val);
+                }
                 Pending::Initialize => {
                     if let Some(init) = decode_value::<InitializeResult>(&value)
                         && let Some(client) = self.client.as_mut()
@@ -83,6 +98,43 @@ impl EditorView {
                 Pending::EditorOpen => self.editor_opened(&value),
                 Pending::Save => self.saved(&value),
             },
+        }
+    }
+
+    fn handle_stream(&mut self, stream_id: u64, payload: vy_proto::StreamPayload) {
+        let pid = stream_id as u32;
+        let Some(plugin) = self.plugin.as_ref() else {
+            return;
+        };
+        match payload {
+            vy_proto::StreamPayload::Chunk(val) => {
+                let json =
+                    decode_value::<serde_json::Value>(&val).unwrap_or(serde_json::Value::Null);
+                let channel = json
+                    .get("channel")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("stdout")
+                    .to_string();
+                let data = json
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                plugin.script().emit_process_data(pid, channel, data);
+            }
+            vy_proto::StreamPayload::End { summary } => {
+                let exit_code = summary
+                    .and_then(|s| decode_value::<serde_json::Value>(&s))
+                    .and_then(|s| s.get("exit_code").and_then(|v| v.as_i64()))
+                    .unwrap_or(0) as i32;
+                plugin.script().emit_process_exit(pid, exit_code);
+            }
+            vy_proto::StreamPayload::Error { message, .. } => {
+                plugin
+                    .script()
+                    .emit_process_data(pid, "stderr".into(), message);
+                plugin.script().emit_process_exit(pid, -1);
+            }
         }
     }
 

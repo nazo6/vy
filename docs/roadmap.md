@@ -141,7 +141,7 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
 - [x] エディタとワークスペースのイベント通知 API
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
-- [ ] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
+- [x] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
 - [ ] 実用プラグインの検証
   - サイドバー的なツリービューペイン（`views.register` と `ui` ウィジェット木を用いた `nvim-tree` 相当のファイルエクスプローラー）の実装と検証
 

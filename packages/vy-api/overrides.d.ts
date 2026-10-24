@@ -8,6 +8,8 @@
 import type {
   ButtonVariant,
   CommandId,
+  DirEntry,
+  FileStat,
   Font,
   Gap,
   GutterCreateParams,
@@ -15,6 +17,7 @@ import type {
   PickerItem,
   PickerShowParams,
   Position,
+  ProcessOutput,
   Range,
   SettingsKey,
   SettingsMap,
@@ -389,6 +392,64 @@ export interface PluginContext {
   readonly capabilities: { has(name: string): boolean };
   /** Default log channel for this plugin. */
   readonly log: LogChannel;
+}
+
+/** File system operations for reading, writing, and querying files in the workspace. */
+export interface FsSugar {
+  /** Reads the binary contents of a file as a Uint8Array. */
+  readFile(uri: Uri | string): Promise<Uint8Array>;
+  /** Reads the UTF-8 text contents of a file. */
+  readTextFile(uri: Uri | string): Promise<string>;
+  /** Writes data (string or Uint8Array/bytes) to a file. */
+  writeFile(uri: Uri | string, data: string | Uint8Array | number[]): Promise<void>;
+  /** Lists entries in a directory. */
+  readDir(uri: Uri | string): Promise<DirEntry[]>;
+  /** Retrieves file or directory metadata. */
+  stat(uri: Uri | string): Promise<FileStat>;
+  /** Checks whether a file or directory exists. */
+  exists(uri: Uri | string): Promise<boolean>;
+  /** Creates a directory. */
+  createDir(uri: Uri | string, options?: { recursive?: boolean }): Promise<void>;
+  /** Removes a file or directory. */
+  remove(uri: Uri | string, options?: { recursive?: boolean }): Promise<void>;
+  /** Renames or moves a file or directory. */
+  rename(from: Uri | string, to: Uri | string): Promise<void>;
+  /** Copies a file or directory. */
+  copy(from: Uri | string, to: Uri | string): Promise<void>;
+}
+
+/** Options for executing or spawning a process. */
+export interface ProcessOptions {
+  /** Working directory for the process. */
+  cwd?: string;
+  /** Environment variables to pass to the process. */
+  env?: Record<string, string>;
+}
+
+/** A running child process. */
+export interface ChildProcess {
+  /** Process ID. */
+  readonly pid: number;
+  /** Standard input writer. */
+  readonly stdin: {
+    write(data: string): Promise<void>;
+  };
+  /** Terminates the process. */
+  kill(signal?: string): Promise<void>;
+  /** Subscribes to process termination. */
+  onExit(listener: (exitCode: number) => void): Disposable;
+  /** Subscribes to stdout chunks. */
+  onStdout(listener: (chunk: string) => void): Disposable;
+  /** Subscribes to stderr chunks. */
+  onStderr(listener: (chunk: string) => void): Disposable;
+}
+
+/** Process management and execution. */
+export interface ProcessSugar {
+  /** Executes a command, buffering its output until completion. */
+  exec(command: string, args?: string[], options?: ProcessOptions): Promise<ProcessOutput>;
+  /** Spawns an asynchronous child process with streamable stdout/stderr. */
+  spawn(command: string, args?: string[], options?: ProcessOptions): Promise<ChildProcess>;
 }
 
 /** Information about the remote connection. */

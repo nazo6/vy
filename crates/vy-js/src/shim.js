@@ -38,6 +38,8 @@ export const editor = {};
 export const notifications = {};
 export const log = {};
 export const views = {};
+export const fs = {};
+export const process = {};
 
 // `workspace` is mostly constants; `textDocuments` is added below.
 export const workspace = {
@@ -87,7 +89,19 @@ function makeDocument(info) {
 
 // --- generated forwarders ---------------------------------------------------
 
-const namespaces = { commands, keymap, config, editor, workspace, notifications, log, ui, views };
+const namespaces = {
+  commands,
+  keymap,
+  config,
+  editor,
+  workspace,
+  notifications,
+  log,
+  ui,
+  views,
+  fs,
+  process,
+};
 
 for (const entry of spec) {
   if (entry.manual) {
@@ -502,6 +516,164 @@ ui.separator = (options) => {
   return {
     type: "separator",
     id: opts.id ?? null,
+  };
+};
+
+// --- file system ------------------------------------------------------------
+
+fs.readFile = async (uri) => {
+  const res = await call("fs.readFile", { uri: String(uri) });
+  return new Uint8Array(res.bytes);
+};
+
+fs.readTextFile = async (uri) => {
+  const res = await call("fs.readTextFile", { uri: String(uri) });
+  return res.text;
+};
+
+fs.writeFile = async (uri, data) => {
+  let params;
+  if (typeof data === "string") {
+    params = { uri: String(uri), text: data };
+  } else if (data instanceof Uint8Array || Array.isArray(data)) {
+    params = { uri: String(uri), bytes: Array.from(data) };
+  } else {
+    params = { uri: String(uri), text: String(data) };
+  }
+  await call("fs.writeFile", params);
+};
+
+fs.readDir = async (uri) => {
+  const res = await call("fs.readDir", { uri: String(uri) });
+  return res.entries;
+};
+
+fs.stat = async (uri) => {
+  const res = await call("fs.stat", { uri: String(uri) });
+  return res.stat;
+};
+
+fs.exists = async (uri) => {
+  const res = await call("fs.exists", { uri: String(uri) });
+  return res.exists;
+};
+
+fs.createDir = async (uri, options) => {
+  await call("fs.createDir", { uri: String(uri), recursive: options?.recursive ?? false });
+};
+
+fs.remove = async (uri, options) => {
+  await call("fs.remove", { uri: String(uri), recursive: options?.recursive ?? false });
+};
+
+fs.rename = async (from, to) => {
+  await call("fs.rename", { from: String(from), to: String(to) });
+};
+
+fs.copy = async (from, to) => {
+  await call("fs.copy", { from: String(from), to: String(to) });
+};
+
+// --- process ----------------------------------------------------------------
+
+const processStdoutListeners = new Map();
+const processStderrListeners = new Map();
+const processExitListeners = new Map();
+
+globalThis.__vy_emit_process_data = (json) => {
+  const { pid, channel, data } = JSON.parse(json);
+  const listeners =
+    channel === "stderr"
+      ? processStderrListeners.get(pid)
+      : processStdoutListeners.get(pid);
+  if (listeners) {
+    for (const cb of listeners) {
+      try {
+        cb(data);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+};
+
+globalThis.__vy_emit_process_exit = (json) => {
+  const { pid, exitCode } = JSON.parse(json);
+  const listeners = processExitListeners.get(pid);
+  if (listeners) {
+    for (const cb of listeners) {
+      try {
+        cb(exitCode);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+  processStdoutListeners.delete(pid);
+  processStderrListeners.delete(pid);
+  processExitListeners.delete(pid);
+};
+
+process.exec = async (command, args, options) => {
+  return call("process.exec", {
+    command,
+    args: args ?? [],
+    cwd: options?.cwd ?? null,
+    env: options?.env ?? null,
+  });
+};
+
+process.spawn = async (command, args, options) => {
+  const res = await call("process.spawn", {
+    command,
+    args: args ?? [],
+    cwd: options?.cwd ?? null,
+    env: options?.env ?? null,
+  });
+  const pid = res.pid;
+  return {
+    pid,
+    stdin: {
+      write: async (data) => {
+        await call("process.writeStdin", { pid, data: String(data) });
+      },
+    },
+    kill: async (signal) => {
+      await call("process.kill", { pid, signal: signal ?? null });
+    },
+    onStdout: (listener) => {
+      if (!processStdoutListeners.has(pid)) {
+        processStdoutListeners.set(pid, new Set());
+      }
+      processStdoutListeners.get(pid).add(listener);
+      return {
+        dispose() {
+          processStdoutListeners.get(pid)?.delete(listener);
+        },
+      };
+    },
+    onStderr: (listener) => {
+      if (!processStderrListeners.has(pid)) {
+        processStderrListeners.set(pid, new Set());
+      }
+      processStderrListeners.get(pid).add(listener);
+      return {
+        dispose() {
+          processStderrListeners.get(pid)?.delete(listener);
+        },
+      };
+    },
+    onExit: (listener) => {
+      if (!processExitListeners.has(pid)) {
+        processExitListeners.set(pid, new Set());
+      }
+      processExitListeners.get(pid).add(listener);
+      return {
+        dispose() {
+          processExitListeners.get(pid)?.delete(listener);
+        },
+      };
+    },
   };
 };
 

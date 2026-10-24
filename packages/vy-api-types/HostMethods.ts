@@ -17,6 +17,26 @@ import type { EditorEditParams } from "./EditorEditParams";
 import type { EditorEditReply } from "./EditorEditReply";
 import type { EditorSetModeParams } from "./EditorSetModeParams";
 import type { EditorSetSelectionsParams } from "./EditorSetSelectionsParams";
+import type { FsCopyParams } from "./FsCopyParams";
+import type { FsCopyReply } from "./FsCopyReply";
+import type { FsCreateDirParams } from "./FsCreateDirParams";
+import type { FsCreateDirReply } from "./FsCreateDirReply";
+import type { FsExistsParams } from "./FsExistsParams";
+import type { FsExistsReply } from "./FsExistsReply";
+import type { FsReadDirParams } from "./FsReadDirParams";
+import type { FsReadDirReply } from "./FsReadDirReply";
+import type { FsReadFileParams } from "./FsReadFileParams";
+import type { FsReadFileReply } from "./FsReadFileReply";
+import type { FsReadTextFileParams } from "./FsReadTextFileParams";
+import type { FsReadTextFileReply } from "./FsReadTextFileReply";
+import type { FsRemoveParams } from "./FsRemoveParams";
+import type { FsRemoveReply } from "./FsRemoveReply";
+import type { FsRenameParams } from "./FsRenameParams";
+import type { FsRenameReply } from "./FsRenameReply";
+import type { FsStatParams } from "./FsStatParams";
+import type { FsStatReply } from "./FsStatReply";
+import type { FsWriteFileParams } from "./FsWriteFileParams";
+import type { FsWriteFileReply } from "./FsWriteFileReply";
 import type { GutterCreateParams } from "./GutterCreateParams";
 import type { GutterDisposeParams } from "./GutterDisposeParams";
 import type { HoverShowParams } from "./HoverShowParams";
@@ -28,6 +48,14 @@ import type { Mode } from "./Mode";
 import type { NotificationsShowParams } from "./NotificationsShowParams";
 import type { PickerShowParams } from "./PickerShowParams";
 import type { Position } from "./Position";
+import type { ProcessExecParams } from "./ProcessExecParams";
+import type { ProcessKillParams } from "./ProcessKillParams";
+import type { ProcessKillReply } from "./ProcessKillReply";
+import type { ProcessOutput } from "./ProcessOutput";
+import type { ProcessSpawnParams } from "./ProcessSpawnParams";
+import type { ProcessSpawnReply } from "./ProcessSpawnReply";
+import type { ProcessStdinParams } from "./ProcessStdinParams";
+import type { ProcessStdinReply } from "./ProcessStdinReply";
 import type { Selection } from "./Selection";
 import type { StatuslineCreateParams } from "./StatuslineCreateParams";
 import type { StatuslineDisposeParams } from "./StatuslineDisposeParams";
@@ -106,6 +134,34 @@ export interface HostMethods {
   "ui.hover.show": { params: HoverShowParams; result: null };
   /** Hides the hover popup. */
   "ui.hover.hide": { params: Record<string, never>; result: null };
+  /** Reads the binary contents of a file. */
+  "fs.readFile": { params: FsReadFileParams; result: FsReadFileReply };
+  /** Reads the UTF-8 text contents of a file. */
+  "fs.readTextFile": { params: FsReadTextFileParams; result: FsReadTextFileReply };
+  /** Writes binary or text contents to a file. */
+  "fs.writeFile": { params: FsWriteFileParams; result: FsWriteFileReply };
+  /** Lists entries in a directory. */
+  "fs.readDir": { params: FsReadDirParams; result: FsReadDirReply };
+  /** Retrieves metadata about a file or directory. */
+  "fs.stat": { params: FsStatParams; result: FsStatReply };
+  /** Checks whether a file or directory exists. */
+  "fs.exists": { params: FsExistsParams; result: FsExistsReply };
+  /** Creates a directory. */
+  "fs.createDir": { params: FsCreateDirParams; result: FsCreateDirReply };
+  /** Removes a file or directory. */
+  "fs.remove": { params: FsRemoveParams; result: FsRemoveReply };
+  /** Renames or moves a file or directory. */
+  "fs.rename": { params: FsRenameParams; result: FsRenameReply };
+  /** Copies a file or directory. */
+  "fs.copy": { params: FsCopyParams; result: FsCopyReply };
+  /** Executes a process and waits for it to complete. */
+  "process.exec": { params: ProcessExecParams; result: ProcessOutput };
+  /** Spawns an asynchronous child process. */
+  "process.spawn": { params: ProcessSpawnParams; result: ProcessSpawnReply };
+  /** Terminates a running child process. */
+  "process.kill": { params: ProcessKillParams; result: ProcessKillReply };
+  /** Writes data to a child process standard input. */
+  "process.writeStdin": { params: ProcessStdinParams; result: ProcessStdinReply };
 }
 
 // Wire names of every host call.

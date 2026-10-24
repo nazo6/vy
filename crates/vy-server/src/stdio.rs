@@ -21,29 +21,37 @@ where
 {
     let mut decoder = FrameDecoder::new();
     let mut chunk = vec![0u8; 8 * 1024];
+    let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut session = Session::new();
+    session.set_outgoing(outgoing_tx);
 
     loop {
-        let read = input.read(&mut chunk).await?;
-
-        if read == 0 {
-            tracing::info!("stdin closed");
-            return Ok(());
-        }
-
-        decoder.push(&chunk[..read]);
-
-        while let Some(payload) = decoder.next_frame().map_err(invalid_data)? {
-            let message = decode_message(&payload).map_err(invalid_data)?;
-            let outcome = session.handle(message);
-
-            for message in outcome.messages {
-                write_message(output, &message).await?;
+        tokio::select! {
+            Some(msg) = outgoing_rx.recv() => {
+                write_message(output, &msg).await?;
             }
+            res = input.read(&mut chunk) => {
+                let read = res?;
+                if read == 0 {
+                    tracing::info!("stdin closed");
+                    return Ok(());
+                }
 
-            if outcome.close {
-                tracing::info!("closing the connection at the client's request");
-                return Ok(());
+                decoder.push(&chunk[..read]);
+
+                while let Some(payload) = decoder.next_frame().map_err(invalid_data)? {
+                    let message = decode_message(&payload).map_err(invalid_data)?;
+                    let outcome = session.handle(message);
+
+                    for message in outcome.messages {
+                        write_message(output, &message).await?;
+                    }
+
+                    if outcome.close {
+                        tracing::info!("closing the connection at the client's request");
+                        return Ok(());
+                    }
+                }
             }
         }
     }

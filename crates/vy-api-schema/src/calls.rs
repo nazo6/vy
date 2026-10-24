@@ -14,6 +14,7 @@ use strum::VariantArray;
 use ts_rs::TS;
 
 use vy_core::{Position, Range, Selection, TextEdit, Uri};
+pub use vy_proto::{DirEntry, FileStat, ProcessExecParams, ProcessOutput};
 
 use crate::{Mode, PickerItem, StatuslineAlignment, ThemeColor, WidgetNode};
 
@@ -107,6 +108,34 @@ pub enum HostCall {
     UiHoverShow,
     #[strum(serialize = "ui.hover.hide")]
     UiHoverHide,
+    #[strum(serialize = "fs.readFile")]
+    FsReadFile,
+    #[strum(serialize = "fs.readTextFile")]
+    FsReadTextFile,
+    #[strum(serialize = "fs.writeFile")]
+    FsWriteFile,
+    #[strum(serialize = "fs.readDir")]
+    FsReadDir,
+    #[strum(serialize = "fs.stat")]
+    FsStat,
+    #[strum(serialize = "fs.exists")]
+    FsExists,
+    #[strum(serialize = "fs.createDir")]
+    FsCreateDir,
+    #[strum(serialize = "fs.remove")]
+    FsRemove,
+    #[strum(serialize = "fs.rename")]
+    FsRename,
+    #[strum(serialize = "fs.copy")]
+    FsCopy,
+    #[strum(serialize = "process.exec")]
+    ProcessExec,
+    #[strum(serialize = "process.spawn")]
+    ProcessSpawn,
+    #[strum(serialize = "process.kill")]
+    ProcessKill,
+    #[strum(serialize = "process.writeStdin")]
+    ProcessWriteStdin,
 }
 
 impl HostCall {
@@ -412,6 +441,104 @@ pub const HOST_METHODS: &[MethodSpec] = &[
         "null",
         false,
         "Hides the hover popup.",
+    ),
+    spec(
+        "fs.readFile",
+        "FsReadFileParams",
+        "FsReadFileReply",
+        true,
+        "Reads the binary contents of a file.",
+    ),
+    spec(
+        "fs.readTextFile",
+        "FsReadTextFileParams",
+        "FsReadTextFileReply",
+        true,
+        "Reads the UTF-8 text contents of a file.",
+    ),
+    spec(
+        "fs.writeFile",
+        "FsWriteFileParams",
+        "FsWriteFileReply",
+        true,
+        "Writes binary or text contents to a file.",
+    ),
+    spec(
+        "fs.readDir",
+        "FsReadDirParams",
+        "FsReadDirReply",
+        true,
+        "Lists entries in a directory.",
+    ),
+    spec(
+        "fs.stat",
+        "FsStatParams",
+        "FsStatReply",
+        true,
+        "Retrieves metadata about a file or directory.",
+    ),
+    spec(
+        "fs.exists",
+        "FsExistsParams",
+        "FsExistsReply",
+        true,
+        "Checks whether a file or directory exists.",
+    ),
+    spec(
+        "fs.createDir",
+        "FsCreateDirParams",
+        "FsCreateDirReply",
+        true,
+        "Creates a directory.",
+    ),
+    spec(
+        "fs.remove",
+        "FsRemoveParams",
+        "FsRemoveReply",
+        true,
+        "Removes a file or directory.",
+    ),
+    spec(
+        "fs.rename",
+        "FsRenameParams",
+        "FsRenameReply",
+        true,
+        "Renames or moves a file or directory.",
+    ),
+    spec(
+        "fs.copy",
+        "FsCopyParams",
+        "FsCopyReply",
+        true,
+        "Copies a file or directory.",
+    ),
+    spec(
+        "process.exec",
+        "ProcessExecParams",
+        "ProcessOutput",
+        true,
+        "Executes a process and waits for it to complete.",
+    ),
+    spec(
+        "process.spawn",
+        "ProcessSpawnParams",
+        "ProcessSpawnReply",
+        true,
+        "Spawns an asynchronous child process.",
+    ),
+    spec(
+        "process.kill",
+        "ProcessKillParams",
+        "ProcessKillReply",
+        true,
+        "Terminates a running child process.",
+    ),
+    spec(
+        "process.writeStdin",
+        "ProcessStdinParams",
+        "ProcessStdinReply",
+        true,
+        "Writes data to a child process standard input.",
     ),
 ];
 
@@ -763,6 +890,240 @@ pub struct PickerShowParams {
 pub struct ViewsRenderParams {
     pub id: String,
     pub tree: WidgetNode,
+}
+
+/// `fs.readFile` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadFileParams {
+    pub uri: Uri,
+}
+
+/// `fs.readFile` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadFileReply {
+    pub bytes: Vec<u8>,
+}
+
+/// `fs.readTextFile` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadTextFileParams {
+    pub uri: Uri,
+}
+
+/// `fs.readTextFile` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadTextFileReply {
+    pub text: String,
+}
+
+/// `fs.writeFile` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsWriteFileParams {
+    pub uri: Uri,
+    #[serde(default)]
+    #[ts(optional)]
+    pub bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub text: Option<String>,
+}
+
+/// `fs.writeFile` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsWriteFileReply {
+    pub bytes_written: u64,
+}
+
+/// `fs.readDir` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadDirParams {
+    pub uri: Uri,
+}
+
+/// `fs.readDir` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsReadDirReply {
+    pub entries: Vec<DirEntry>,
+}
+
+/// `fs.stat` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsStatParams {
+    pub uri: Uri,
+}
+
+/// `fs.stat` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsStatReply {
+    pub stat: FileStat,
+}
+
+/// `fs.exists` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsExistsParams {
+    pub uri: Uri,
+}
+
+/// `fs.exists` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsExistsReply {
+    pub exists: bool,
+}
+
+/// `fs.createDir` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsCreateDirParams {
+    pub uri: Uri,
+    #[serde(default)]
+    #[ts(optional)]
+    pub recursive: Option<bool>,
+}
+
+/// `fs.createDir` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsCreateDirReply {
+    pub success: bool,
+}
+
+/// `fs.remove` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsRemoveParams {
+    pub uri: Uri,
+    #[serde(default)]
+    #[ts(optional)]
+    pub recursive: Option<bool>,
+}
+
+/// `fs.remove` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsRemoveReply {
+    pub success: bool,
+}
+
+/// `fs.rename` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsRenameParams {
+    pub from: Uri,
+    pub to: Uri,
+}
+
+/// `fs.rename` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsRenameReply {
+    pub success: bool,
+}
+
+/// `fs.copy` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsCopyParams {
+    pub from: Uri,
+    pub to: Uri,
+}
+
+/// `fs.copy` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FsCopyReply {
+    pub success: bool,
+}
+
+/// `process.spawn` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessSpawnParams {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub env: Option<std::collections::BTreeMap<String, String>>,
+}
+
+/// `process.spawn` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessSpawnReply {
+    pub pid: u32,
+}
+
+/// `process.kill` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessKillParams {
+    pub pid: u32,
+    #[serde(default)]
+    #[ts(optional)]
+    pub signal: Option<String>,
+}
+
+/// `process.kill` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessKillReply {
+    pub success: bool,
+}
+
+/// `process.writeStdin` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessStdinParams {
+    pub pid: u32,
+    pub data: String,
+}
+
+/// `process.writeStdin` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessStdinReply {
+    pub success: bool,
 }
 
 #[cfg(test)]

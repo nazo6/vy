@@ -1,8 +1,10 @@
 mod buffer;
+mod fs;
 mod history;
 mod init;
 mod layout;
 mod pane;
+mod process;
 
 use std::collections::HashMap;
 
@@ -35,6 +37,8 @@ pub struct Session {
     documents_by_uri: HashMap<String, DocumentId>,
     panes: HashMap<PaneId, Pane>,
     layout: Layout,
+    processes: process::ProcessTable,
+    outgoing: Option<tokio::sync::mpsc::UnboundedSender<RpcMessage>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +90,13 @@ impl Session {
             documents_by_uri: HashMap::new(),
             panes: HashMap::new(),
             layout: Layout::new(1),
+            processes: HashMap::new(),
+            outgoing: None,
         }
+    }
+
+    pub fn set_outgoing(&mut self, sender: tokio::sync::mpsc::UnboundedSender<RpcMessage>) {
+        self.outgoing = Some(sender);
     }
 
     /// Handles one message. The caller does the I/O.
@@ -154,6 +164,20 @@ impl Session {
             "buffer/snapshot" => self.snapshot(id, params),
             "buffer/undo" => self.undo(id, params),
             "buffer/redo" => self.redo(id, params),
+            "fs/read_file" => self.fs_read_file(id, params),
+            "fs/read_text_file" => self.fs_read_text_file(id, params),
+            "fs/write_file" => self.fs_write_file(id, params),
+            "fs/read_dir" => self.fs_read_dir(id, params),
+            "fs/stat" => self.fs_stat(id, params),
+            "fs/exists" => self.fs_exists(id, params),
+            "fs/create_dir" => self.fs_create_dir(id, params),
+            "fs/remove" => self.fs_remove(id, params),
+            "fs/rename" => self.fs_rename(id, params),
+            "fs/copy" => self.fs_copy(id, params),
+            "process/exec" => self.process_exec(id, params),
+            "process/spawn" => self.process_spawn(id, params),
+            "process/kill" => self.process_kill(id, params),
+            "process/stdin" => self.process_stdin(id, params),
             "shutdown" => Outcome {
                 messages: vec![RpcMessage::ok(id, Value::Map(Vec::new()))],
                 close: true,

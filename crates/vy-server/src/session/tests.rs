@@ -492,3 +492,101 @@ fn saves_a_file_back_to_disk() {
 
     std::fs::remove_file(path).ok();
 }
+
+#[test]
+fn fs_and_process_operations() {
+    let mut session = Session::new();
+    initialize(&mut session);
+
+    let temp_dir = std::env::temp_dir().join(format!("vy-fs-test-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let file_path = temp_dir.join("hello.txt");
+    let file_uri = format!("file://{}", file_path.display());
+    let dir_uri = format!("file://{}", temp_dir.display());
+
+    // 1. fs/write_file
+    let outcome = request(
+        &mut session,
+        10,
+        "fs/write_file",
+        object([
+            ("uri", Value::from(file_uri.clone())),
+            ("text", Value::from("Hello, World!")),
+        ]),
+    );
+    let _ = ok_value(&outcome.messages[0]);
+
+    // 2. fs/exists
+    let outcome = request(
+        &mut session,
+        11,
+        "fs/exists",
+        object([("uri", Value::from(file_uri.clone()))]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    assert_eq!(get(val, "exists").and_then(Value::as_bool), Some(true));
+
+    // 3. fs/read_text_file
+    let outcome = request(
+        &mut session,
+        12,
+        "fs/read_text_file",
+        object([("uri", Value::from(file_uri.clone()))]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(val, "text").and_then(Value::as_str),
+        Some("Hello, World!")
+    );
+
+    // 4. fs/stat
+    let outcome = request(
+        &mut session,
+        13,
+        "fs/stat",
+        object([("uri", Value::from(file_uri.clone()))]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    let stat = get(val, "stat").expect("stat");
+    assert_eq!(get(stat, "is_file").and_then(Value::as_bool), Some(true));
+    assert_eq!(get(stat, "size").and_then(Value::as_u64), Some(13));
+
+    // 5. fs/read_dir
+    let outcome = request(
+        &mut session,
+        14,
+        "fs/read_dir",
+        object([("uri", Value::from(dir_uri.clone()))]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    let entries = get(val, "entries")
+        .and_then(Value::as_array)
+        .expect("entries");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        get(&entries[0], "name").and_then(Value::as_str),
+        Some("hello.txt")
+    );
+
+    // 6. process/exec
+    let outcome = request(
+        &mut session,
+        15,
+        "process/exec",
+        object([
+            ("command", Value::from("echo")),
+            ("args", Value::Array(vec![Value::from("vy-process-test")])),
+        ]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    assert_eq!(get(val, "exit_code").and_then(Value::as_i64), Some(0));
+    assert!(
+        get(val, "stdout")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("vy-process-test")
+    );
+
+    // Clean up
+    std::fs::remove_dir_all(&temp_dir).ok();
+}

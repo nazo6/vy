@@ -30,6 +30,8 @@ const TOP_LEVEL: &[(&str, &str)] = &[
     ("log", "Writes to plugin log channels."),
     ("ui", "Builds native widget trees and updates UI slots."),
     ("views", "Registers and looks up pane views."),
+    ("fs", "Reads, writes, and inspects files in the workspace."),
+    ("process", "Runs and manages external processes."),
 ];
 
 /// Nested namespaces that need a description in the generated declarations.
@@ -57,13 +59,17 @@ const EXTRA_TYPES: &[&str] = &[
     "ButtonVariant",
     "CommandId",
     "ContainerKind",
+    "DirEntry",
     "ErrorCode",
+    "FileStat",
     "Font",
     "Gap",
     "LogLevel",
     "Mode",
     "PickerItem",
     "Position",
+    "ProcessExecParams",
+    "ProcessOutput",
     "Range",
     "Selection",
     "SettingsKey",
@@ -77,6 +83,7 @@ const EXTRA_TYPES: &[&str] = &[
 
 /// Types the hand-written declarations export.
 const OVERRIDE_TYPES: &[&str] = &[
+    "ChildProcess",
     "Disposable",
     "Document",
     "EditorEditBuilder",
@@ -84,6 +91,7 @@ const OVERRIDE_TYPES: &[&str] = &[
     "GutterItemOptions",
     "LogChannel",
     "PluginContext",
+    "ProcessOptions",
     "RemoteApi",
     "ShowPickerOptions",
     "StatuslineItem",
@@ -101,9 +109,11 @@ const SUGAR: &[(&[&str], &str)] = &[
     (&["commands"], "CommandsSugar"),
     (&["config"], "ConfigSugar"),
     (&["editor"], "EditorSugar"),
+    (&["fs"], "FsSugar"),
     (&["keymap"], "KeymapSugar"),
     (&["log"], "LogSugar"),
     (&["notifications"], "NotificationsSugar"),
+    (&["process"], "ProcessSugar"),
     (&["ui"], "UiSugar"),
     (&["ui", "gutter"], "UiGutterSugar"),
     (&["ui", "picker"], "UiPickerSugar"),
