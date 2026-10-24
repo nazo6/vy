@@ -14,7 +14,14 @@ vy_host_api::host_api! {
         traits = [
             commands => CommandsApi,
             config => ConfigApi,
+            editor => EditorApi,
+            keymap_api => KeymapApi,
             notifications => NotificationsApi,
+            ui => UiApi,
+            ui_gutter => UiGutterApi,
+            ui_hover => UiHoverApi,
+            ui_picker => UiPickerApi,
+            ui_statusline => UiStatuslineApi,
             views => ViewsApi,
         ];
         methods_fn = client_host_api_methods;
@@ -30,7 +37,10 @@ pub mod palette;
 pub mod statusline;
 pub mod widget;
 
-pub use namespaces::{commands, config, notifications, views};
+pub use namespaces::{
+    commands, config, editor, keymap as keymap_api, notifications, ui, ui_gutter, ui_hover,
+    ui_picker, ui_statusline, views,
+};
 
 pub use color::ThemeColor;
 pub use palette::PickerItem;
@@ -108,6 +118,238 @@ mod tests {
 
         fn get_commands(&mut self) -> Result<Reply<Vec<String>>, CallError> {
             Ok(Reply::Value(Vec::new()))
+        }
+    }
+
+    impl namespaces::editor::EditorApi for TestHost {
+        fn active_document(
+            &mut self,
+        ) -> Result<Reply<Option<vy_host_api::DocumentInfoReply>>, CallError> {
+            Ok(Reply::Value(None))
+        }
+
+        fn open(
+            &mut self,
+            _params: namespaces::editor::EditorOpenParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn mode(&mut self) -> Result<Reply<keymap::Mode>, CallError> {
+            Ok(Reply::Value(keymap::Mode::Normal))
+        }
+
+        fn set_mode(
+            &mut self,
+            _params: namespaces::editor::EditorSetModeParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn selections(&mut self) -> Result<Reply<Vec<vy_core::Selection>>, CallError> {
+            Ok(Reply::Value(Vec::new()))
+        }
+
+        fn set_selections(
+            &mut self,
+            _params: namespaces::editor::EditorSetSelectionsParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn edit(
+            &mut self,
+            _params: namespaces::editor::EditorEditParams,
+        ) -> Result<Reply<namespaces::editor::EditorEditReply>, CallError> {
+            Ok(Reply::Value(namespaces::editor::EditorEditReply {
+                version: 0,
+            }))
+        }
+
+        fn undo(&mut self) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn redo(&mut self) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn documents(&mut self) -> Result<Reply<Vec<vy_host_api::DocumentInfoReply>>, CallError> {
+            Ok(Reply::Value(Vec::new()))
+        }
+    }
+
+    impl namespaces::ui::UiApi for TestHost {}
+
+    impl namespaces::ui_statusline::UiStatuslineApi for TestHost {
+        fn create_item(
+            &mut self,
+            _params: namespaces::ui_statusline::StatuslineCreateParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn update_item(
+            &mut self,
+            _params: namespaces::ui_statusline::StatuslineUpdateParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn dispose_item(
+            &mut self,
+            _params: namespaces::ui_statusline::StatuslineDisposeParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+    }
+
+    impl namespaces::ui_gutter::UiGutterApi for TestHost {
+        fn create_item(
+            &mut self,
+            _params: namespaces::ui_gutter::GutterCreateParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn dispose_item(
+            &mut self,
+            _params: namespaces::ui_gutter::GutterDisposeParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn clear(&mut self) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+    }
+
+    impl namespaces::ui_hover::UiHoverApi for TestHost {
+        fn show(
+            &mut self,
+            _params: namespaces::ui_hover::HoverShowParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn hide(&mut self) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+    }
+
+    impl namespaces::ui_picker::UiPickerApi for TestHost {
+        fn show(
+            &mut self,
+            _params: namespaces::ui_picker::PickerShowParams,
+        ) -> Result<Reply<Option<namespaces::ui_picker::PickerShowReply>>, CallError> {
+            Ok(Reply::Value(None))
+        }
+    }
+
+    impl namespaces::keymap::KeymapApi for TestHost {
+        fn bind(
+            &mut self,
+            _params: namespaces::keymap::KeymapBindParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
+        fn unbind(
+            &mut self,
+            _params: namespaces::keymap::KeymapUnbindParams,
+        ) -> Result<Reply<usize>, CallError> {
+            Ok(Reply::Value(0))
+        }
+
+        fn set_context(
+            &mut self,
+            _params: namespaces::keymap::KeymapSetContextParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+    }
+
+    impl vy_host_api::context::ContextApi for TestHost {
+        fn info(&mut self) -> Result<Reply<vy_host_api::context::PluginContextReply>, CallError> {
+            Ok(Reply::Value(vy_host_api::context::PluginContextReply {
+                plugin_id: "test".into(),
+                version: "0.0.0".into(),
+                remote: vy_host_api::context::RemoteInfo {
+                    is_remote: false,
+                    name: "local".into(),
+                    os: "linux".into(),
+                    path_separator: "/".into(),
+                },
+            }))
+        }
+    }
+
+    impl vy_host_api::document::DocumentApi for TestHost {
+        fn get_text(
+            &mut self,
+            _params: vy_host_api::document::DocumentGetTextParams,
+        ) -> Result<Reply<String>, CallError> {
+            Ok(Reply::Value(String::new()))
+        }
+
+        fn line_at(
+            &mut self,
+            _params: vy_host_api::document::DocumentLineAtParams,
+        ) -> Result<Reply<Option<String>>, CallError> {
+            Ok(Reply::Value(None))
+        }
+
+        fn position_at(
+            &mut self,
+            _params: vy_host_api::document::DocumentPositionAtParams,
+        ) -> Result<Reply<vy_core::Position>, CallError> {
+            Ok(Reply::Value(vy_core::Position::new(0, 0)))
+        }
+
+        fn offset_at(
+            &mut self,
+            _params: vy_host_api::document::DocumentOffsetAtParams,
+        ) -> Result<Reply<usize>, CallError> {
+            Ok(Reply::Value(0))
+        }
+    }
+
+    impl vy_host_api::log::LogApi for TestHost {
+        fn write(
+            &mut self,
+            _params: vy_host_api::log::LogWriteParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+    }
+
+    impl vy_host_api::process::ProcessApi for TestHost {
+        fn exec(
+            &mut self,
+            _params: vy_proto::ProcessExecParams,
+        ) -> Result<Reply<vy_proto::ProcessOutput>, CallError> {
+            Err(CallError::invalid_state("not implemented"))
+        }
+
+        fn spawn(
+            &mut self,
+            _params: vy_host_api::process::ProcessSpawnParams,
+        ) -> Result<Reply<vy_host_api::process::ProcessSpawnReply>, CallError> {
+            Err(CallError::invalid_state("not implemented"))
+        }
+
+        fn kill(
+            &mut self,
+            _params: vy_host_api::process::ProcessKillParams,
+        ) -> Result<Reply<vy_host_api::process::ProcessKillReply>, CallError> {
+            Err(CallError::invalid_state("not implemented"))
+        }
+
+        fn write_stdin(
+            &mut self,
+            _params: vy_host_api::process::ProcessStdinParams,
+        ) -> Result<Reply<vy_host_api::process::ProcessStdinReply>, CallError> {
+            Err(CallError::invalid_state("not implemented"))
         }
     }
 

@@ -2,11 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 use vy_core::{Selection, TextEdit, Uri};
-use vy_host_api::DocumentInfoReply;
+use vy_host_api::{CallError, DocumentInfoReply, Reply};
 
-use crate::{keymap::Mode, method_decl};
+use crate::keymap::Mode;
 
 /// `editor.setMode` parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -56,103 +55,58 @@ pub struct ActiveDocumentChange {
     pub document: Option<DocumentInfoReply>,
 }
 
-method_decl!(
-    ACTIVE_DOCUMENT,
-    "editor.activeDocument",
-    Option<DocumentInfoReply>,
-    "Returns the document in the focused pane, or null when none is open."
-);
-method_decl!(
-    OPEN,
-    "editor.open",
-    EditorOpenParams,
-    (),
-    "Opens a document in an editor pane."
-);
-method_decl!(
-    MODE,
-    "editor.mode",
-    Mode,
-    "Returns the editor mode of the focused pane."
-);
-method_decl!(
-    SET_MODE,
-    "editor.setMode",
-    EditorSetModeParams,
-    (),
-    "Switches the focused pane to a mode."
-);
-method_decl!(
-    SELECTIONS,
-    "editor.selections",
-    Vec<Selection>,
-    "Returns the selections of the focused pane."
-);
-method_decl!(
-    SET_SELECTIONS,
-    "editor.setSelections",
-    EditorSetSelectionsParams,
-    (),
-    "Replaces the selections of the focused pane."
-);
-method_decl!(
-    EDIT,
-    "editor.edit",
-    EditorEditParams,
-    EditorEditReply,
-    "Applies edits to the active document in one transaction."
-);
-method_decl!(UNDO, "editor.undo", (), "Undoes the last transaction.");
-method_decl!(
-    REDO,
-    "editor.redo",
-    (),
-    "Redoes the last undone transaction."
-);
-method_decl!(
-    DOCUMENTS,
-    "editor.documents",
-    Vec<DocumentInfoReply>,
-    "Returns every open document."
-);
+/// Reads and edits the active document.
+#[vy_api_schema::vy_api_trait("editor")]
+pub trait EditorApi {
+    /// Returns the document in the focused pane, or null when none is open.
+    #[vy_api_schema::vy_api_method]
+    fn active_document(&mut self) -> Result<Reply<Option<DocumentInfoReply>>, CallError>;
 
-crate::event_decl!(
-    ON_DID_CHANGE_ACTIVE_DOCUMENT,
-    "editor.onDidChangeActiveDocument",
-    "editor",
-    "onDidChangeActiveDocument",
-    ActiveDocumentChange,
-    "Fires when the document in the focused pane changes."
-);
-crate::event_decl!(
-    ON_DID_CHANGE_SELECTION,
-    "editor.onDidChangeSelection",
-    "editor",
-    "onDidChangeSelection",
-    SelectionChange,
-    "Fires when the selections in the focused pane change."
-);
+    /// Opens a document in an editor pane.
+    #[vy_api_schema::vy_api_method]
+    fn open(&mut self, params: EditorOpenParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[
-    ACTIVE_DOCUMENT,
-    OPEN,
-    MODE,
-    SET_MODE,
-    SELECTIONS,
-    SET_SELECTIONS,
-    EDIT,
-    UNDO,
-    REDO,
-    DOCUMENTS,
-];
+    /// Returns the editor mode of the focused pane.
+    #[vy_api_schema::vy_api_method]
+    fn mode(&mut self) -> Result<Reply<Mode>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[ON_DID_CHANGE_ACTIVE_DOCUMENT, ON_DID_CHANGE_SELECTION];
+    /// Switches the focused pane to a mode.
+    #[vy_api_schema::vy_api_method]
+    fn set_mode(&mut self, params: EditorSetModeParams) -> Result<Reply<()>, CallError>;
 
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "editor",
-    doc: "Reads and edits the active document.",
-    sugar: None,
-};
+    /// Returns the selections of the focused pane.
+    #[vy_api_schema::vy_api_method]
+    fn selections(&mut self) -> Result<Reply<Vec<Selection>>, CallError>;
+
+    /// Replaces the selections of the focused pane.
+    #[vy_api_schema::vy_api_method]
+    fn set_selections(&mut self, params: EditorSetSelectionsParams)
+    -> Result<Reply<()>, CallError>;
+
+    /// Applies edits to the active document in one transaction.
+    #[vy_api_schema::vy_api_method]
+    fn edit(&mut self, params: EditorEditParams) -> Result<Reply<EditorEditReply>, CallError>;
+
+    /// Undoes the last transaction.
+    #[vy_api_schema::vy_api_method]
+    fn undo(&mut self) -> Result<Reply<()>, CallError>;
+
+    /// Redoes the last undone transaction.
+    #[vy_api_schema::vy_api_method]
+    fn redo(&mut self) -> Result<Reply<()>, CallError>;
+
+    /// Returns every open document.
+    #[vy_api_schema::vy_api_method]
+    fn documents(&mut self) -> Result<Reply<Vec<DocumentInfoReply>>, CallError>;
+
+    /// Fires when the document in the focused pane changes.
+    #[vy_api_schema::vy_api_event(
+        "editor.onDidChangeActiveDocument",
+        payload = ActiveDocumentChange
+    )]
+    const ON_DID_CHANGE_ACTIVE_DOCUMENT: ();
+
+    /// Fires when the selections in the focused pane change.
+    #[vy_api_schema::vy_api_event("editor.onDidChangeSelection", payload = SelectionChange)]
+    const ON_DID_CHANGE_SELECTION: ();
+}

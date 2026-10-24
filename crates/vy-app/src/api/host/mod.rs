@@ -5,8 +5,19 @@
 
 mod commands;
 mod config;
+mod context;
+mod document;
+mod editor;
 mod fs;
+mod keymap;
+mod log;
 mod notifications;
+mod process;
+mod ui;
+mod ui_gutter;
+mod ui_hover;
+mod ui_picker;
+mod ui_statusline;
 mod views;
 mod workspace;
 

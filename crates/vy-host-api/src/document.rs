@@ -2,10 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 use vy_core::{Position, Range, Uri};
 
-use crate::method_decl;
+use crate::{CallError, Reply};
 
 /// A document as the script sees it.
 ///
@@ -68,44 +67,26 @@ pub struct DocumentOffsetAtParams {
     pub position: Position,
 }
 
-method_decl!(
-    GET_TEXT,
-    "document.getText",
-    DocumentGetTextParams,
-    String,
-    "Returns the document text, optionally limited to a range."
-);
-method_decl!(
-    LINE_AT,
-    "document.lineAt",
-    DocumentLineAtParams,
-    Option<String>,
-    "Returns the text of a line, or null when the line is out of range."
-);
-method_decl!(
-    POSITION_AT,
-    "document.positionAt",
-    DocumentPositionAtParams,
-    Position,
-    "Converts a UTF-16 offset to a position."
-);
-method_decl!(
-    OFFSET_AT,
-    "document.offsetAt",
-    DocumentOffsetAtParams,
-    usize,
-    "Converts a position to a UTF-16 offset."
-);
+/// Reads the text and offsets of the active document.
+#[vy_api_schema::vy_api_trait("document")]
+pub trait DocumentApi {
+    /// Returns the document text, optionally limited to a range.
+    #[vy_api_schema::vy_api_method]
+    fn get_text(&mut self, params: DocumentGetTextParams) -> Result<Reply<String>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[GET_TEXT, LINE_AT, POSITION_AT, OFFSET_AT];
+    /// Returns the text of a line, or null when the line is out of range.
+    #[vy_api_schema::vy_api_method]
+    fn line_at(&mut self, params: DocumentLineAtParams)
+    -> Result<Reply<Option<String>>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
+    /// Converts a UTF-16 offset to a position.
+    #[vy_api_schema::vy_api_method]
+    fn position_at(
+        &mut self,
+        params: DocumentPositionAtParams,
+    ) -> Result<Reply<Position>, CallError>;
 
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "document",
-    doc: "Reads the text and offsets of the active document.",
-    sugar: None,
-};
+    /// Converts a position to a UTF-16 offset.
+    #[vy_api_schema::vy_api_method]
+    fn offset_at(&mut self, params: DocumentOffsetAtParams) -> Result<Reply<usize>, CallError>;
+}

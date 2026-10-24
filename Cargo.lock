@@ -6472,6 +6472,7 @@ dependencies = [
  "vy-api-schema",
  "vy-core",
  "vy-host-api",
+ "vy-proto",
 ]
 
 [[package]]

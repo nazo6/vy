@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
-
-use crate::method_decl;
+use vy_host_api::{CallError, Reply};
 
 /// `keymap.bind` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -39,37 +37,18 @@ pub struct KeymapSetContextParams {
     pub value: KeyContextValue,
 }
 
-method_decl!(
-    BIND,
-    "keymap.bind",
-    KeymapBindParams,
-    (),
-    "Binds a key sequence to a command."
-);
-method_decl!(
-    UNBIND,
-    "keymap.unbind",
-    KeymapUnbindParams,
-    usize,
-    "Removes a key binding and returns the number removed."
-);
-method_decl!(
-    SET_CONTEXT,
-    "keymap.setContext",
-    KeymapSetContextParams,
-    (),
-    "Sets a keymap context value used by `when` clauses."
-);
+/// Binds keys and updates keymap context values.
+#[vy_api_schema::vy_api_trait("keymap")]
+pub trait KeymapApi {
+    /// Binds a key sequence to a command.
+    #[vy_api_schema::vy_api_method]
+    fn bind(&mut self, params: KeymapBindParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[BIND, UNBIND, SET_CONTEXT];
+    /// Removes a key binding and returns the number removed.
+    #[vy_api_schema::vy_api_method]
+    fn unbind(&mut self, params: KeymapUnbindParams) -> Result<Reply<usize>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "keymap",
-    doc: "Binds keys and updates keymap context values.",
-    sugar: None,
-};
+    /// Sets a keymap context value used by `when` clauses.
+    #[vy_api_schema::vy_api_method]
+    fn set_context(&mut self, params: KeymapSetContextParams) -> Result<Reply<()>, CallError>;
+}

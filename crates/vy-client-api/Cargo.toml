@@ -13,3 +13,4 @@ ts-rs.workspace = true
 vy-api-schema.workspace = true
 vy-core.workspace = true
 vy-host-api.workspace = true
+vy-proto.workspace = true

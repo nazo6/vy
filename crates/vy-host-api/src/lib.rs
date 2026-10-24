@@ -51,7 +51,11 @@ crate::host_api! {
         base_events_fn = host_root_events;
         traits = [
             config => ConfigReadApi,
+            context => ContextApi,
+            document => DocumentApi,
             fs => FsApi,
+            log => LogApi,
+            process => ProcessApi,
             workspace => WorkspaceApi,
         ];
         methods_fn = host_api_methods;

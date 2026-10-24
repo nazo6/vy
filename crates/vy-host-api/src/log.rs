@@ -3,9 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 
-use crate::method_decl;
+use crate::{CallError, Reply};
 
 /// Severity of a log line or notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -37,23 +36,10 @@ pub struct LogWriteParams {
     pub data: Value,
 }
 
-method_decl!(
-    WRITE,
-    "log.write",
-    LogWriteParams,
-    (),
-    "Writes one entry to a log channel."
-);
-
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[WRITE];
-
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "log",
-    doc: "Writes to plugin log channels.",
-    sugar: None,
-};
+/// Writes to plugin log channels.
+#[vy_api_schema::vy_api_trait("log")]
+pub trait LogApi {
+    /// Writes one entry to a log channel.
+    #[vy_api_schema::vy_api_method]
+    fn write(&mut self, params: LogWriteParams) -> Result<Reply<()>, CallError>;
+}

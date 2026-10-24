@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
+use vy_host_api::{CallError, Reply};
 
-use crate::{ThemeColor, method_decl, statusline::StatuslineAlignment};
+use crate::{ThemeColor, statusline::StatuslineAlignment};
 
 /// `ui.statusline.createItem` parameters.
 ///
@@ -49,37 +49,18 @@ pub struct StatuslineDisposeParams {
     pub id: String,
 }
 
-method_decl!(
-    CREATE_ITEM,
-    "ui.statusline.createItem",
-    StatuslineCreateParams,
-    (),
-    "Creates a status line item and returns its id."
-);
-method_decl!(
-    UPDATE_ITEM,
-    "ui.statusline.updateItem",
-    StatuslineUpdateParams,
-    (),
-    "Updates the fields of a status line item."
-);
-method_decl!(
-    DISPOSE_ITEM,
-    "ui.statusline.disposeItem",
-    StatuslineDisposeParams,
-    (),
-    "Removes a status line item."
-);
+/// Creates and updates status line items.
+#[vy_api_schema::vy_api_trait("ui.statusline")]
+pub trait UiStatuslineApi {
+    /// Creates a status line item and returns its id.
+    #[vy_api_schema::vy_api_method]
+    fn create_item(&mut self, params: StatuslineCreateParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[CREATE_ITEM, UPDATE_ITEM, DISPOSE_ITEM];
+    /// Updates the fields of a status line item.
+    #[vy_api_schema::vy_api_method]
+    fn update_item(&mut self, params: StatuslineUpdateParams) -> Result<Reply<()>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "ui.statusline",
-    doc: "Creates and updates status line items.",
-    sugar: None,
-};
+    /// Removes a status line item.
+    #[vy_api_schema::vy_api_method]
+    fn dispose_item(&mut self, params: StatuslineDisposeParams) -> Result<Reply<()>, CallError>;
+}

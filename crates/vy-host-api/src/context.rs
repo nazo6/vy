@@ -1,10 +1,8 @@
 //! Shared `context` method declarations.
 
+use crate::{CallError, Reply};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
-
-use crate::method_decl;
 
 /// `context.info` reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -25,22 +23,10 @@ pub struct RemoteInfo {
     pub path_separator: String,
 }
 
-method_decl!(
-    INFO,
-    "context.info",
-    PluginContextReply,
-    "Returns the plugin id, version, and remote connection information."
-);
-
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[INFO];
-
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "context",
-    doc: "Reports the plugin and connection metadata.",
-    sugar: None,
-};
+/// Reports the plugin and connection metadata.
+#[vy_api_schema::vy_api_trait("context")]
+pub trait ContextApi {
+    /// Returns the plugin id, version, and remote connection information.
+    #[vy_api_schema::vy_api_method]
+    fn info(&mut self) -> Result<Reply<PluginContextReply>, CallError>;
+}

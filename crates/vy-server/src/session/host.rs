@@ -8,15 +8,25 @@ use std::path::PathBuf;
 
 use vy_capabilities::{Capability, CapabilitySet, Roots};
 use vy_core::{Position, Uri};
+use vy_host_api::context::{ContextApi, PluginContextReply, RemoteInfo};
+use vy_host_api::document::{
+    DocumentApi, DocumentGetTextParams, DocumentLineAtParams, DocumentOffsetAtParams,
+    DocumentPositionAtParams,
+};
 use vy_host_api::fs::{
     FsApi, FsCopyParams, FsCopyReply, FsCreateDirParams, FsCreateDirReply, FsExistsParams,
     FsExistsReply, FsReadDirParams, FsReadDirReply, FsReadFileParams, FsReadFileReply,
     FsReadTextFileParams, FsReadTextFileReply, FsRemoveParams, FsRemoveReply, FsRenameParams,
     FsRenameReply, FsStatParams, FsStatReply, FsWriteFileParams, FsWriteFileReply,
 };
+use vy_host_api::log::{LogApi, LogWriteParams};
+use vy_host_api::process::{
+    ProcessApi, ProcessKillParams, ProcessKillReply, ProcessSpawnParams, ProcessSpawnReply,
+    ProcessStdinParams, ProcessStdinReply,
+};
 use vy_host_api::workspace::{WorkspaceApi, WorkspaceInfoReply};
 use vy_host_api::{CallError, DocumentInfoReply, HostApi, Reply};
-use vy_proto::{DirEntry, ErrorCode, FileStat};
+use vy_proto::{DirEntry, ErrorCode, FileStat, ProcessExecParams, ProcessOutput};
 
 use super::Session;
 use super::fs::uri_to_path;
@@ -29,6 +39,19 @@ pub struct CoreHost<'a> {
 }
 
 impl CoreHost<'_> {
+    fn document(&self, id: Option<u64>) -> Option<&vy_core::Buffer> {
+        let id = id
+            .or_else(|| {
+                self.session
+                    .layout
+                    .active_pane()
+                    .and_then(|pane| self.session.panes.get(&pane))
+                    .and_then(|pane| pane.document_id)
+            })
+            .or_else(|| self.session.documents.keys().next().copied())?;
+        self.session.documents.get(&id)
+    }
+
     fn path(&self, uri: &str) -> Result<PathBuf, CallError> {
         uri_to_path(uri).map_err(|(code, message)| CallError::new(code, message))
     }
@@ -65,6 +88,118 @@ fn io_error(path: &std::path::Path, error: std::io::Error) -> CallError {
         ErrorCode::Internal
     };
     CallError::new(code, format!("{}: {error}", path.display()))
+}
+
+impl ContextApi for CoreHost<'_> {
+    fn info(&mut self) -> Result<Reply<PluginContextReply>, CallError> {
+        Ok(Reply::Value(PluginContextReply {
+            plugin_id: "core".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            remote: RemoteInfo {
+                is_remote: false,
+                name: "core".into(),
+                os: std::env::consts::OS.into(),
+                path_separator: std::path::MAIN_SEPARATOR.to_string(),
+            },
+        }))
+    }
+}
+
+impl DocumentApi for CoreHost<'_> {
+    fn get_text(&mut self, params: DocumentGetTextParams) -> Result<Reply<String>, CallError> {
+        let Some(buffer) = self.document(params.document_id) else {
+            return Err(CallError::new(ErrorCode::NotFound, "document is not open"));
+        };
+        let text = match params.range {
+            Some(range) => buffer
+                .slice(range)
+                .map_err(|error| CallError::invalid_params(error.to_string()))?,
+            None => buffer.text(),
+        };
+        Ok(Reply::Value(text))
+    }
+
+    fn line_at(
+        &mut self,
+        params: DocumentLineAtParams,
+    ) -> Result<Reply<Option<String>>, CallError> {
+        let Some(buffer) = self.document(params.document_id) else {
+            return Err(CallError::new(ErrorCode::NotFound, "document is not open"));
+        };
+        let line = buffer.text().lines().nth(params.line).map(str::to_string);
+        Ok(Reply::Value(line))
+    }
+
+    fn position_at(
+        &mut self,
+        params: DocumentPositionAtParams,
+    ) -> Result<Reply<Position>, CallError> {
+        let Some(buffer) = self.document(params.document_id) else {
+            return Err(CallError::new(ErrorCode::NotFound, "document is not open"));
+        };
+        let position = buffer
+            .char_to_position(params.offset)
+            .map_err(|error| CallError::invalid_params(error.to_string()))?;
+        Ok(Reply::Value(position))
+    }
+
+    fn offset_at(&mut self, params: DocumentOffsetAtParams) -> Result<Reply<usize>, CallError> {
+        let Some(buffer) = self.document(params.document_id) else {
+            return Err(CallError::new(ErrorCode::NotFound, "document is not open"));
+        };
+        let offset = buffer
+            .position_to_char(params.position)
+            .map_err(|error| CallError::invalid_params(error.to_string()))?;
+        Ok(Reply::Value(offset))
+    }
+}
+
+impl LogApi for CoreHost<'_> {
+    fn write(&mut self, params: LogWriteParams) -> Result<Reply<()>, CallError> {
+        eprintln!(
+            "vy: [{}] {} {}",
+            params.channel,
+            params.level.as_str(),
+            params.message
+        );
+        Ok(Reply::Value(()))
+    }
+}
+
+impl ProcessApi for CoreHost<'_> {
+    fn exec(&mut self, _params: ProcessExecParams) -> Result<Reply<ProcessOutput>, CallError> {
+        Err(CallError::new(
+            ErrorCode::UnsupportedFeature,
+            "process is not wired to CoreHost yet",
+        ))
+    }
+
+    fn spawn(
+        &mut self,
+        _params: ProcessSpawnParams,
+    ) -> Result<Reply<ProcessSpawnReply>, CallError> {
+        Err(CallError::new(
+            ErrorCode::UnsupportedFeature,
+            "process is not wired to CoreHost yet",
+        ))
+    }
+
+    fn kill(&mut self, _params: ProcessKillParams) -> Result<Reply<ProcessKillReply>, CallError> {
+        Err(CallError::new(
+            ErrorCode::UnsupportedFeature,
+            "process is not wired to CoreHost yet",
+        ))
+    }
+
+    fn write_stdin(
+        &mut self,
+        _params: ProcessStdinParams,
+    ) -> Result<Reply<ProcessStdinReply>, CallError> {
+        Err(CallError::new(
+            ErrorCode::UnsupportedFeature,
+            "process is not wired to CoreHost yet",
+        ))
+    }
 }
 
 impl vy_host_api::config::ConfigReadApi for CoreHost<'_> {

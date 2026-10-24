@@ -2,10 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 use vy_proto::{ProcessExecParams, ProcessOutput};
 
-use crate::{event_decl, method_decl};
+use crate::{CallError, Reply};
 
 /// `process.spawn` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -76,69 +75,37 @@ pub struct ProcessExit {
     pub exit_code: i32,
 }
 
-method_decl!(
-    EXEC,
-    "process.exec",
-    ProcessExecParams,
-    ProcessOutput,
-    "Executes a process and waits for it to complete."
-);
-method_decl!(
-    SPAWN,
-    "process.spawn",
-    ProcessSpawnParams,
-    ProcessSpawnReply,
-    "Spawns an asynchronous child process."
-);
-method_decl!(
-    KILL,
-    "process.kill",
-    ProcessKillParams,
-    ProcessKillReply,
-    "Terminates a running child process."
-);
-method_decl!(
-    WRITE_STDIN,
-    "process.writeStdin",
-    ProcessStdinParams,
-    ProcessStdinReply,
-    "Writes data to a child process standard input."
-);
+/// Runs and manages external processes.
+#[vy_api_schema::vy_api_trait("process")]
+pub trait ProcessApi {
+    /// Executes a process and waits for it to complete.
+    #[vy_api_schema::vy_api_method]
+    fn exec(&mut self, params: ProcessExecParams) -> Result<Reply<ProcessOutput>, CallError>;
 
-event_decl!(
-    ON_STDOUT,
-    "process.onStdout",
-    "process",
-    "onStdout",
-    ProcessData,
-    "Fires when a child process writes to standard output."
-);
-event_decl!(
-    ON_STDERR,
-    "process.onStderr",
-    "process",
-    "onStderr",
-    ProcessData,
-    "Fires when a child process writes to standard error."
-);
-event_decl!(
-    ON_EXIT,
-    "process.onExit",
-    "process",
-    "onExit",
-    ProcessExit,
-    "Fires when a child process exits."
-);
+    /// Spawns an asynchronous child process.
+    #[vy_api_schema::vy_api_method]
+    fn spawn(&mut self, params: ProcessSpawnParams) -> Result<Reply<ProcessSpawnReply>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[EXEC, SPAWN, KILL, WRITE_STDIN];
+    /// Terminates a running child process.
+    #[vy_api_schema::vy_api_method]
+    fn kill(&mut self, params: ProcessKillParams) -> Result<Reply<ProcessKillReply>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[ON_STDOUT, ON_STDERR, ON_EXIT];
+    /// Writes data to a child process standard input.
+    #[vy_api_schema::vy_api_method]
+    fn write_stdin(
+        &mut self,
+        params: ProcessStdinParams,
+    ) -> Result<Reply<ProcessStdinReply>, CallError>;
 
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "process",
-    doc: "Runs and manages external processes.",
-    sugar: None,
-};
+    /// Fires when a child process writes to standard output.
+    #[vy_api_schema::vy_api_event("process.onStdout", payload = ProcessData)]
+    const ON_STDOUT: ();
+
+    /// Fires when a child process writes to standard error.
+    #[vy_api_schema::vy_api_event("process.onStderr", payload = ProcessData)]
+    const ON_STDERR: ();
+
+    /// Fires when a child process exits.
+    #[vy_api_schema::vy_api_event("process.onExit", payload = ProcessExit)]
+    const ON_EXIT: ();
+}

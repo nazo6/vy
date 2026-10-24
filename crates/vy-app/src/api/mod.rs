@@ -1,9 +1,8 @@
-//! Declarations for the host methods the plugin API exposes.
+//! The client host for the plugin API.
 //!
-//! Each namespace lives in `namespaces/<name>.rs` inside an inline module
-//! annotated with `#[vy_api_namespace]`. The registry macro joins the modules,
-//! so adding a method needs no central table. See
-//! `docs/adr/0008-declare-plugin-api-with-macros.md`.
+//! The API surface lives in `vy-host-api` and `vy-client-api` as namespace
+//! traits. This module turns one `Call` into a `ClientHost` and dispatches
+//! through the generated facade. See ADR 0013.
 
 use serde_json::Value;
 use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
@@ -22,16 +21,6 @@ pub struct Call<'a, 'b> {
     pub context: &'a mut RequestContext<'b>,
     pub request: &'a HostRequest,
     pub outcome: &'a mut HostOutcome,
-}
-
-/// The erased signature of a handler stored in a namespace table.
-pub type HandlerFn =
-    for<'x, 'y, 'a, 'b> fn(&'x mut Call<'a, 'b>, &'y Value) -> Result<Reply<Value>, CallError>;
-
-/// One method and the function that answers it.
-pub struct HandlerDecl {
-    pub decl: &'static MethodDecl,
-    pub handler: HandlerFn,
 }
 
 /// Builds the document snapshot the script sees.
@@ -95,58 +84,29 @@ mod host;
 
 use host::ClientHost;
 
-#[vy_api_schema::vy_api_registry]
-mod namespaces {
-    mod context;
-    mod document;
-    mod editor;
-    mod keymap;
-    mod log;
-    mod process;
-    mod ui;
-    mod ui_gutter;
-    mod ui_hover;
-    mod ui_picker;
-    mod ui_statusline;
-}
-
-pub use namespaces::{events, methods, namespace_decls};
-
 /// Answers a call from the shim.
 pub fn dispatch(
     call: &mut Call<'_, '_>,
     method: &str,
     params: &Value,
 ) -> Option<Result<Reply<Value>, CallError>> {
-    let trait_result = {
-        let mut host = ClientHost { call };
-        vy_client_api::ClientHostApi::dispatch(&mut host, method, params)
-    };
-    if let Some(result) = trait_result {
-        return Some(result);
-    }
-    namespaces::dispatch(call, method, params)
+    let mut host = ClientHost { call };
+    vy_client_api::ClientHostApi::dispatch(&mut host, method, params)
 }
 
-/// Every declared method, including the trait-based namespaces.
+/// Every declared method.
 pub fn declarations() -> Vec<&'static MethodDecl> {
-    let mut declarations = vy_client_api::client_host_api_methods();
-    declarations.extend(methods().iter().map(|entry| entry.decl));
-    declarations
+    vy_client_api::client_host_api_methods()
 }
 
-/// Every declared namespace, including the trait-based namespaces.
+/// Every declared namespace.
 pub fn all_namespace_decls() -> Vec<&'static NamespaceDecl> {
-    let mut decls = vy_client_api::client_host_api_namespaces();
-    decls.extend(namespace_decls());
-    decls
+    vy_client_api::client_host_api_namespaces()
 }
 
-/// Every declared event, including the trait-based namespaces.
+/// Every declared event.
 pub fn all_events() -> Vec<&'static EventDecl> {
-    let mut events = vy_client_api::client_host_api_events();
-    events.extend(namespaces::events());
-    events
+    vy_client_api::client_host_api_events()
 }
 
 #[cfg(test)]

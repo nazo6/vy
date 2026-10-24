@@ -2,9 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
+use vy_host_api::{CallError, Reply};
 
-use crate::{ThemeColor, method_decl};
+use crate::ThemeColor;
 
 /// `ui.gutter.createItem` parameters.
 ///
@@ -24,31 +24,18 @@ pub struct GutterDisposeParams {
     pub id: String,
 }
 
-method_decl!(
-    CREATE_ITEM,
-    "ui.gutter.createItem",
-    GutterCreateParams,
-    (),
-    "Creates a gutter item and returns its id."
-);
-method_decl!(
-    DISPOSE_ITEM,
-    "ui.gutter.disposeItem",
-    GutterDisposeParams,
-    (),
-    "Removes one gutter item."
-);
-method_decl!(CLEAR, "ui.gutter.clear", (), "Removes every gutter item.");
+/// Creates and removes gutter items.
+#[vy_api_schema::vy_api_trait("ui.gutter")]
+pub trait UiGutterApi {
+    /// Creates a gutter item and returns its id.
+    #[vy_api_schema::vy_api_method]
+    fn create_item(&mut self, params: GutterCreateParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[CREATE_ITEM, DISPOSE_ITEM, CLEAR];
+    /// Removes one gutter item.
+    #[vy_api_schema::vy_api_method]
+    fn dispose_item(&mut self, params: GutterDisposeParams) -> Result<Reply<()>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "ui.gutter",
-    doc: "Creates and removes gutter items.",
-    sugar: None,
-};
+    /// Removes every gutter item.
+    #[vy_api_schema::vy_api_method]
+    fn clear(&mut self) -> Result<Reply<()>, CallError>;
+}

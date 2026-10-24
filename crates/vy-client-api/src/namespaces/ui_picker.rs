@@ -2,9 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
+use vy_host_api::{CallError, Reply};
 
-use crate::{PickerItem, method_decl};
+use crate::PickerItem;
 
 /// `ui.picker.show` parameters.
 ///
@@ -28,23 +28,13 @@ pub struct PickerShowReply {
     pub selected_id: String,
 }
 
-method_decl!(
-    SHOW,
-    "ui.picker.show",
-    PickerShowParams,
-    Option<PickerShowReply>,
-    "Shows a picker and resolves with the chosen item."
-);
-
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[SHOW];
-
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "ui.picker",
-    doc: "Shows a picker and returns the chosen item.",
-    sugar: None,
-};
+/// Shows a picker and returns the chosen item.
+#[vy_api_schema::vy_api_trait("ui.picker")]
+pub trait UiPickerApi {
+    /// Shows a picker and resolves with the chosen item.
+    #[vy_api_schema::vy_api_method]
+    fn show(
+        &mut self,
+        params: PickerShowParams,
+    ) -> Result<Reply<Option<PickerShowReply>>, CallError>;
+}
