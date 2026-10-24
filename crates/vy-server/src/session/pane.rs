@@ -54,13 +54,6 @@ impl Session {
         let view = get(&params, "view")
             .and_then(Value::as_str)
             .unwrap_or("editor");
-        if view != "editor" {
-            return Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::UnsupportedFeature,
-                format!("view {view} is not implemented yet"),
-            ));
-        }
 
         let Some(value) = get(&params, "uri").and_then(Value::as_str) else {
             return Outcome::one(RpcMessage::err(

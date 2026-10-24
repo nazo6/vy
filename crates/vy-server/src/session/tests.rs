@@ -337,6 +337,37 @@ fn opens_a_second_pane_next_to_the_first_and_shares_the_buffer() {
 }
 
 #[test]
+fn opens_a_custom_view_pane() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, pane_id) = open_untitled(&mut session);
+
+    let outcome = request(
+        &mut session,
+        3,
+        "pane/open",
+        object([
+            ("view", Value::from("example.tree")),
+            ("uri", Value::from("vy:untitled")),
+            (
+                "placement",
+                object([
+                    ("target", Value::from(pane_id)),
+                    ("direction", Value::from("left")),
+                ]),
+            ),
+        ]),
+    );
+
+    let value = ok_value(&outcome.messages[0]);
+    assert_eq!(get(value, "pane_id").and_then(Value::as_u64), Some(2));
+    assert_eq!(
+        get(value, "document_id").and_then(Value::as_u64),
+        Some(document_id)
+    );
+}
+
+#[test]
 fn focuses_and_closes_panes_through_the_layout_tree() {
     let mut session = Session::new();
     initialize(&mut session);
