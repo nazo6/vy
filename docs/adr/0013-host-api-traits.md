@@ -137,12 +137,32 @@ pub trait WorkspaceApi {
 }
 ```
 
-`#[vy_api_trait]` は関連定数を trait から取り除き、`EventDecl` と `EVENTS` を
-生成します。`host_api!` は `module::EVENTS` を集めるので、facade ごとの
-`events_fn` が共有イベントとクライアントイベントをまとめます。
+`#[vy_api_trait]` は関連定数を trait から取り除き、`EventDecl`、`EVENTS`、
+そして型付きイベントの marker を生成します。
 
-すべての名前空間を trait 化したため、イベントもすべて trait の関連定数として
-宣言されています。宣言専用の `method_decl!` / `event_decl!` は削除しました。
+```rust
+pub struct OnDidChangeWorkspaceFolders;
+
+impl vy_host_api::HostEvent for OnDidChangeWorkspaceFolders {
+    const TOPIC: &'static str = "workspace.onDidChangeWorkspaceFolders";
+    type Payload = WorkspaceFoldersChange;
+}
+```
+
+`vy-js` の `ScriptHost` は topic 文字列ではなく marker を受け取ります。
+
+```rust
+script.emit_event::<OnDidChangeWorkspaceFolders>(&WorkspaceFoldersChange {
+    folders,
+});
+```
+
+これで topic と payload 型がコンパイル時に結びつきます。`ScriptHost::emit` は
+crate 内に閉じ、外部からは `emit_event` だけを使います。
+
+`host_api!` は `module::EVENTS` を集めるので、facade ごとの `events_fn` が
+共有イベントとクライアントイベントをまとめます。すべての名前空間を trait 化した
+ため、宣言専用の `method_decl!` / `event_decl!` は削除しました。
 
 ## 検証した範囲
 
@@ -161,6 +181,7 @@ pub trait WorkspaceApi {
 - `config` の共有 trait とクライアント trait の分割
 - `commands` の `manual` と `typed_args`
 - `host_api!` による facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集
+- `HostEvent` marker と `ScriptHost::emit_event` による型付きイベント
 - `vy-server` の `CoreHost` による共有 trait の実装
 - `fs` のケイパビリティ許可と拒否
 - 生成される TypeScript が変わらないこと
