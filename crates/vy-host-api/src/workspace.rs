@@ -2,10 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl, TypeRef};
+use vy_api_schema::{EventDecl, TypeRef};
 use vy_core::Uri;
 
-use crate::{DocumentInfoReply, method_decl};
+use crate::{CallError, DocumentInfoReply, Reply};
 
 /// `workspace.info` reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -23,24 +23,20 @@ pub struct WorkspaceFoldersChange {
     pub folders: Vec<String>,
 }
 
-method_decl!(
-    INFO,
-    "workspace.info",
-    WorkspaceInfoReply,
-    "Returns the workspace root, name, folders, and trust state."
-);
-method_decl!(
-    TEXT_DOCUMENTS,
-    "workspace.textDocuments",
-    Vec<DocumentInfoReply>,
-    "Returns the text documents open in the workspace."
-);
+/// Describes the workspace and its open documents.
+#[vy_api_schema::vy_api_trait("workspace")]
+pub trait WorkspaceApi {
+    /// Returns the workspace root, name, folders, and trust state.
+    #[vy_api_schema::vy_api_method]
+    fn info(&mut self) -> Result<Reply<WorkspaceInfoReply>, CallError>;
+
+    /// Returns the text documents open in the workspace.
+    #[vy_api_schema::vy_api_method]
+    fn text_documents(&mut self) -> Result<Reply<Vec<DocumentInfoReply>>, CallError>;
+}
 
 /// Fires when the workspace folders change.
 pub static ON_DID_CHANGE_WORKSPACE_FOLDERS_TOPIC: &str = "workspace.onDidChangeWorkspaceFolders";
-
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[INFO, TEXT_DOCUMENTS];
 
 /// Every event in this namespace.
 pub static EVENTS: &[EventDecl] = &[EventDecl {
@@ -54,10 +50,3 @@ pub static EVENTS: &[EventDecl] = &[EventDecl {
     },
     doc: "Fires when the workspace folders change.",
 }];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "workspace",
-    doc: "Describes the workspace and its open documents.",
-    sugar: None,
-};

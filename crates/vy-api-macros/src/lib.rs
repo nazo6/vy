@@ -9,8 +9,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Attribute, Expr, ExprLit, FnArg, GenericArgument, Ident, Item, ItemFn, ItemMod, Lit, LitStr,
-    Meta, PathArguments, ReturnType, Token, Type,
+    Attribute, Expr, ExprLit, FnArg, GenericArgument, Ident, Item, ItemFn, ItemMod, ItemTrait, Lit,
+    LitStr, Meta, PathArguments, ReturnType, Token, TraitItem, Type,
 };
 
 /// Marks a handler function as one host method.
@@ -43,6 +43,18 @@ pub fn vy_api_event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn vy_api_namespace(attr: TokenStream, item: TokenStream) -> TokenStream {
     match expand_namespace(attr.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Declares a host namespace as a trait and generates its metadata and dispatch.
+///
+/// Each trait method with `#[vy_api_method]` becomes a `MethodDecl` and an arm
+/// in the generated `dispatch` function. Implementors only implement the trait.
+#[proc_macro_attribute]
+pub fn vy_api_trait(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match expand_trait(attr.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -488,6 +500,203 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
     let generated: syn::File = syn::parse2(generated)?;
     items.extend(generated.items);
     Ok(quote! { #module })
+}
+
+fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
+    let args: NamespaceArgs = syn::parse2(attr)?;
+    let path = args.path.ok_or_else(|| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[vy_api_trait]` needs a path, for example `#[vy_api_trait(\"fs\")]`",
+        )
+    })?;
+    let namespace = path.value();
+    let mut trait_item: ItemTrait = syn::parse2(item)?;
+    let trait_doc = doc_of(&trait_item.attrs);
+    let trait_ident = trait_item.ident.clone();
+
+    let mut generated_items = Vec::new();
+    let mut declarations = Vec::new();
+    let mut arms = Vec::new();
+    let mut retained = Vec::new();
+
+    for item in std::mem::take(&mut trait_item.items) {
+        let TraitItem::Fn(mut method) = item else {
+            retained.push(item);
+            continue;
+        };
+        let Some(position) = method
+            .attrs
+            .iter()
+            .position(|attribute| is_attribute(attribute, "vy_api_method"))
+        else {
+            retained.push(TraitItem::Fn(method));
+            continue;
+        };
+        let attribute = method.attrs.remove(position);
+        let method_args = parse_method_args(&attribute)?;
+
+        let mut inputs = method.sig.inputs.iter();
+        match inputs.next() {
+            Some(FnArg::Receiver(_)) => {}
+            Some(other) => {
+                return Err(syn::Error::new_spanned(
+                    other,
+                    "a host trait method needs `&mut self` as its first argument",
+                ));
+            }
+            None => {
+                return Err(syn::Error::new_spanned(
+                    &method.sig,
+                    "a host trait method needs `&mut self` as its first argument",
+                ));
+            }
+        }
+        let params = match inputs.next() {
+            Some(FnArg::Typed(typed)) => Some((*typed.ty).clone()),
+            None => None,
+            Some(FnArg::Receiver(receiver)) => {
+                return Err(syn::Error::new_spanned(
+                    receiver,
+                    "a host trait method takes at most `&mut self` and `params`",
+                ));
+            }
+        };
+        if let Some(extra) = inputs.next() {
+            return Err(syn::Error::new_spanned(
+                extra,
+                "a host trait method takes at most `&mut self` and `params`",
+            ));
+        }
+
+        let value = reply_value_type(&method.sig.output)?;
+        let identifier = method.sig.ident.clone();
+        let wire = method_args
+            .name
+            .map(|name| name.value())
+            .unwrap_or_else(|| format!("{namespace}.{}", camel_case(&identifier.to_string())));
+        let doc = doc_of(&method.attrs);
+        let manual = method_args.manual;
+        let typed_key = match &method_args.typed_key {
+            Some(name) => quote! { Some(#name) },
+            None => quote! { None },
+        };
+        let typed_args = match &method_args.typed_args {
+            Some(name) => quote! { Some(#name) },
+            None => quote! { None },
+        };
+
+        let params_ts = format_ident!("__vy_params_ts_{}", identifier);
+        let params_collect = format_ident!("__vy_params_collect_{}", identifier);
+        let result_ts = format_ident!("__vy_result_ts_{}", identifier);
+        let result_collect = format_ident!("__vy_result_collect_{}", identifier);
+        let declaration = format_ident!("{}", identifier.to_string().to_uppercase());
+
+        let (params_ts_item, params_field) = match &params {
+            Some(params) => (
+                quote! {
+                    fn #params_ts() -> String {
+                        ::vy_api_schema::ts_name::<#params>()
+                    }
+
+                    fn #params_collect(collector: &mut ::vy_api_schema::TypeCollector) {
+                        ::vy_api_schema::collect::<#params>(collector);
+                    }
+                },
+                quote! {
+                    Some(::vy_api_schema::TypeRef {
+                        name: #params_ts as fn() -> String,
+                        collect: #params_collect
+                            as fn(&mut ::vy_api_schema::TypeCollector),
+                    })
+                },
+            ),
+            None => (quote! {}, quote! { None }),
+        };
+
+        generated_items.push(quote! {
+            #params_ts_item
+
+            fn #result_ts() -> String {
+                ::vy_api_schema::ts_name::<#value>()
+            }
+
+            fn #result_collect(collector: &mut ::vy_api_schema::TypeCollector) {
+                ::vy_api_schema::collect::<#value>(collector);
+            }
+
+            pub static #declaration: ::vy_api_schema::MethodDecl =
+                ::vy_api_schema::MethodDecl {
+                    method: #wire,
+                    params: #params_field,
+                    result: ::vy_api_schema::TypeRef {
+                        name: #result_ts as fn() -> String,
+                        collect: #result_collect
+                            as fn(&mut ::vy_api_schema::TypeCollector),
+                    },
+                    doc: #doc,
+                    manual: #manual,
+                    typed_key: #typed_key,
+                    typed_args: #typed_args,
+                };
+        });
+        declarations.push(quote! { #declaration });
+
+        match &params {
+            Some(params) => arms.push(quote! {
+                #wire => Some((|| {
+                    let params: #params = ::vy_host_api::parse_params(params)?;
+                    ::vy_host_api::erase_reply(host.#identifier(params)?)
+                })()),
+            }),
+            None => arms.push(quote! {
+                #wire => Some((|| {
+                    ::vy_host_api::erase_reply(host.#identifier()?)
+                })()),
+            }),
+        }
+
+        retained.push(TraitItem::Fn(method));
+    }
+    trait_item.items = retained;
+
+    let sugar = match &args.sugar {
+        Some(name) => quote! { Some(#name) },
+        None => quote! { None },
+    };
+    let generated = quote! {
+        #(#generated_items)*
+
+        /// Every method declared by this trait.
+        pub static METHODS: &[::vy_api_schema::MethodDecl] = &[#(#declarations),*];
+
+        /// JSDoc and sugar metadata for the namespace.
+        pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
+            ::vy_api_schema::NamespaceDecl {
+                path: #namespace,
+                doc: #trait_doc,
+                sugar: #sugar,
+            };
+
+        /// Answers a call declared by this trait.
+        pub fn dispatch<H: #trait_ident + ?Sized>(
+            host: &mut H,
+            method: &str,
+            params: &::serde_json::Value,
+        ) -> Option<
+            ::core::result::Result<
+                ::vy_host_api::Reply<::serde_json::Value>,
+                ::vy_host_api::CallError,
+            >,
+        > {
+            match method {
+                #(#arms)*
+                _ => None,
+            }
+        }
+    };
+
+    Ok(quote! { #trait_item #generated })
 }
 
 fn expand_registry(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {

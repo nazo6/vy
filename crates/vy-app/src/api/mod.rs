@@ -5,15 +5,14 @@
 //! so adding a method needs no central table. See
 //! `docs/adr/0008-declare-plugin-api-with-macros.md`.
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::Value;
-use vy_api_schema::MethodDecl;
+use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 use vy_capabilities::TrustedStore;
 use vy_core::Uri;
 use vy_js::DocumentInfoReply;
 use vy_js::HostRequest;
-use vy_proto::ErrorCode;
+
+pub use vy_host_api::{CallError, Reply, erase_reply, parse_params};
 
 use crate::editor::Editor;
 use crate::plugin_host::{DocumentInfo, HostOutcome, RequestContext};
@@ -23,64 +22,6 @@ pub struct Call<'a, 'b> {
     pub context: &'a mut RequestContext<'b>,
     pub request: &'a HostRequest,
     pub outcome: &'a mut HostOutcome,
-}
-
-/// The value a handler returns now, or a reply the view sends later.
-pub enum Reply<T> {
-    Value(T),
-    Deferred,
-}
-
-impl<T> Reply<T> {
-    pub fn value(value: T) -> Self {
-        Self::Value(value)
-    }
-}
-
-/// A failure the shim receives as an exception with a stable code.
-pub struct CallError {
-    pub(crate) code: ErrorCode,
-    pub(crate) message: String,
-}
-
-impl CallError {
-    pub fn invalid_params(message: impl Into<String>) -> Self {
-        Self {
-            code: ErrorCode::InvalidParams,
-            message: message.into(),
-        }
-    }
-
-    pub fn invalid_state(message: impl Into<String>) -> Self {
-        Self {
-            code: ErrorCode::InvalidState,
-            message: message.into(),
-        }
-    }
-}
-
-impl From<serde_json::Error> for CallError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::invalid_params(error.to_string())
-    }
-}
-
-/// Deserializes the parameters of one method.
-///
-/// Missing parameters arrive as `null`; treating that as an empty object keeps
-/// methods without parameters from needing a special case.
-pub fn parse_params<T: DeserializeOwned>(params: &Value) -> Result<T, CallError> {
-    let empty = Value::Object(serde_json::Map::new());
-    let value = if params.is_null() { &empty } else { params };
-    Ok(serde_json::from_value(value.clone())?)
-}
-
-/// Serializes a handler's reply for the script boundary.
-pub fn erase_reply<T: Serialize>(reply: Reply<T>) -> Result<Reply<Value>, CallError> {
-    match reply {
-        Reply::Value(value) => Ok(Reply::Value(serde_json::to_value(value)?)),
-        Reply::Deferred => Ok(Reply::Deferred),
-    }
 }
 
 /// The erased signature of a handler stored in a namespace table.
@@ -137,6 +78,10 @@ pub(crate) fn check_capability(
     Ok(())
 }
 
+mod host;
+
+use host::ClientHost;
+
 #[vy_api_schema::vy_api_registry]
 mod namespaces {
     mod commands;
@@ -147,7 +92,6 @@ mod namespaces {
     mod fs;
     mod keymap;
     mod log;
-    mod notifications;
     mod process;
     mod ui;
     mod ui_gutter;
@@ -155,10 +99,52 @@ mod namespaces {
     mod ui_picker;
     mod ui_statusline;
     mod views;
-    mod workspace;
 }
 
-pub use namespaces::{dispatch, events, methods, namespace_decls};
+pub use namespaces::{events, methods, namespace_decls};
+
+/// Answers a call from the shim.
+pub fn dispatch(
+    call: &mut Call<'_, '_>,
+    method: &str,
+    params: &Value,
+) -> Option<Result<Reply<Value>, CallError>> {
+    let trait_result = {
+        let mut host = ClientHost { call };
+        vy_client_api::ClientHostApi::dispatch(&mut host, method, params)
+    };
+    if let Some(result) = trait_result {
+        return Some(result);
+    }
+    namespaces::dispatch(call, method, params)
+}
+
+/// Every declared method, including the trait-based namespaces.
+pub fn declarations() -> Vec<&'static MethodDecl> {
+    let mut declarations = Vec::new();
+    declarations.extend(vy_host_api::workspace::METHODS.iter());
+    declarations.extend(vy_client_api::namespaces::notifications::METHODS.iter());
+    declarations.extend(methods().iter().map(|entry| entry.decl));
+    declarations
+}
+
+/// Every declared namespace, including the trait-based namespaces.
+pub fn all_namespace_decls() -> Vec<&'static NamespaceDecl> {
+    let mut decls = vec![
+        &vy_host_api::workspace::NAMESPACE,
+        &vy_client_api::namespaces::notifications::NAMESPACE,
+    ];
+    decls.extend(namespace_decls());
+    decls
+}
+
+/// Every declared event, including the trait-based namespaces.
+pub fn all_events() -> Vec<&'static EventDecl> {
+    let mut events: Vec<&'static EventDecl> = Vec::new();
+    events.extend(vy_host_api::workspace::EVENTS.iter());
+    events.extend(namespaces::events());
+    events
+}
 
 #[cfg(test)]
 mod tests {
@@ -166,8 +152,8 @@ mod tests {
 
     #[test]
     fn declares_every_method_and_namespace() {
-        let methods = methods();
-        let names: Vec<&str> = methods.iter().map(|entry| entry.decl.method).collect();
+        let methods = declarations();
+        let names: Vec<&str> = methods.iter().map(|entry| entry.method).collect();
         assert_eq!(names.len(), 55);
 
         let mut unique = names.clone();
@@ -237,70 +223,63 @@ mod tests {
 
         for entry in &methods {
             assert!(
-                !entry.decl.doc.trim().is_empty(),
+                !entry.doc.trim().is_empty(),
                 "{} has no description",
-                entry.decl.method
+                entry.method
             );
-            let name = entry
-                .decl
-                .method
-                .rsplit('.')
-                .next()
-                .unwrap_or(entry.decl.method);
+            let name = entry.method.rsplit('.').next().unwrap_or(entry.method);
             assert!(
                 !name.starts_with("on"),
                 "{} would be treated as an event",
-                entry.decl.method
+                entry.method
             );
             assert_eq!(
-                entry.decl.manual,
-                entry.decl.method == "commands.registerCommand",
+                entry.manual,
+                entry.method == "commands.registerCommand",
                 "{} has the wrong manual flag",
-                entry.decl.method
+                entry.method
             );
         }
 
-        let find = |name: &str| -> &HandlerDecl {
+        let find = |name: &str| -> &MethodDecl {
             methods
                 .iter()
                 .copied()
-                .find(|entry| entry.decl.method == name)
+                .find(|entry| entry.method == name)
                 .unwrap_or_else(|| panic!("{name} is missing"))
         };
 
-        assert!(find("editor.mode").decl.params.is_none());
-        assert_eq!((find("editor.mode").decl.result.name)(), "Mode");
+        assert!(find("editor.mode").params.is_none());
+        assert_eq!((find("editor.mode").result.name)(), "Mode");
         assert_eq!(
-            (find("editor.activeDocument").decl.result.name)(),
+            (find("editor.activeDocument").result.name)(),
             "DocumentInfoReply | null"
         );
         assert_eq!(
-            (find("editor.documents").decl.result.name)(),
+            (find("editor.documents").result.name)(),
             "Array<DocumentInfoReply>"
         );
         assert_eq!(
             find("editor.setMode")
-                .decl
                 .params
                 .map(|params| (params.name)())
                 .as_deref(),
             Some("EditorSetModeParams")
         );
-        assert_eq!((find("editor.setMode").decl.result.name)(), "null");
-        assert_eq!((find("config.get").decl.result.name)(), "unknown");
-        assert_eq!(find("config.get").decl.typed_key, Some("SettingsMap"));
-        assert_eq!(find("commands.execute").decl.typed_args, Some("CommandMap"));
+        assert_eq!((find("editor.setMode").result.name)(), "null");
+        assert_eq!((find("config.get").result.name)(), "unknown");
+        assert_eq!(find("config.get").typed_key, Some("SettingsMap"));
+        assert_eq!(find("commands.execute").typed_args, Some("CommandMap"));
         assert_eq!(
             find("fs.readFile")
-                .decl
                 .params
                 .map(|params| (params.name)())
                 .as_deref(),
             Some("FsReadFileParams")
         );
-        assert_eq!((find("fs.readFile").decl.result.name)(), "FsReadFileReply");
+        assert_eq!((find("fs.readFile").result.name)(), "FsReadFileReply");
 
-        let namespaces = namespace_decls();
+        let namespaces = all_namespace_decls();
         assert_eq!(namespaces.len(), 17);
 
         let paths: Vec<&str> = namespaces.iter().map(|entry| entry.path).collect();
@@ -339,7 +318,7 @@ mod tests {
 
     #[test]
     fn declares_every_event() {
-        let events = events();
+        let events = all_events();
         assert_eq!(events.len(), 7);
 
         let topics: Vec<&str> = events.iter().map(|event| event.topic).collect();
@@ -395,10 +374,9 @@ mod tests {
     /// runs this together with the ts-rs tests.
     #[test]
     fn export_bindings_plugin_api() {
-        let entries = methods();
-        let methods: Vec<&MethodDecl> = entries.iter().map(|entry| entry.decl).collect();
-        let namespaces = namespace_decls();
-        let events = events();
+        let methods = declarations();
+        let namespaces = all_namespace_decls();
+        let events = all_events();
         vy_api_schema::codegen::export(&methods, &namespaces, &events);
     }
 }

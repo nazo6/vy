@@ -5,15 +5,37 @@
 //! crates; the declarations live here so the TypeScript surface and the
 //! backend implementation cannot drift. See ADR 0012.
 
+// Lets macro-generated code use `::vy_host_api` even inside this crate.
+extern crate self as vy_host_api;
+
 pub mod config;
 pub mod context;
 pub mod document;
 pub mod fs;
 pub mod log;
 pub mod process;
+pub mod runtime;
 pub mod workspace;
 
 pub use document::DocumentInfoReply;
+pub use runtime::{CallError, Reply, erase_reply, parse_params};
+
+/// The core-side host surface shared by the client and the server.
+///
+/// Implementors provide the namespace traits; `dispatch` is the single entry
+/// point used by the host loop.
+pub trait HostApi: workspace::WorkspaceApi {
+    fn dispatch(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+    ) -> Option<Result<Reply<serde_json::Value>, CallError>> {
+        if let Some(result) = workspace::dispatch(self, method, params) {
+            return Some(result);
+        }
+        None
+    }
+}
 
 /// Declares a host method without a handler.
 ///
