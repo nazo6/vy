@@ -341,7 +341,10 @@ impl CommandId {
             count += 1;
             if segment.is_empty()
                 || !segment.chars().all(|character| {
-                    character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+                    character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || character == '-'
+                        || character == '_'
                 })
             {
                 return Err(invalid());
@@ -679,7 +682,9 @@ mod tests {
     #[test]
     fn validates_command_ids() {
         assert!(CommandId::parse("user.uppercase").is_ok());
+        assert!(CommandId::parse("user.uppercase_document").is_ok());
         assert!(CommandId::parse("example.hello.greet").is_ok());
+        assert!(CommandId::parse("example.tree.toggle_dir").is_ok());
         assert_eq!(
             CommandId::parse("vy.find_files"),
             Err(CommandError::Reserved("vy.find_files".into()))

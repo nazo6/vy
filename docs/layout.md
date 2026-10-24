@@ -232,8 +232,8 @@ Vy はバンドラも `vy plugin build` も提供しません。
 ## 7. 命名規則
 
 - プラグイン ID は `<publisher>.<name>` の形にし、英小文字とハイフンを使います。
-- コマンド ID は `<pluginId>.<command>` の形にします。組み込みは `vy.`
-  で始めます。
+- コマンド ID は `<pluginId>.<command>` の形にし、各セグメントには英小文字、
+  数字、`-`、`_` を使います。組み込みは `vy.` で始めます。
 - 設定キーは `<pluginId>.<key>` の形にします。組み込みは
   `ui.`、`editor.`、`lsp.` などの名前空間を使います。
 - 言語 ID は VS Code と同じ名前を使います。`rust`、`typescript`、`markdown`

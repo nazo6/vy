@@ -260,9 +260,10 @@ version と一致したときだけ確定します。
 | `keymap.sequenceTimeout`                | local    | なし           | P2     |
 
 コマンド ID は `<pluginId>.<name>` の形にします。組み込みのコマンドは `vy.`
-で始めます。`commands.registerCommand` は独自コマンド用で、`vy.` で始まる ID は
-登録できません。`keymap.bind` の `command` は組み込み ID か独自コマンド ID です。
-`when` にはコンテキスト式を書きます。
+で始めます。各セグメントには英小文字、数字、`-`、`_` を使えます。
+`commands.registerCommand` は独自コマンド用で、`vy.` で始まる ID は登録できません。
+`keymap.bind` の `command` は組み込み ID か独自コマンド ID です。`when` には
+コンテキスト式を書きます。
 
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
 `vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、
