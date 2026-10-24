@@ -1,11 +1,12 @@
 //! `process` namespace.
 
 /// Runs and manages external processes.
-#[vy_api_schema::vy_api_namespace("process", sugar = ProcessSugar)]
+#[vy_api_schema::vy_api_namespace("process")]
 mod api {
     use vy_api_schema::{
-        ProcessExecParams, ProcessKillParams, ProcessKillReply, ProcessOutput, ProcessSpawnParams,
-        ProcessSpawnReply, ProcessStdinParams, ProcessStdinReply,
+        ProcessData, ProcessExecParams, ProcessExit, ProcessKillParams, ProcessKillReply,
+        ProcessOutput, ProcessSpawnParams, ProcessSpawnReply, ProcessStdinParams,
+        ProcessStdinReply,
     };
     use vy_proto::to_value;
 
@@ -13,7 +14,7 @@ mod api {
     use crate::plugin_host::HostAction;
 
     /// Executes a process and waits for it to complete.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn exec(
         call: &mut Call<'_, '_>,
         params: ProcessExecParams,
@@ -28,7 +29,7 @@ mod api {
     }
 
     /// Spawns an asynchronous child process.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn spawn(
         call: &mut Call<'_, '_>,
         params: ProcessSpawnParams,
@@ -48,7 +49,7 @@ mod api {
     }
 
     /// Terminates a running child process.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn kill(
         call: &mut Call<'_, '_>,
         params: ProcessKillParams,
@@ -66,7 +67,7 @@ mod api {
     }
 
     /// Writes data to a child process standard input.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn write_stdin(
         call: &mut Call<'_, '_>,
         params: ProcessStdinParams,
@@ -82,6 +83,18 @@ mod api {
         };
         Ok(Reply::Deferred)
     }
+
+    /// Fires when a child process writes to standard output.
+    #[vy_api_schema::vy_api_event("process.onStdout", payload = ProcessData)]
+    const ON_STDOUT: () = ();
+
+    /// Fires when a child process writes to standard error.
+    #[vy_api_schema::vy_api_event("process.onStderr", payload = ProcessData)]
+    const ON_STDERR: () = ();
+
+    /// Fires when a child process exits.
+    #[vy_api_schema::vy_api_event("process.onExit", payload = ProcessExit)]
+    const ON_EXIT: () = ();
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

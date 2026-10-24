@@ -152,6 +152,18 @@ pub struct EditorEditReply {
     pub version: u64,
 }
 
+/// `editor.open` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EditorOpenParams {
+    pub uri: Uri,
+    #[serde(default)]
+    #[ts(type = "number")]
+    #[ts(optional = nullable)]
+    pub pane_id: Option<u64>,
+}
+
 // Documents.
 
 /// A document as the script sees it.
@@ -345,12 +357,21 @@ pub struct HoverShowParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PickerShowParams {
-    pub id: String,
     #[serde(default)]
     #[ts(optional)]
     pub items: Option<Vec<PickerItem>>,
     #[ts(optional = nullable)]
     pub placeholder: Option<String>,
+}
+
+/// `ui.picker.show` reply.
+///
+/// The reply is `null` when the picker is dismissed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PickerShowReply {
+    pub selected_id: String,
 }
 
 /// `views.render` parameters.
@@ -361,6 +382,58 @@ pub struct PickerShowParams {
 pub struct ViewsRenderParams {
     pub id: String,
     pub tree: WidgetNode,
+}
+
+/// Direction a view pane opens toward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum ViewDirection {
+    Left,
+    Right,
+    Above,
+    Below,
+}
+
+impl ViewDirection {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Above => "above",
+            Self::Below => "below",
+        }
+    }
+}
+
+/// `views.open` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ViewOpenParams {
+    pub view: String,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub direction: Option<ViewDirection>,
+}
+
+/// `views.close` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ViewCloseParams {
+    pub view: String,
+}
+
+/// `views.toggle` parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ViewToggleParams {
+    pub view: String,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub direction: Option<ViewDirection>,
 }
 
 /// `fs.readFile` parameters.
@@ -595,4 +668,87 @@ pub struct ProcessStdinParams {
 #[ts(export)]
 pub struct ProcessStdinReply {
     pub success: bool,
+}
+
+// Workspace and plugin context.
+
+/// `workspace.info` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WorkspaceInfoReply {
+    pub root_uri: Option<Uri>,
+    pub name: Option<String>,
+    pub folders: Vec<Uri>,
+    pub trusted: bool,
+}
+
+/// `context.info` reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PluginContextReply {
+    pub plugin_id: String,
+    pub version: String,
+    pub remote: RemoteInfo,
+}
+
+/// Information about the remote connection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RemoteInfo {
+    pub is_remote: bool,
+    pub name: String,
+    pub os: String,
+    pub path_separator: String,
+}
+
+// Events. The topic of an event is `<namespace>.<subscription name>`, and the
+// subscription name starts with `on`; the shim relies on that to tell events
+// from methods.
+
+/// Payload of `config.onDidChange`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ConfigChange {
+    pub key: String,
+}
+
+/// Payload of `editor.onDidChangeActiveDocument`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ActiveDocumentChange {
+    pub document: Option<DocumentInfoReply>,
+}
+
+/// Payload of `editor.onDidChangeSelection`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SelectionChange {
+    pub selections: Vec<Selection>,
+}
+
+/// Payload of `workspace.onDidChangeWorkspaceFolders`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceFoldersChange {
+    pub folders: Vec<String>,
+}
+
+/// Payload of `process.onStdout` and `process.onStderr`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProcessData {
+    pub pid: u32,
+    pub data: String,
+}
+
+/// Payload of `process.onExit`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProcessExit {
+    pub pid: u32,
+    pub exit_code: i32,
 }

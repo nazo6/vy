@@ -1,10 +1,10 @@
 import { commands, notifications, ui } from "vy-api";
 
 // 1. Notify that the plugin is activated
-notifications.show("Greeter Plugin activated!");
+await notifications.show({ message: "Greeter Plugin activated!" });
 
 // 2. Add an item to the statusline
-ui.statusline.createItem({
+await ui.statusline.createItem({
   id: "greeter.status",
   text: " [Greeter: Ready]",
   alignment: "right",
@@ -13,5 +13,5 @@ ui.statusline.createItem({
 
 // 3. Register a command
 commands.registerCommand("example.greeter.hello", async () => {
-  await notifications.show("Hello! Greeter Plugin is working properly.");
+  await notifications.show({ message: "Hello! Greeter Plugin is working properly." });
 });

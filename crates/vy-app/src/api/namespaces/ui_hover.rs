@@ -27,4 +27,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

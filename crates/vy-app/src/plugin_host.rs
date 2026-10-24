@@ -48,6 +48,7 @@ pub struct PluginHost {
     script: ScriptHost,
     init_path: PathBuf,
     stamp: Option<SystemTime>,
+    env: ScriptEnv,
 }
 
 /// The result of trying to load `init.ts`.
@@ -65,11 +66,18 @@ impl PluginHost {
     /// Starts the script thread. The runtime is ready before this returns.
     pub fn spawn(env: ScriptEnv, init_path: PathBuf) -> Self {
         let stamp = file_stamp(&init_path);
+        let stored = env.clone();
         Self {
             script: ScriptHost::spawn(env),
             init_path,
             stamp,
+            env: stored,
         }
+    }
+
+    /// The environment the script was started with.
+    pub fn env(&self) -> &ScriptEnv {
+        &self.env
     }
 
     pub fn events(&self) -> async_channel::Receiver<ScriptEvent> {
@@ -250,6 +258,7 @@ pub struct RequestContext<'a> {
     pub workspace: &'a WorkspaceInfo,
     pub paths: &'a Paths,
     pub script: Option<&'a ScriptHost>,
+    pub env: &'a ScriptEnv,
     pub statusline: Option<&'a mut Statusline>,
     pub gutter: Option<&'a mut GutterRegistry>,
     pub hover: Option<&'a mut Option<HoverState>>,
@@ -307,6 +316,11 @@ mod tests {
     use serde_json::json;
     use vy_api_schema::ThemeColor;
 
+    fn test_env() -> &'static ScriptEnv {
+        static ENV: std::sync::OnceLock<ScriptEnv> = std::sync::OnceLock::new();
+        ENV.get_or_init(ScriptEnv::default)
+    }
+
     fn context<'a>(
         editor: &'a mut Editor,
         config: &'a mut Config,
@@ -328,6 +342,7 @@ mod tests {
             workspace,
             paths,
             script: None,
+            env: test_env(),
             statusline: None,
             gutter: None,
             hover: None,
@@ -486,9 +501,9 @@ mod tests {
             r#"
 import { config, commands, notifications } from "vy-api";
 
-config.set({ "ui.fontSize": 15 });
+config.set({ values: { "ui.fontSize": 15 } });
 commands.registerCommand("user.hello", async () => {
-  await notifications.show("hello from init.ts");
+  await notifications.show({ message: "hello from init.ts" });
 });
 "#,
         )
@@ -516,6 +531,7 @@ commands.registerCommand("user.hello", async () => {
                     workspace: &workspace,
                     paths: &paths,
                     script: Some(host.script()),
+                    env: test_env(),
                     statusline: None,
                     gutter: None,
                     hover: None,
@@ -872,7 +888,7 @@ commands.registerCommand("user.hello", async () => {
                 placeholder,
                 request,
             } => {
-                assert_eq!(id, "test_picker");
+                assert!(id.starts_with("picker_"), "{id}");
                 assert_eq!(items.len(), 2);
                 assert_eq!(placeholder.as_deref(), Some("Choose an item"));
                 request.respond_value(json!({ "selectedId": "1" }));

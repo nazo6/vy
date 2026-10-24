@@ -77,8 +77,9 @@ cargo fmt --all --check
   一緒にコミットします。CI では生成後に `git diff --exit-code packages`
   で差分がないことを確かめます。生成先は `.cargo/config.toml` の
   `TS_RS_EXPORT_DIR` です。プラグイン API の型は `crates/vy-api-schema`
-  が持ち、メソッド宣言は `vy-app` の `#[vy_api_namespace]`
-  モジュールが持ちます。`HostMethods.ts` と `packages/vy-api/index.d.ts`
+  が持ち、メソッドとイベントの宣言は `vy-app` の `#[vy_api_namespace]`
+  モジュールが持ちます。`HostMethods.ts`、`HostEvents.ts`、
+  `packages/vy-api-types/index.ts`、`packages/vy-api/index.d.ts`
   も同じテストで生成します。手で書くのは糖衣の `packages/vy-api/overrides.d.ts`
   だけです。`CommandId.ts` と `SettingsKey.ts` は `vy-app`
   のテストが生成します（[ADR 0008](./adr/0008-declare-plugin-api-with-macros.md)）。

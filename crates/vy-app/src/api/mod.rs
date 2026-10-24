@@ -140,6 +140,7 @@ pub(crate) fn check_capability(
 mod namespaces {
     mod commands;
     mod config;
+    mod context;
     mod document;
     mod editor;
     mod fs;
@@ -156,7 +157,7 @@ mod namespaces {
     mod workspace;
 }
 
-pub use namespaces::{dispatch, methods, namespace_decls};
+pub use namespaces::{dispatch, events, methods, namespace_decls};
 
 #[cfg(test)]
 mod tests {
@@ -166,7 +167,7 @@ mod tests {
     fn declares_every_method_and_namespace() {
         let methods = methods();
         let names: Vec<&str> = methods.iter().map(|entry| entry.decl.method).collect();
-        assert_eq!(names.len(), 49);
+        assert_eq!(names.len(), 55);
 
         let mut unique = names.clone();
         unique.sort_unstable();
@@ -180,6 +181,7 @@ mod tests {
             "config.get",
             "config.inspect",
             "config.set",
+            "context.info",
             "document.getText",
             "document.lineAt",
             "document.offsetAt",
@@ -188,6 +190,7 @@ mod tests {
             "editor.documents",
             "editor.edit",
             "editor.mode",
+            "editor.open",
             "editor.redo",
             "editor.selections",
             "editor.setMode",
@@ -221,7 +224,11 @@ mod tests {
             "ui.statusline.createItem",
             "ui.statusline.disposeItem",
             "ui.statusline.updateItem",
+            "views.close",
+            "views.open",
             "views.render",
+            "views.toggle",
+            "workspace.info",
             "workspace.textDocuments",
         ] {
             assert!(names.contains(&expected), "{expected} is missing");
@@ -231,6 +238,23 @@ mod tests {
             assert!(
                 !entry.decl.doc.trim().is_empty(),
                 "{} has no description",
+                entry.decl.method
+            );
+            let name = entry
+                .decl
+                .method
+                .rsplit('.')
+                .next()
+                .unwrap_or(entry.decl.method);
+            assert!(
+                !name.starts_with("on"),
+                "{} would be treated as an event",
+                entry.decl.method
+            );
+            assert_eq!(
+                entry.decl.manual,
+                entry.decl.method == "commands.registerCommand",
+                "{} has the wrong manual flag",
                 entry.decl.method
             );
         }
@@ -263,6 +287,8 @@ mod tests {
         );
         assert_eq!((find("editor.setMode").decl.result)(), "null");
         assert_eq!((find("config.get").decl.result)(), "unknown");
+        assert_eq!(find("config.get").decl.typed_key, Some("SettingsMap"));
+        assert_eq!(find("commands.execute").decl.typed_args, Some("CommandMap"));
         assert_eq!(
             find("fs.readFile")
                 .decl
@@ -273,24 +299,14 @@ mod tests {
         );
         assert_eq!((find("fs.readFile").decl.result)(), "FsReadFileReply");
 
-        assert!(find("commands.registerCommand").decl.manual);
-        assert!(!find("commands.getCommands").decl.manual);
-        assert!(find("config.get").decl.manual);
-        assert!(!find("config.inspect").decl.manual);
-        assert!(!find("editor.mode").decl.manual);
-        assert!(find("editor.activeDocument").decl.manual);
-        assert!(find("document.getText").decl.manual);
-        assert!(find("fs.readFile").decl.manual);
-        assert!(!find("log.write").decl.manual);
-        assert!(!find("ui.hover.show").decl.manual);
-
         let namespaces = namespace_decls();
-        assert_eq!(namespaces.len(), 16);
+        assert_eq!(namespaces.len(), 17);
 
         let paths: Vec<&str> = namespaces.iter().map(|entry| entry.path).collect();
         for expected in [
             "commands",
             "config",
+            "context",
             "document",
             "editor",
             "fs",
@@ -315,27 +331,63 @@ mod tests {
                 "{} has no description",
                 namespace.path
             );
+            let expected = (namespace.path == "commands").then_some("CommandsSugar");
+            assert_eq!(namespace.sugar, expected, "{}", namespace.path);
+        }
+    }
+
+    #[test]
+    fn declares_every_event() {
+        let events = events();
+        assert_eq!(events.len(), 7);
+
+        let topics: Vec<&str> = events.iter().map(|event| event.topic).collect();
+        for expected in [
+            "config.onDidChange",
+            "editor.onDidChangeActiveDocument",
+            "editor.onDidChangeSelection",
+            "process.onExit",
+            "process.onStderr",
+            "process.onStdout",
+            "workspace.onDidChangeWorkspaceFolders",
+        ] {
+            assert!(topics.contains(&expected), "{expected} is missing");
         }
 
-        let sugar = |path: &str| {
-            namespaces
+        for event in &events {
+            assert!(!event.doc.trim().is_empty(), "{} has no doc", event.topic);
+            assert!(event.name.starts_with("on"), "{}", event.topic);
+            assert!(!event.namespace.is_empty(), "{}", event.topic);
+            assert_eq!(
+                event.topic,
+                format!("{}.{}", event.namespace, event.name),
+                "the shim derives the topic from namespace and name"
+            );
+        }
+
+        let find = |topic: &str| {
+            events
                 .iter()
-                .find(|entry| entry.path == path)
-                .unwrap_or_else(|| panic!("{path} is missing"))
-                .sugar
+                .copied()
+                .find(|event| event.topic == topic)
+                .unwrap_or_else(|| panic!("{topic} is missing"))
         };
-        assert_eq!(sugar("commands"), Some("CommandsSugar"));
-        assert_eq!(sugar("config"), Some("ConfigSugar"));
-        assert_eq!(sugar("document"), None);
-        assert_eq!(sugar("editor"), Some("EditorSugar"));
-        assert_eq!(sugar("fs"), Some("FsSugar"));
-        assert_eq!(sugar("ui"), Some("UiSugar"));
-        assert_eq!(sugar("ui.gutter"), Some("UiGutterSugar"));
-        assert_eq!(sugar("ui.hover"), None);
-        assert_eq!(sugar("ui.picker"), Some("UiPickerSugar"));
-        assert_eq!(sugar("ui.statusline"), Some("UiStatuslineSugar"));
-        assert_eq!(sugar("views"), Some("ViewsSugar"));
-        assert_eq!(sugar("workspace"), Some("WorkspaceSugar"));
+        assert_eq!((find("config.onDidChange").payload)(), "ConfigChange");
+        assert_eq!(
+            (find("editor.onDidChangeActiveDocument").payload)(),
+            "ActiveDocumentChange"
+        );
+        assert_eq!(
+            (find("editor.onDidChangeSelection").payload)(),
+            "SelectionChange"
+        );
+        assert_eq!(
+            (find("workspace.onDidChangeWorkspaceFolders").payload)(),
+            "WorkspaceFoldersChange"
+        );
+        assert_eq!((find("process.onStdout").payload)(), "ProcessData");
+        assert_eq!((find("process.onStderr").payload)(), "ProcessData");
+        assert_eq!((find("process.onExit").payload)(), "ProcessExit");
     }
 
     /// Regenerates the TypeScript declarations. The filter `export_bindings`
@@ -345,6 +397,7 @@ mod tests {
         let entries = methods();
         let methods: Vec<&MethodDecl> = entries.iter().map(|entry| entry.decl).collect();
         let namespaces = namespace_decls();
-        vy_api_schema::codegen::export(&methods, &namespaces);
+        let events = events();
+        vy_api_schema::codegen::export(&methods, &namespaces, &events);
     }
 }

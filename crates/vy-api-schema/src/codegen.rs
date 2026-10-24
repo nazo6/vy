@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::EventDecl;
 use crate::MethodDecl;
 use crate::NamespaceDecl;
 
@@ -23,6 +24,7 @@ const TYPE_KEYWORDS: &[&str] = &[
 #[derive(Default)]
 struct Namespace<'a> {
     methods: Vec<&'a MethodDecl>,
+    events: Vec<&'a EventDecl>,
     children: BTreeMap<&'a str, Namespace<'a>>,
     decl: Option<&'a NamespaceDecl>,
 }
@@ -33,6 +35,18 @@ impl<'a> Namespace<'a> {
             None => self.methods.push(method),
             Some((head, rest)) => {
                 self.children.entry(head).or_default().insert(rest, method);
+            }
+        }
+    }
+
+    fn insert_event(&mut self, path: &[&'a str], event: &'a EventDecl) {
+        match path.split_first() {
+            None => self.events.push(event),
+            Some((head, rest)) => {
+                self.children
+                    .entry(head)
+                    .or_default()
+                    .insert_event(rest, event);
             }
         }
     }
@@ -49,16 +63,18 @@ impl<'a> Namespace<'a> {
     /// Whether the generated declarations need an interface for this node.
     fn is_visible(&self) -> bool {
         self.decl.and_then(|decl| decl.sugar).is_some()
+            || !self.events.is_empty()
             || self.methods.iter().any(|method| !method.manual)
             || self.children.values().any(Namespace::is_visible)
     }
 }
 
 /// Writes every generated file. The export test calls this.
-pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) {
+pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl], events: &[&EventDecl]) {
     let types_dir = export_dir();
     std::fs::create_dir_all(&types_dir).expect("create the TypeScript export directory");
     write_host_methods(&types_dir, methods);
+    write_host_events(&types_dir, events);
     write_barrel(&types_dir);
 
     let api_dir = types_dir
@@ -66,8 +82,11 @@ pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) {
         .map_or_else(|| types_dir.clone(), Path::to_path_buf)
         .join("vy-api");
     std::fs::create_dir_all(&api_dir).expect("create the vy-api directory");
-    std::fs::write(api_dir.join("index.d.ts"), render_api(methods, namespaces))
-        .expect("write index.d.ts");
+    std::fs::write(
+        api_dir.join("index.d.ts"),
+        render_api(methods, namespaces, events),
+    )
+    .expect("write index.d.ts");
     std::fs::write(api_dir.join("docs.d.ts"), render_docs()).expect("write docs.d.ts");
 }
 
@@ -85,7 +104,8 @@ fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
 
     let mut output = header();
     for name in used_types(&sorted) {
-        output.push_str(&format!("import type {{ {name} }} from \"./{name}\";\n"));
+        let file = type_file(&name);
+        output.push_str(&format!("import type {{ {name} }} from \"./{file}\";\n"));
     }
     output.push('\n');
 
@@ -111,6 +131,33 @@ fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
     std::fs::write(directory.join("HostMethods.ts"), output).expect("write HostMethods.ts");
 }
 
+fn write_host_events(directory: &Path, events: &[&EventDecl]) {
+    let mut sorted = events.to_vec();
+    sorted.sort_by_key(|event| event.topic);
+
+    let mut output = header();
+    let payloads: BTreeSet<String> = sorted.iter().map(|event| (event.payload)()).collect();
+    for name in &payloads {
+        let file = type_file(name);
+        output.push_str(&format!("import type {{ {name} }} from \"./{file}\";\n"));
+    }
+    output.push('\n');
+    output.push_str("// Payload of every event, keyed by topic.\n");
+    output.push_str("export interface HostEvents {\n");
+    for event in sorted {
+        push_doc(&mut output, "  ", event.doc);
+        output.push_str(&format!(
+            "  \"{}\": {{ payload: {} }};\n",
+            event.topic,
+            (event.payload)()
+        ));
+    }
+    output.push_str("}\n\n");
+    output.push_str("// Wire names of every event.\n");
+    output.push_str("export type HostEventName = keyof HostEvents;\n");
+    std::fs::write(directory.join("HostEvents.ts"), output).expect("write HostEvents.ts");
+}
+
 fn write_barrel(directory: &Path) {
     let mut names: Vec<String> = std::fs::read_dir(directory)
         .expect("read the TypeScript export directory")
@@ -133,11 +180,19 @@ fn write_barrel(directory: &Path) {
 }
 
 /// Renders `packages/vy-api/index.d.ts`.
-fn render_api(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) -> String {
+fn render_api(
+    methods: &[&MethodDecl],
+    namespaces: &[&NamespaceDecl],
+    events: &[&EventDecl],
+) -> String {
     let mut tree = Namespace::default();
     for method in methods {
         let path: Vec<&str> = method.method.split('.').collect();
         tree.insert(&path[..path.len() - 1], method);
+    }
+    for event in events {
+        let path: Vec<&str> = event.namespace.split('.').collect();
+        tree.insert_event(&path, event);
     }
     for decl in namespaces {
         let path: Vec<&str> = decl.path.split('.').collect();
@@ -151,7 +206,10 @@ fn render_api(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) -> String 
         .copied()
         .filter(|method| !method.manual)
         .collect();
-    let generated_types = used_types(&generated);
+    let mut generated_types = used_types(&generated);
+    for event in events {
+        generated_types.insert((event.payload)());
+    }
     if !generated_types.is_empty() {
         output.push_str("import type {\n");
         for name in &generated_types {
@@ -171,6 +229,9 @@ fn render_api(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) -> String 
 
     output.push_str("export * from \"../vy-api-types\";\n");
     output.push_str("export * from \"./overrides\";\n\n");
+
+    output.push_str("/** A registration or event subscription that can be released. */\n");
+    output.push_str("export interface Disposable {\n  dispose(): void;\n}\n\n");
 
     output.push_str("/** Augment this interface to type the arguments of your own commands. */\n");
     output.push_str("export interface CommandMap {}\n\n");
@@ -244,6 +305,16 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
         push_doc(output, "  ", method.doc);
         output.push_str(&format!("  {}\n", signature(method)));
     }
+    let mut events = namespace.events.clone();
+    events.sort_by_key(|event| event.name);
+    for event in events {
+        push_doc(output, "  ", event.doc);
+        output.push_str(&format!(
+            "  {}(listener: (event: {}) => void): Disposable;\n",
+            event.name,
+            (event.payload)()
+        ));
+    }
     output.push_str("}\n");
 
     if path.len() == 1 {
@@ -268,7 +339,19 @@ fn signature(method: &MethodDecl) -> String {
     } else {
         result
     };
-    format!("{name}({params}): Promise<{result}>;")
+    let general = format!("{name}({params}): Promise<{result}>;");
+
+    if let Some(map) = method.typed_key {
+        return format!(
+            "{name}<K extends keyof {map}>(params: {{ key: K }}): Promise<{map}[K]>;\n  {general}"
+        );
+    }
+    if let Some(map) = method.typed_args {
+        return format!(
+            "{name}<K extends keyof {map}>(params: {{ id: K; args: {map}[K] }}): Promise<unknown>;\n  {general}"
+        );
+    }
+    general
 }
 
 fn api_name(path: &[&str]) -> String {
@@ -282,6 +365,14 @@ fn api_name(path: &[&str]) -> String {
     }
     name.push_str("Api");
     name
+}
+
+/// The file that exports a named type.
+fn type_file(name: &str) -> &str {
+    match name {
+        "SettingsMap" | "SettingsKey" => "SettingsKey",
+        other => other,
+    }
 }
 
 /// Type names the generated signatures refer to.
@@ -301,6 +392,14 @@ fn used_types(methods: &[&MethodDecl]) -> BTreeSet<String> {
                 }
                 names.insert(token.to_string());
             }
+        }
+        if let Some(map) = method.typed_key {
+            names.insert(map.to_string());
+        }
+        if let Some(map) = method.typed_args
+            && map != "CommandMap"
+        {
+            names.insert(map.to_string());
         }
     }
     names

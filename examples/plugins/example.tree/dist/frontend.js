@@ -1,22 +1,21 @@
-import { commands, fs, ui, views, workspace } from "vy-api";
+import { commands, fs, views, workspace } from "vy-api";
 
 // Cache of directory entries: uri -> DirEntry[]
 const treeCache = new Map();
 // Set of expanded directory URIs
 const expandedDirs = new Set();
+let workspaceInfo = { rootUri: ".", name: "PROJECT" };
 let isInitialized = false;
 
-function getRootUri() {
-  if (workspace.rootUri) {
-    return workspace.rootUri;
-  }
-  return ".";
+async function loadWorkspace() {
+  workspaceInfo = await workspace.info();
+  workspaceInfo.rootUri ??= ".";
+  workspaceInfo.name ??= "PROJECT";
 }
 
 async function loadDirectory(dirUri) {
   try {
-    const entries = await fs.readDir(dirUri);
-    // Sort: directories first, then alphabetical by name
+    const { entries } = await fs.readDir({ uri: dirUri });
     entries.sort((a, b) => {
       const aDir = Boolean(a.is_directory || a.isDirectory);
       const bDir = Boolean(b.is_directory || b.isDirectory);
@@ -32,18 +31,6 @@ async function loadDirectory(dirUri) {
   }
 }
 
-async function refreshAll() {
-  const root = getRootUri();
-  expandedDirs.add(root);
-  await loadDirectory(root);
-  for (const dir of expandedDirs) {
-    if (dir !== root) {
-      await loadDirectory(dir);
-    }
-  }
-  views.update("example.tree");
-}
-
 function renderTree(dirUri, depth = 0) {
   const entries = treeCache.get(dirUri) || [];
   const nodes = [];
@@ -54,27 +41,22 @@ function renderTree(dirUri, depth = 0) {
     if (isDir) {
       const isExpanded = expandedDirs.has(entry.uri);
       const icon = isExpanded ? "▾ 📁 " : "▸ 📁 ";
-      nodes.push(
-        ui.button({
-          id: `dir_${entry.uri}`,
-          label: `${indent}${icon}${entry.name}`,
-          command: `example.tree.toggle_dir ${entry.uri}`,
-        })
-      );
+      nodes.push({
+        type: "button",
+        id: `dir_${entry.uri}`,
+        label: `${indent}${icon}${entry.name}`,
+        command: `example.tree.toggle_dir ${entry.uri}`,
+      });
       if (isExpanded) {
-        const children = renderTree(entry.uri, depth + 1);
-        for (const child of children) {
-          nodes.push(child);
-        }
+        nodes.push(...renderTree(entry.uri, depth + 1));
       }
     } else {
-      nodes.push(
-        ui.button({
-          id: `file_${entry.uri}`,
-          label: `${indent}  📄 ${entry.name}`,
-          command: `vy.editor.open ${entry.uri}`,
-        })
-      );
+      nodes.push({
+        type: "button",
+        id: `file_${entry.uri}`,
+        label: `${indent}  📄 ${entry.name}`,
+        command: `vy.editor.open ${entry.uri}`,
+      });
     }
   }
 
@@ -82,45 +64,61 @@ function renderTree(dirUri, depth = 0) {
 }
 
 function renderView() {
-  const root = getRootUri();
-  const rootName = workspace.name || "PROJECT";
+  const root = workspaceInfo.rootUri ?? ".";
+  const rootName = workspaceInfo.name ?? "PROJECT";
 
-  const header = ui.row({ gap: "sm" }, [
-    ui.text({ text: `📁 ${rootName}` }),
-    ui.button({
-      id: "tree_refresh_btn",
-      label: "↻",
-      command: "example.tree.refresh",
-    }),
-  ]);
+  const header = {
+    type: "container",
+    kind: "row",
+    gap: "sm",
+    children: [
+      { type: "text", text: `📁 ${rootName}` },
+      {
+        type: "button",
+        id: "tree_refresh_btn",
+        label: "↻",
+        command: "example.tree.refresh",
+      },
+    ],
+  };
 
   const items = renderTree(root);
   const body =
     items.length > 0
       ? items
-      : [ui.text({ text: "  (Empty folder or loading...)", color: "muted" })];
+      : [{ type: "text", text: "  (Empty folder or loading...)", color: "muted" }];
 
-  return ui.column({ gap: "sm" }, [
-    header,
-    ui.separator(),
-    ui.column(body),
-  ]);
+  return {
+    type: "container",
+    kind: "column",
+    gap: "sm",
+    children: [
+      header,
+      { type: "separator" },
+      { type: "container", kind: "column", children: body },
+    ],
+  };
 }
 
-// Register the view
-views.register("example.tree", {
-  kind: "ui",
-  title: "Files",
-  render: renderView,
-});
+async function refreshAll() {
+  await loadWorkspace();
+  const root = workspaceInfo.rootUri ?? ".";
+  expandedDirs.add(root);
+  await loadDirectory(root);
+  for (const dir of expandedDirs) {
+    if (dir !== root) {
+      await loadDirectory(dir);
+    }
+  }
+  await views.render({ id: "example.tree", tree: renderView() });
+}
 
-// Commands
 commands.registerCommand("example.tree.toggle", async () => {
   if (!isInitialized) {
     isInitialized = true;
     await refreshAll();
   }
-  await views.toggle("example.tree", { direction: "left" });
+  await views.toggle({ view: "example.tree", direction: "left" });
 });
 
 commands.registerCommand("example.tree.open", async () => {
@@ -128,7 +126,7 @@ commands.registerCommand("example.tree.open", async () => {
     isInitialized = true;
     await refreshAll();
   }
-  await views.open("example.tree", { direction: "left" });
+  await views.open({ view: "example.tree", direction: "left" });
 });
 
 commands.registerCommand("example.tree.refresh", async () => {
@@ -146,10 +144,9 @@ commands.registerCommand("example.tree.toggle_dir", async (args) => {
       await loadDirectory(dirUri);
     }
   }
-  views.update("example.tree");
+  await views.render({ id: "example.tree", tree: renderView() });
 });
 
-// Pre-load root directory on activation
 refreshAll().catch((err) => {
   console.error(`Explorer initial load failed: ${err}`);
 });

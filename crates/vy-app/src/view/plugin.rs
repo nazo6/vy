@@ -254,6 +254,7 @@ impl EditorView {
             workspace: &workspace,
             paths: &self.paths,
             script: Some(plugin.script()),
+            env: plugin.env(),
             statusline: Some(&mut self.statusline),
             gutter: Some(&mut self.gutter),
             hover: Some(&mut self.hover),

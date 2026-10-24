@@ -65,16 +65,18 @@ mod tests {
     #[test]
     fn shim_is_a_module_with_the_phase_two_namespaces() {
         assert!(SHIM_SOURCE.contains("export const commands"));
-        assert!(SHIM_SOURCE.contains("export const keymap"));
         assert!(SHIM_SOURCE.contains("export const config"));
+        assert!(SHIM_SOURCE.contains("export const context"));
+        assert!(SHIM_SOURCE.contains("export const document"));
         assert!(SHIM_SOURCE.contains("export const editor"));
-        assert!(SHIM_SOURCE.contains("export const workspace"));
-        assert!(SHIM_SOURCE.contains("export const notifications"));
+        assert!(SHIM_SOURCE.contains("export const fs"));
+        assert!(SHIM_SOURCE.contains("export const keymap"));
         assert!(SHIM_SOURCE.contains("export const log"));
-        assert!(SHIM_SOURCE.contains("export const remote"));
+        assert!(SHIM_SOURCE.contains("export const notifications"));
+        assert!(SHIM_SOURCE.contains("export const process"));
         assert!(SHIM_SOURCE.contains("export const ui"));
         assert!(SHIM_SOURCE.contains("export const views"));
-        assert!(SHIM_SOURCE.contains("export const context"));
+        assert!(SHIM_SOURCE.contains("export const workspace"));
         assert!(!SHIM_SOURCE.contains(": string"));
     }
 }

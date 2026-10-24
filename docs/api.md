@@ -58,11 +58,11 @@ API と、コアが状態の正を持つ API です。
 [`packages/vy-api-types`](../packages/vy-api-types)
 に生成され、メソッド名と型の対応は `HostMethods` が持ちます。
 
-`Document`、`editor.edit`
-のビルダー、ステータスラインのハンドルのように、JavaScript
-側に状態を持つ糖衣だけは位置引数を使います。どのメソッドが糖衣かは
-`#[vy_api_method(manual)]`
-で表します（[ADR 0008](./adr/0008-declare-plugin-api-with-macros.md)）。
+Phase 3 以降、すべてのメソッドは params オブジェクトを 1
+つ受け取ります。糖衣はコールバック登録（`commands.registerCommand`）だけです。イベントは
+`namespace.onEvent(listener)` で購読し、`Disposable`
+を返します。以下の表に位置引数で書かれた古い形は、params
+オブジェクトに読み替えてください。
 
 優先度は Phase に対応します。
 

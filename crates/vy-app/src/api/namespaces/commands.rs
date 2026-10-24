@@ -26,7 +26,7 @@ mod api {
     }
 
     /// Runs a command by id with optional arguments.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method(typed_args = CommandMap)]
     fn execute(
         call: &mut Call<'_, '_>,
         params: CommandsExecuteParams,
@@ -104,4 +104,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

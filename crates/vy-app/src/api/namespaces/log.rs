@@ -1,7 +1,7 @@
 //! `log` namespace.
 
 /// Writes to plugin log channels.
-#[vy_api_schema::vy_api_namespace("log", sugar = LogSugar)]
+#[vy_api_schema::vy_api_namespace("log")]
 mod api {
     use std::path::Path;
 
@@ -47,4 +47,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

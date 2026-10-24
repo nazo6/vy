@@ -1,15 +1,17 @@
 //! `editor` namespace.
 
 /// Reads and edits the active document.
-#[vy_api_schema::vy_api_namespace("editor", sugar = EditorSugar)]
+#[vy_api_schema::vy_api_namespace("editor")]
 mod api {
+    use serde_json::json;
     use vy_api_schema::{
-        DocumentInfoReply, EditorEditParams, EditorEditReply, EditorSetModeParams,
-        EditorSetSelectionsParams, Mode,
+        ActiveDocumentChange, DocumentInfoReply, EditorEditParams, EditorEditReply,
+        EditorOpenParams, EditorSetModeParams, EditorSetSelectionsParams, Mode, SelectionChange,
     };
     use vy_core::Selection;
 
     use crate::api::{Call, CallError, Reply, document_info};
+    use crate::commands::DocumentCommand;
     use crate::plugin_host::HostAction;
 
     /// Returns the editor mode of the focused pane.
@@ -28,8 +30,21 @@ mod api {
         Ok(Reply::Value(()))
     }
 
+    /// Opens a document in an editor pane.
+    #[vy_api_schema::vy_api_method]
+    fn open(call: &mut Call<'_, '_>, params: EditorOpenParams) -> Result<Reply<()>, CallError> {
+        call.outcome.action = HostAction::Document {
+            command: DocumentCommand::Open,
+            args: Some(json!({
+                "uri": params.uri.to_string(),
+                "paneId": params.pane_id,
+            })),
+        };
+        Ok(Reply::Value(()))
+    }
+
     /// Returns the document in the focused pane, or null when none is open.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn active_document(
         call: &mut Call<'_, '_>,
     ) -> Result<Reply<Option<DocumentInfoReply>>, CallError> {
@@ -42,7 +57,7 @@ mod api {
     }
 
     /// Returns every open document.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn documents(call: &mut Call<'_, '_>) -> Result<Reply<Vec<DocumentInfoReply>>, CallError> {
         let documents = call
             .context
@@ -70,7 +85,7 @@ mod api {
     }
 
     /// Applies edits to the active document in one transaction.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn edit(
         call: &mut Call<'_, '_>,
         params: EditorEditParams,
@@ -105,6 +120,17 @@ mod api {
         call.outcome.action = HostAction::Redo;
         Ok(Reply::Value(()))
     }
+
+    /// Fires when the document in the focused pane changes.
+    #[vy_api_schema::vy_api_event(
+        "editor.onDidChangeActiveDocument",
+        payload = ActiveDocumentChange
+    )]
+    const ON_DID_CHANGE_ACTIVE_DOCUMENT: () = ();
+
+    /// Fires when the selections in the focused pane change.
+    #[vy_api_schema::vy_api_event("editor.onDidChangeSelection", payload = SelectionChange)]
+    const ON_DID_CHANGE_SELECTION: () = ();
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

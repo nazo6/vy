@@ -24,6 +24,16 @@ pub fn vy_api_method(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// Marks a const as the declaration of a host event.
+///
+/// The enclosing [`vy_api_namespace`] collects the declaration and removes this
+/// attribute. The event is exposed as a subscription method named after the
+/// last segment of the topic, which must start with `on`.
+#[proc_macro_attribute]
+pub fn vy_api_event(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 /// Declares an inline module as one namespace of the plugin API.
 ///
 /// The argument is the dotted namespace path. A doc comment on the module
@@ -94,6 +104,8 @@ impl Parse for NamespaceArgs {
 struct MethodArgs {
     name: Option<LitStr>,
     manual: bool,
+    typed_key: Option<LitStr>,
+    typed_args: Option<LitStr>,
 }
 
 impl Parse for MethodArgs {
@@ -114,8 +126,19 @@ impl Parse for MethodArgs {
                 continue;
             }
             let key: Ident = input.parse()?;
-            match key.to_string().as_str() {
+            let key_name = key.to_string();
+            match key_name.as_str() {
                 "manual" => args.manual = true,
+                "typed_key" | "typed_args" => {
+                    input.parse::<Token![=]>()?;
+                    let name: Ident = input.parse()?;
+                    let value = LitStr::new(&name.to_string(), name.span());
+                    if key_name == "typed_key" {
+                        args.typed_key = Some(value);
+                    } else {
+                        args.typed_args = Some(value);
+                    }
+                }
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -125,6 +148,28 @@ impl Parse for MethodArgs {
             }
         }
         Ok(args)
+    }
+}
+
+struct EventArgs {
+    topic: LitStr,
+    payload: Type,
+}
+
+impl Parse for EventArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let topic: LitStr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let key: Ident = input.parse()?;
+        if key != "payload" {
+            return Err(syn::Error::new(
+                key.span(),
+                "expected `payload = Type` after the event topic",
+            ));
+        }
+        input.parse::<Token![=]>()?;
+        let payload: Type = input.parse()?;
+        Ok(Self { topic, payload })
     }
 }
 
@@ -147,111 +192,180 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
         ));
     };
 
-    let mut generated_methods = Vec::new();
+    let mut generated_items = Vec::new();
     let mut entries = Vec::new();
     let mut arms = Vec::new();
+    let mut event_entries = Vec::new();
+    let mut retained = Vec::new();
 
-    for item in items.iter_mut() {
-        let Item::Fn(function) = item else {
-            continue;
-        };
-        let Some(position) = function
-            .attrs
-            .iter()
-            .position(|attribute| is_attribute(attribute, "vy_api_method"))
-        else {
-            continue;
-        };
-        let attribute = function.attrs.remove(position);
-        let method = parse_method_args(&attribute)?;
+    for item in std::mem::take(items) {
+        match item {
+            Item::Fn(mut function) => {
+                let Some(position) = function
+                    .attrs
+                    .iter()
+                    .position(|attribute| is_attribute(attribute, "vy_api_method"))
+                else {
+                    retained.push(Item::Fn(function));
+                    continue;
+                };
+                let attribute = function.attrs.remove(position);
+                let method = parse_method_args(&attribute)?;
 
-        let call_arg = function.sig.inputs.first().ok_or_else(|| {
-            syn::Error::new_spanned(
-                &function.sig,
-                "a handler needs `call: &mut Call<'_>` as its first argument",
-            )
-        })?;
-        match call_arg {
-            FnArg::Typed(typed) if is_call(&typed.ty) => {}
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    call_arg,
-                    "the first argument must be `call: &mut Call<'_>`",
-                ));
-            }
-        }
-
-        let params = params_type(function)?;
-        let value = reply_value_type(&function.sig.output)?;
-        let identifier = function.sig.ident.clone();
-        let wire = method
-            .name
-            .map(|name| name.value())
-            .unwrap_or_else(|| format!("{namespace}.{}", camel_case(&identifier.to_string())));
-        let doc = doc_of(&function.attrs);
-        let manual = method.manual;
-
-        let adapter = format_ident!("__vy_invoke_{}", identifier);
-        let params_ts = format_ident!("__vy_params_ts_{}", identifier);
-        let result_ts = format_ident!("__vy_result_ts_{}", identifier);
-        let declaration = format_ident!("__VY_METHOD_{}", identifier.to_string().to_uppercase());
-
-        let (params_ts_item, params_field, parse_params, invoke) = match &params {
-            Some(params) => (
-                quote! {
-                    fn #params_ts() -> String {
-                        ::vy_api_schema::ts_name::<#params>()
+                let call_arg = function.sig.inputs.first().ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &function.sig,
+                        "a handler needs `call: &mut Call<'_>` as its first argument",
+                    )
+                })?;
+                match call_arg {
+                    FnArg::Typed(typed) if is_call(&typed.ty) => {}
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            call_arg,
+                            "the first argument must be `call: &mut Call<'_>`",
+                        ));
                     }
-                },
-                quote! { Some(#params_ts as fn() -> String) },
-                quote! { let params: #params = crate::api::parse_params(raw)?; },
-                quote! { #identifier(call, params) },
-            ),
-            None => (
-                quote! {},
-                quote! { None },
-                quote! { let _ = raw; },
-                quote! { #identifier(call) },
-            ),
-        };
+                }
 
-        generated_methods.push(quote! {
-            #params_ts_item
+                let params = params_type(&function)?;
+                let value = reply_value_type(&function.sig.output)?;
+                let identifier = function.sig.ident.clone();
+                let wire = method.name.map(|name| name.value()).unwrap_or_else(|| {
+                    format!("{namespace}.{}", camel_case(&identifier.to_string()))
+                });
+                let doc = doc_of(&function.attrs);
+                let manual = method.manual;
+                let typed_key = match &method.typed_key {
+                    Some(name) => quote! { Some(#name) },
+                    None => quote! { None },
+                };
+                let typed_args = match &method.typed_args {
+                    Some(name) => quote! { Some(#name) },
+                    None => quote! { None },
+                };
 
-            fn #result_ts() -> String {
-                ::vy_api_schema::ts_name::<#value>()
+                let adapter = format_ident!("__vy_invoke_{}", identifier);
+                let params_ts = format_ident!("__vy_params_ts_{}", identifier);
+                let result_ts = format_ident!("__vy_result_ts_{}", identifier);
+                let declaration =
+                    format_ident!("__VY_METHOD_{}", identifier.to_string().to_uppercase());
+
+                let (params_ts_item, params_field, parse_params, invoke) = match &params {
+                    Some(params) => (
+                        quote! {
+                            fn #params_ts() -> String {
+                                ::vy_api_schema::ts_name::<#params>()
+                            }
+                        },
+                        quote! { Some(#params_ts as fn() -> String) },
+                        quote! { let params: #params = crate::api::parse_params(raw)?; },
+                        quote! { #identifier(call, params) },
+                    ),
+                    None => (
+                        quote! {},
+                        quote! { None },
+                        quote! { let _ = raw; },
+                        quote! { #identifier(call) },
+                    ),
+                };
+
+                generated_items.push(quote! {
+                    #params_ts_item
+
+                    fn #result_ts() -> String {
+                        ::vy_api_schema::ts_name::<#value>()
+                    }
+
+                    fn #adapter(
+                        call: &mut crate::api::Call<'_, '_>,
+                        raw: &::serde_json::Value,
+                    ) -> ::core::result::Result<
+                        crate::api::Reply<::serde_json::Value>,
+                        crate::api::CallError,
+                    > {
+                        #parse_params
+                        let reply = #invoke?;
+                        crate::api::erase_reply(reply)
+                    }
+
+                    static #declaration: ::vy_api_schema::MethodDecl =
+                        ::vy_api_schema::MethodDecl {
+                            method: #wire,
+                            params: #params_field,
+                            result: #result_ts as fn() -> String,
+                            doc: #doc,
+                            manual: #manual,
+                            typed_key: #typed_key,
+                            typed_args: #typed_args,
+                        };
+                });
+                entries.push(quote! {
+                    crate::api::HandlerDecl {
+                        decl: &#declaration,
+                        handler: #adapter,
+                    }
+                });
+                arms.push(quote! {
+                    #wire => Some(#adapter(call, params)),
+                });
+                retained.push(Item::Fn(function));
             }
+            Item::Const(mut marker) => {
+                let Some(position) = marker
+                    .attrs
+                    .iter()
+                    .position(|attribute| is_attribute(attribute, "vy_api_event"))
+                else {
+                    retained.push(Item::Const(marker));
+                    continue;
+                };
+                let attribute = marker.attrs.remove(position);
+                let event = parse_event_args(&attribute)?;
+                let topic = event.topic.value();
+                let (event_namespace, name) = topic.rsplit_once('.').ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &event.topic,
+                        "an event topic must be `<namespace>.<name>`",
+                    )
+                })?;
+                if !name.starts_with("on") {
+                    return Err(syn::Error::new_spanned(
+                        &event.topic,
+                        "an event name must start with `on`",
+                    ));
+                }
+                let identifier = marker.ident.clone();
+                let doc = doc_of(&marker.attrs);
+                let payload = event.payload;
+                let payload_fn = format_ident!("__vy_event_payload_{}", identifier);
+                let declaration = format_ident!("__VY_EVENT_{}", identifier);
+                let topic_const = format_ident!("{}_TOPIC", identifier);
 
-            fn #adapter(
-                call: &mut crate::api::Call<'_, '_>,
-                raw: &::serde_json::Value,
-            ) -> ::core::result::Result<
-                crate::api::Reply<::serde_json::Value>,
-                crate::api::CallError,
-            > {
-                #parse_params
-                let reply = #invoke?;
-                crate::api::erase_reply(reply)
-            }
+                generated_items.push(quote! {
+                    #[allow(non_snake_case)]
+                    fn #payload_fn() -> String {
+                        ::vy_api_schema::ts_name::<#payload>()
+                    }
 
-            static #declaration: ::vy_api_schema::MethodDecl = ::vy_api_schema::MethodDecl {
-                method: #wire,
-                params: #params_field,
-                result: #result_ts as fn() -> String,
-                doc: #doc,
-                manual: #manual,
-            };
-        });
-        entries.push(quote! {
-            crate::api::HandlerDecl {
-                decl: &#declaration,
-                handler: #adapter,
+                    static #declaration: ::vy_api_schema::EventDecl =
+                        ::vy_api_schema::EventDecl {
+                            topic: #topic,
+                            name: #name,
+                            namespace: #event_namespace,
+                            payload: #payload_fn as fn() -> String,
+                            doc: #doc,
+                        };
+
+                    pub const #topic_const: &str = #topic;
+                });
+                event_entries.push(quote! { #declaration });
+                // The marker const exists only to attach the attribute.
             }
-        });
-        arms.push(quote! {
-            #wire => Some(#adapter(call, params)),
-        });
+            other => retained.push(other),
+        }
     }
+    *items = retained;
 
     let sugar = match &args.sugar {
         Some(name) => quote! { Some(#name) },
@@ -259,10 +373,13 @@ fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<Token
     };
 
     let generated = quote! {
-        #(#generated_methods)*
+        #(#generated_items)*
 
         /// Every method declared by this namespace.
         pub static METHODS: &[crate::api::HandlerDecl] = &[#(#entries),*];
+
+        /// Every event declared by this namespace.
+        pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
 
         /// JSDoc and sugar metadata for this namespace.
         pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
@@ -333,6 +450,13 @@ fn expand_registry(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenS
             methods
         }
 
+        /// Every declared event, across namespaces.
+        pub fn events() -> Vec<&'static ::vy_api_schema::EventDecl> {
+            let mut events = Vec::new();
+            #(events.extend(#names::EVENTS);)*
+            events
+        }
+
         /// Answers a call from any namespace.
         pub fn dispatch(
             call: &mut crate::api::Call<'_, '_>,
@@ -380,6 +504,16 @@ fn parse_method_args(attribute: &Attribute) -> syn::Result<MethodArgs> {
         Meta::NameValue(value) => Err(syn::Error::new_spanned(
             value,
             "use `#[vy_api_method]`, `#[vy_api_method(\"wire.name\")]`, or `#[vy_api_method(manual)]`",
+        )),
+    }
+}
+
+fn parse_event_args(attribute: &Attribute) -> syn::Result<EventArgs> {
+    match &attribute.meta {
+        Meta::List(list) => syn::parse2(list.tokens.clone()),
+        _ => Err(syn::Error::new_spanned(
+            attribute,
+            "use `#[vy_api_event(\"topic\", payload = Type)]`",
         )),
     }
 }

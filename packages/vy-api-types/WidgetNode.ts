@@ -8,4 +8,4 @@ import type { ThemeColor } from "./ThemeColor";
 /**
  * A node in the declarative widget tree rendered by the host.
  */
-export type WidgetNode = { "type": "container", id: string | null, kind: ContainerKind, gap: Gap | null, children: Array<WidgetNode>, } | { "type": "text", id: string | null, text: string, color: ThemeColor | null, font: Font | null, } | { "type": "button", id: string, label: string, command: string, variant: ButtonVariant | null, } | { "type": "textInput", id: string, value: string, placeholder: string | null, } | { "type": "separator", id: string | null, };
+export type WidgetNode = { "type": "container", id?: string, kind: ContainerKind, gap?: Gap, children: Array<WidgetNode>, } | { "type": "text", id?: string, text: string, color?: ThemeColor, font?: Font, } | { "type": "button", id: string, label: string, command: string, variant?: ButtonVariant, } | { "type": "textInput", id?: string, value: string, placeholder?: string, } | { "type": "separator", id?: string, };

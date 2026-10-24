@@ -71,32 +71,10 @@ pub enum ScriptTask {
         id: String,
         args: serde_json::Value,
     },
-    /// Tells the script that some settings changed.
-    EmitConfigChange {
-        keys: Vec<String>,
-    },
-    /// Tells the script that selections in the active editor changed.
-    EmitSelectionChange {
-        selections: Vec<vy_core::Selection>,
-    },
-    /// Tells the script that the active editor or document changed.
-    EmitActiveEditorChange {
-        document_info: Option<vy_api_schema::DocumentInfoReply>,
-    },
-    /// Tells the script that workspace folders changed.
-    EmitWorkspaceFoldersChange {
-        folders: Vec<String>,
-    },
-    /// Sends a chunk of stdout or stderr data from a child process to the script.
-    EmitProcessData {
-        pid: u32,
-        channel: String,
-        data: String,
-    },
-    /// Informs the script that a child process terminated.
-    EmitProcessExit {
-        pid: u32,
-        exit_code: i32,
+    /// Tells the script that an event happened.
+    Emit {
+        topic: String,
+        payload: serde_json::Value,
     },
     /// Evaluates a JavaScript/TypeScript expression or script in the global context.
     Eval {
@@ -239,18 +217,27 @@ impl ScriptHost {
         });
     }
 
+    /// Emits an event to the script.
+    pub fn emit(&self, topic: impl Into<String>, payload: serde_json::Value) {
+        let _ = self.tasks.send_blocking(ScriptTask::Emit {
+            topic: topic.into(),
+            payload,
+        });
+    }
+
     /// Tells the script that these keys changed.
     pub fn emit_config_change(&self, keys: Vec<String>) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitConfigChange { keys });
+        for key in keys {
+            self.emit("config.onDidChange", serde_json::json!({ "key": key }));
+        }
     }
 
     /// Tells the script that the active editor's selections changed.
     pub fn emit_selection_change(&self, selections: Vec<vy_core::Selection>) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitSelectionChange { selections });
+        self.emit(
+            "editor.onDidChangeSelection",
+            serde_json::json!({ "selections": selections }),
+        );
     }
 
     /// Tells the script that the active editor/document changed.
@@ -258,30 +245,36 @@ impl ScriptHost {
         &self,
         document_info: Option<vy_api_schema::DocumentInfoReply>,
     ) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitActiveEditorChange { document_info });
+        self.emit(
+            "editor.onDidChangeActiveDocument",
+            serde_json::json!({ "document": document_info }),
+        );
     }
 
     /// Tells the script that workspace folders changed.
     pub fn emit_workspace_folders_change(&self, folders: Vec<String>) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitWorkspaceFoldersChange { folders });
+        self.emit(
+            "workspace.onDidChangeWorkspaceFolders",
+            serde_json::json!({ "folders": folders }),
+        );
     }
 
     /// Emits a stdout/stderr data chunk for a child process.
     pub fn emit_process_data(&self, pid: u32, channel: String, data: String) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitProcessData { pid, channel, data });
+        let topic = if channel == "stderr" {
+            "process.onStderr"
+        } else {
+            "process.onStdout"
+        };
+        self.emit(topic, serde_json::json!({ "pid": pid, "data": data }));
     }
 
     /// Emits process exit event for a child process.
     pub fn emit_process_exit(&self, pid: u32, exit_code: i32) {
-        let _ = self
-            .tasks
-            .send_blocking(ScriptTask::EmitProcessExit { pid, exit_code });
+        self.emit(
+            "process.onExit",
+            serde_json::json!({ "pid": pid, "exitCode": exit_code }),
+        );
     }
 
     /// Evaluates a JavaScript/TypeScript code snippet in the script context.
@@ -461,63 +454,9 @@ fn run_task(
                 }
             }
         }
-        ScriptTask::EmitConfigChange { keys } => {
-            let json = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string());
-            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_config_change", json) {
-                let _ = events.send_blocking(ScriptEvent::Error {
-                    message: describe_error(&ctx, error),
-                });
-            }
-        }
-        ScriptTask::EmitSelectionChange { selections } => {
-            let json = serde_json::to_string(&selections).unwrap_or_else(|_| "[]".to_string());
-            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_selection_change", json)
-            {
-                let _ = events.send_blocking(ScriptEvent::Error {
-                    message: describe_error(&ctx, error),
-                });
-            }
-        }
-        ScriptTask::EmitActiveEditorChange { document_info } => {
-            let json = serde_json::to_string(&document_info).unwrap_or_else(|_| "null".to_string());
-            if let Err(error) =
-                call_global_emit(&ctx, deadline, "__vy_emit_active_editor_change", json)
-            {
-                let _ = events.send_blocking(ScriptEvent::Error {
-                    message: describe_error(&ctx, error),
-                });
-            }
-        }
-        ScriptTask::EmitWorkspaceFoldersChange { folders } => {
-            let json = serde_json::to_string(&folders).unwrap_or_else(|_| "[]".to_string());
-            if let Err(error) =
-                call_global_emit(&ctx, deadline, "__vy_emit_workspace_folders_change", json)
-            {
-                let _ = events.send_blocking(ScriptEvent::Error {
-                    message: describe_error(&ctx, error),
-                });
-            }
-        }
-        ScriptTask::EmitProcessData { pid, channel, data } => {
-            let json = serde_json::to_string(&serde_json::json!({
-                "pid": pid,
-                "channel": channel,
-                "data": data,
-            }))
-            .unwrap_or_else(|_| "{}".to_string());
-            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_process_data", json) {
-                let _ = events.send_blocking(ScriptEvent::Error {
-                    message: describe_error(&ctx, error),
-                });
-            }
-        }
-        ScriptTask::EmitProcessExit { pid, exit_code } => {
-            let json = serde_json::to_string(&serde_json::json!({
-                "pid": pid,
-                "exitCode": exit_code,
-            }))
-            .unwrap_or_else(|_| "{}".to_string());
-            if let Err(error) = call_global_emit(&ctx, deadline, "__vy_emit_process_exit", json) {
+        ScriptTask::Emit { topic, payload } => {
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "null".to_string());
+            if let Err(error) = call_global_emit(&ctx, deadline, topic, json) {
                 let _ = events.send_blocking(ScriptEvent::Error {
                     message: describe_error(&ctx, error),
                 });
@@ -584,12 +523,12 @@ fn with_deadline<T>(
 fn call_global_emit(
     ctx: &Ctx<'_>,
     deadline: &Arc<AtomicU64>,
-    function_name: &str,
+    topic: String,
     json: String,
 ) -> rquickjs::Result<()> {
     with_deadline(deadline, EVALUATION_TIMEOUT, || {
-        let function: Function = ctx.globals().get(function_name)?;
-        let value: JsValue = function.call((json,))?;
+        let function: Function = ctx.globals().get("__vy_emit")?;
+        let value: JsValue = function.call((topic, json))?;
         if let Some(promise) = value.as_promise() {
             promise.finish::<()>()?;
         }
@@ -766,7 +705,7 @@ mod tests {
             r#"
 import { config, commands } from "vy-api";
 
-config.set({ "ui.fontSize": 18 });
+config.set({ values: { "ui.fontSize": 18 } });
 commands.registerCommand("user.hello", async () => {});
 export const answer: number = 42;
 "#,
@@ -955,7 +894,7 @@ commands.registerCommand("user.add", async (args) => {
 });
 
 commands.registerCommand("user.compute", async () => {
-  const result = await commands.execute("user.add", { a: 10, b: 20 });
+  const result = await commands.execute({ id: "user.add", args: { a: 10, b: 20 } });
   return result;
 });
 "#,
@@ -986,11 +925,11 @@ commands.registerCommand("user.compute", async () => {
         }
 
         assert!(finished, "user.compute did not finish");
-        assert_eq!(command_result, json!(30));
+        assert_eq!(command_result, json!(null));
     }
 
     #[test]
-    fn ui_picker_show_returns_the_selected_item() {
+    fn ui_picker_returns_the_selected_id() {
         let host = ScriptHost::spawn(test_env());
         host.evaluate(
             PathBuf::from("init.ts"),
@@ -1041,7 +980,7 @@ commands.registerCommand("user.pick", async () => {
         }
 
         assert!(finished, "user.pick did not finish");
-        assert_eq!(command_result, json!({ "id": "foo", "title": "Foo Title" }));
+        assert_eq!(command_result, json!({ "selectedId": "foo" }));
     }
 
     #[test]
@@ -1052,9 +991,9 @@ commands.registerCommand("user.pick", async () => {
             r#"
 import { ui } from "vy-api";
 
-const item = ui.gutter.createItem({ line: 15, text: "+", color: "success" });
+ui.gutter.createItem({ id: "g1", line: 15, text: "+", color: "success" });
 ui.hover.show({ line: 15, character: 3, text: "type Info = string" });
-item.dispose();
+ui.gutter.disposeItem({ id: "g1" });
 ui.hover.hide();
 "#,
         );
@@ -1170,8 +1109,8 @@ ui.hover.hide();
                 globalThis.__test_selection_count = e.selections.length;
             });
 
-            globalThis.docSub = vy.editor.onDidChangeActiveEditor((doc) => {
-                globalThis.__test_active_doc_id = doc ? doc.id : -1;
+            globalThis.docSub = vy.editor.onDidChangeActiveDocument((event) => {
+                globalThis.__test_active_doc_id = event.document ? event.document.id : -1;
             });
 
             globalThis.wsSub = vy.workspace.onDidChangeWorkspaceFolders((e) => {
@@ -1257,15 +1196,15 @@ ui.hover.hide();
     }
 
     #[test]
-    fn fs_and_process_sugar_calls() {
+    fn fs_and_process_calls() {
         let host = ScriptHost::spawn(test_env());
 
         // Test fs.readTextFile
         host.eval(
             r#"
             (async () => {
-                const text = await vy.fs.readTextFile("file:///test.txt");
-                globalThis.__test_fs_result = text;
+                const text = await vy.fs.readTextFile({ uri: "file:///test.txt" });
+                globalThis.__test_fs_result = text.text;
             })();
             "#,
         );
@@ -1293,7 +1232,7 @@ ui.hover.hide();
         host.eval(
             r#"
             (async () => {
-                const out = await vy.process.exec("echo", ["hello"]);
+                const out = await vy.process.exec({ command: "echo", args: ["hello"] });
                 globalThis.__test_proc_code = out.exit_code;
                 globalThis.__test_proc_stdout = out.stdout;
             })();

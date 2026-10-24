@@ -15,6 +15,7 @@ import type { DocumentOffsetAtParams } from "./DocumentOffsetAtParams";
 import type { DocumentPositionAtParams } from "./DocumentPositionAtParams";
 import type { EditorEditParams } from "./EditorEditParams";
 import type { EditorEditReply } from "./EditorEditReply";
+import type { EditorOpenParams } from "./EditorOpenParams";
 import type { EditorSetModeParams } from "./EditorSetModeParams";
 import type { EditorSetSelectionsParams } from "./EditorSetSelectionsParams";
 import type { FsCopyParams } from "./FsCopyParams";
@@ -47,6 +48,8 @@ import type { LogWriteParams } from "./LogWriteParams";
 import type { Mode } from "./Mode";
 import type { NotificationsShowParams } from "./NotificationsShowParams";
 import type { PickerShowParams } from "./PickerShowParams";
+import type { PickerShowReply } from "./PickerShowReply";
+import type { PluginContextReply } from "./PluginContextReply";
 import type { Position } from "./Position";
 import type { ProcessExecParams } from "./ProcessExecParams";
 import type { ProcessKillParams } from "./ProcessKillParams";
@@ -57,10 +60,15 @@ import type { ProcessSpawnReply } from "./ProcessSpawnReply";
 import type { ProcessStdinParams } from "./ProcessStdinParams";
 import type { ProcessStdinReply } from "./ProcessStdinReply";
 import type { Selection } from "./Selection";
+import type { SettingsMap } from "./SettingsKey";
 import type { StatuslineCreateParams } from "./StatuslineCreateParams";
 import type { StatuslineDisposeParams } from "./StatuslineDisposeParams";
 import type { StatuslineUpdateParams } from "./StatuslineUpdateParams";
+import type { ViewCloseParams } from "./ViewCloseParams";
+import type { ViewOpenParams } from "./ViewOpenParams";
+import type { ViewToggleParams } from "./ViewToggleParams";
 import type { ViewsRenderParams } from "./ViewsRenderParams";
+import type { WorkspaceInfoReply } from "./WorkspaceInfoReply";
 
 // Parameters and reply of every host call, keyed by method name.
 export interface HostMethods {
@@ -76,6 +84,8 @@ export interface HostMethods {
   "config.inspect": { params: ConfigInspectParams; result: ConfigInspectReply };
   /** Sets one or more setting values in memory and returns the keys that changed. */
   "config.set": { params: ConfigSetParams; result: ConfigSetReply };
+  /** Returns the plugin id, version, and remote connection information. */
+  "context.info": { params: Record<string, never>; result: PluginContextReply };
   /** Returns the document text, optionally limited to a range. */
   "document.getText": { params: DocumentGetTextParams; result: string };
   /** Returns the text of a line, or null when the line is out of range. */
@@ -92,6 +102,8 @@ export interface HostMethods {
   "editor.edit": { params: EditorEditParams; result: EditorEditReply };
   /** Returns the editor mode of the focused pane. */
   "editor.mode": { params: Record<string, never>; result: Mode };
+  /** Opens a document in an editor pane. */
+  "editor.open": { params: EditorOpenParams; result: null };
   /** Redoes the last undone transaction. */
   "editor.redo": { params: Record<string, never>; result: null };
   /** Returns the selections of the focused pane. */
@@ -151,15 +163,23 @@ export interface HostMethods {
   /** Shows a hover popup at a position. */
   "ui.hover.show": { params: HoverShowParams; result: null };
   /** Shows a picker and resolves with the chosen item. */
-  "ui.picker.show": { params: PickerShowParams; result: null };
+  "ui.picker.show": { params: PickerShowParams; result: PickerShowReply | null };
   /** Creates a status line item and returns its id. */
   "ui.statusline.createItem": { params: StatuslineCreateParams; result: null };
   /** Removes a status line item. */
   "ui.statusline.disposeItem": { params: StatuslineDisposeParams; result: null };
   /** Updates the fields of a status line item. */
   "ui.statusline.updateItem": { params: StatuslineUpdateParams; result: null };
+  /** Closes a view pane. */
+  "views.close": { params: ViewCloseParams; result: null };
+  /** Opens a view pane. */
+  "views.open": { params: ViewOpenParams; result: null };
   /** Renders a registered view into a widget tree. */
   "views.render": { params: ViewsRenderParams; result: null };
+  /** Toggles a view pane. */
+  "views.toggle": { params: ViewToggleParams; result: null };
+  /** Returns the workspace root, name, folders, and trust state. */
+  "workspace.info": { params: Record<string, never>; result: WorkspaceInfoReply };
   /** Returns the text documents open in the workspace. */
   "workspace.textDocuments": { params: Record<string, never>; result: Array<DocumentInfoReply> };
 }

@@ -1,7 +1,7 @@
 //! `ui.statusline` namespace.
 
 /// Creates and updates status line items.
-#[vy_api_schema::vy_api_namespace("ui.statusline", sugar = UiStatuslineSugar)]
+#[vy_api_schema::vy_api_namespace("ui.statusline")]
 mod api {
     use serde_json::Value;
     use vy_api_schema::{
@@ -12,7 +12,7 @@ mod api {
     use crate::statusline::StatuslineItem;
 
     /// Creates a status line item and returns its id.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn create_item(
         call: &mut Call<'_, '_>,
         params: StatuslineCreateParams,
@@ -32,7 +32,7 @@ mod api {
     }
 
     /// Updates the fields of a status line item.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn update_item(
         call: &mut Call<'_, '_>,
         params: StatuslineUpdateParams,
@@ -46,7 +46,7 @@ mod api {
     }
 
     /// Removes a status line item.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn dispose_item(
         call: &mut Call<'_, '_>,
         params: StatuslineDisposeParams,
@@ -82,4 +82,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

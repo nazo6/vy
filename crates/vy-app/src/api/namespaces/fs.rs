@@ -1,7 +1,7 @@
 //! `fs` namespace.
 
 /// Reads, writes, and inspects files in the workspace.
-#[vy_api_schema::vy_api_namespace("fs", sugar = FsSugar)]
+#[vy_api_schema::vy_api_namespace("fs")]
 mod api {
     use vy_api_schema::{
         FsCopyParams, FsCopyReply, FsCreateDirParams, FsCreateDirReply, FsExistsParams,
@@ -15,7 +15,7 @@ mod api {
     use crate::plugin_host::HostAction;
 
     /// Reads the binary contents of a file.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn read_file(
         call: &mut Call<'_, '_>,
         params: FsReadFileParams,
@@ -32,7 +32,7 @@ mod api {
     }
 
     /// Reads the UTF-8 text contents of a file.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn read_text_file(
         call: &mut Call<'_, '_>,
         params: FsReadTextFileParams,
@@ -49,7 +49,7 @@ mod api {
     }
 
     /// Writes binary or text contents to a file.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn write_file(
         call: &mut Call<'_, '_>,
         params: FsWriteFileParams,
@@ -68,7 +68,7 @@ mod api {
     }
 
     /// Lists entries in a directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn read_dir(
         call: &mut Call<'_, '_>,
         params: FsReadDirParams,
@@ -85,7 +85,7 @@ mod api {
     }
 
     /// Retrieves metadata about a file or directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn stat(
         call: &mut Call<'_, '_>,
         params: FsStatParams,
@@ -102,7 +102,7 @@ mod api {
     }
 
     /// Checks whether a file or directory exists.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn exists(
         call: &mut Call<'_, '_>,
         params: FsExistsParams,
@@ -119,7 +119,7 @@ mod api {
     }
 
     /// Creates a directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn create_dir(
         call: &mut Call<'_, '_>,
         params: FsCreateDirParams,
@@ -137,7 +137,7 @@ mod api {
     }
 
     /// Removes a file or directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn remove(
         call: &mut Call<'_, '_>,
         params: FsRemoveParams,
@@ -155,7 +155,7 @@ mod api {
     }
 
     /// Renames or moves a file or directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn rename(
         call: &mut Call<'_, '_>,
         params: FsRenameParams,
@@ -174,7 +174,7 @@ mod api {
     }
 
     /// Copies a file or directory.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn copy(
         call: &mut Call<'_, '_>,
         params: FsCopyParams,
@@ -193,4 +193,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

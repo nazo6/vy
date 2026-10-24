@@ -2,44 +2,101 @@
 // Regenerate with `cargo test --workspace export_bindings`.
 
 import type {
+  ActiveDocumentChange,
+  CommandsExecuteParams,
+  ConfigChange,
+  ConfigGetParams,
   ConfigInspectParams,
   ConfigInspectReply,
+  ConfigSetParams,
+  ConfigSetReply,
+  DocumentGetTextParams,
+  DocumentInfoReply,
+  DocumentLineAtParams,
+  DocumentOffsetAtParams,
+  DocumentPositionAtParams,
+  EditorEditParams,
+  EditorEditReply,
+  EditorOpenParams,
   EditorSetModeParams,
   EditorSetSelectionsParams,
+  FsCopyParams,
+  FsCopyReply,
+  FsCreateDirParams,
+  FsCreateDirReply,
+  FsExistsParams,
+  FsExistsReply,
+  FsReadDirParams,
+  FsReadDirReply,
+  FsReadFileParams,
+  FsReadFileReply,
+  FsReadTextFileParams,
+  FsReadTextFileReply,
+  FsRemoveParams,
+  FsRemoveReply,
+  FsRenameParams,
+  FsRenameReply,
+  FsStatParams,
+  FsStatReply,
+  FsWriteFileParams,
+  FsWriteFileReply,
+  GutterCreateParams,
   GutterDisposeParams,
   HoverShowParams,
+  KeymapBindParams,
   KeymapSetContextParams,
   KeymapUnbindParams,
   LogWriteParams,
   Mode,
+  NotificationsShowParams,
+  PickerShowParams,
+  PickerShowReply,
+  PluginContextReply,
+  Position,
+  ProcessData,
+  ProcessExecParams,
+  ProcessExit,
+  ProcessKillParams,
+  ProcessKillReply,
+  ProcessOutput,
+  ProcessSpawnParams,
+  ProcessSpawnReply,
+  ProcessStdinParams,
+  ProcessStdinReply,
   Selection,
+  SelectionChange,
+  SettingsMap,
+  StatuslineCreateParams,
+  StatuslineDisposeParams,
+  StatuslineUpdateParams,
+  ViewCloseParams,
+  ViewOpenParams,
+  ViewToggleParams,
+  ViewsRenderParams,
+  WorkspaceFoldersChange,
+  WorkspaceInfoReply,
 } from "../vy-api-types";
 
 import type {
   CommandsSugar,
-  ConfigSugar,
-  EditorSugar,
-  FsSugar,
-  KeymapSugar,
-  LogSugar,
-  NotificationsSugar,
-  ProcessSugar,
-  UiGutterSugar,
-  UiPickerSugar,
-  UiStatuslineSugar,
-  UiSugar,
-  ViewsSugar,
-  WorkspaceSugar,
 } from "./overrides";
 
 export * from "../vy-api-types";
 export * from "./overrides";
+
+/** A registration or event subscription that can be released. */
+export interface Disposable {
+  dispose(): void;
+}
 
 /** Augment this interface to type the arguments of your own commands. */
 export interface CommandMap {}
 
 /** Registers command handlers and runs commands by id. */
 export interface CommandsApi extends CommandsSugar {
+  /** Runs a command by id with optional arguments. */
+  execute<K extends keyof CommandMap>(params: { id: K; args: CommandMap[K] }): Promise<unknown>;
+  execute(params: CommandsExecuteParams): Promise<void>;
   /** Lists the ids of every registered command. */
   getCommands(): Promise<Array<string>>;
 }
@@ -47,17 +104,54 @@ export interface CommandsApi extends CommandsSugar {
 export const commands: CommandsApi;
 
 /** Reads and writes settings. */
-export interface ConfigApi extends ConfigSugar {
+export interface ConfigApi {
+  /** Returns the effective value of a setting key. */
+  get<K extends keyof SettingsMap>(params: { key: K }): Promise<SettingsMap[K]>;
+  get(params: ConfigGetParams): Promise<unknown>;
   /** Returns every layer's value for a setting key, plus the effective value. */
   inspect(params: ConfigInspectParams): Promise<ConfigInspectReply>;
+  /** Sets one or more setting values in memory and returns the keys that changed. */
+  set(params: ConfigSetParams): Promise<ConfigSetReply>;
+  /** Fires when the effective value of a setting key changes. */
+  onDidChange(listener: (event: ConfigChange) => void): Disposable;
 }
 /** Reads and writes settings. */
 export const config: ConfigApi;
 
+/** Reports the plugin and connection metadata. */
+export interface ContextApi {
+  /** Returns the plugin id, version, and remote connection information. */
+  info(): Promise<PluginContextReply>;
+}
+/** Reports the plugin and connection metadata. */
+export const context: ContextApi;
+
+/** Reads the text and offsets of the active document. */
+export interface DocumentApi {
+  /** Returns the document text, optionally limited to a range. */
+  getText(params: DocumentGetTextParams): Promise<string>;
+  /** Returns the text of a line, or null when the line is out of range. */
+  lineAt(params: DocumentLineAtParams): Promise<string | null>;
+  /** Converts a position to a UTF-16 offset. */
+  offsetAt(params: DocumentOffsetAtParams): Promise<number>;
+  /** Converts a UTF-16 offset to a position. */
+  positionAt(params: DocumentPositionAtParams): Promise<Position>;
+}
+/** Reads the text and offsets of the active document. */
+export const document: DocumentApi;
+
 /** Reads and edits the active document. */
-export interface EditorApi extends EditorSugar {
+export interface EditorApi {
+  /** Returns the document in the focused pane, or null when none is open. */
+  activeDocument(): Promise<DocumentInfoReply | null>;
+  /** Returns every open document. */
+  documents(): Promise<Array<DocumentInfoReply>>;
+  /** Applies edits to the active document in one transaction. */
+  edit(params: EditorEditParams): Promise<EditorEditReply>;
   /** Returns the editor mode of the focused pane. */
   mode(): Promise<Mode>;
+  /** Opens a document in an editor pane. */
+  open(params: EditorOpenParams): Promise<void>;
   /** Redoes the last undone transaction. */
   redo(): Promise<void>;
   /** Returns the selections of the focused pane. */
@@ -68,18 +162,44 @@ export interface EditorApi extends EditorSugar {
   setSelections(params: EditorSetSelectionsParams): Promise<void>;
   /** Undoes the last transaction. */
   undo(): Promise<void>;
+  /** Fires when the document in the focused pane changes. */
+  onDidChangeActiveDocument(listener: (event: ActiveDocumentChange) => void): Disposable;
+  /** Fires when the selections in the focused pane change. */
+  onDidChangeSelection(listener: (event: SelectionChange) => void): Disposable;
 }
 /** Reads and edits the active document. */
 export const editor: EditorApi;
 
 /** Reads, writes, and inspects files in the workspace. */
-export interface FsApi extends FsSugar {
+export interface FsApi {
+  /** Copies a file or directory. */
+  copy(params: FsCopyParams): Promise<FsCopyReply>;
+  /** Creates a directory. */
+  createDir(params: FsCreateDirParams): Promise<FsCreateDirReply>;
+  /** Checks whether a file or directory exists. */
+  exists(params: FsExistsParams): Promise<FsExistsReply>;
+  /** Lists entries in a directory. */
+  readDir(params: FsReadDirParams): Promise<FsReadDirReply>;
+  /** Reads the binary contents of a file. */
+  readFile(params: FsReadFileParams): Promise<FsReadFileReply>;
+  /** Reads the UTF-8 text contents of a file. */
+  readTextFile(params: FsReadTextFileParams): Promise<FsReadTextFileReply>;
+  /** Removes a file or directory. */
+  remove(params: FsRemoveParams): Promise<FsRemoveReply>;
+  /** Renames or moves a file or directory. */
+  rename(params: FsRenameParams): Promise<FsRenameReply>;
+  /** Retrieves metadata about a file or directory. */
+  stat(params: FsStatParams): Promise<FsStatReply>;
+  /** Writes binary or text contents to a file. */
+  writeFile(params: FsWriteFileParams): Promise<FsWriteFileReply>;
 }
 /** Reads, writes, and inspects files in the workspace. */
 export const fs: FsApi;
 
 /** Binds keys and updates keymap context values. */
-export interface KeymapApi extends KeymapSugar {
+export interface KeymapApi {
+  /** Binds a key sequence to a command. */
+  bind(params: KeymapBindParams): Promise<void>;
   /** Sets a keymap context value used by `when` clauses. */
   setContext(params: KeymapSetContextParams): Promise<void>;
   /** Removes a key binding and returns the number removed. */
@@ -89,7 +209,7 @@ export interface KeymapApi extends KeymapSugar {
 export const keymap: KeymapApi;
 
 /** Writes to plugin log channels. */
-export interface LogApi extends LogSugar {
+export interface LogApi {
   /** Writes one entry to a log channel. */
   write(params: LogWriteParams): Promise<void>;
 }
@@ -97,21 +217,39 @@ export interface LogApi extends LogSugar {
 export const log: LogApi;
 
 /** Shows notifications to the user. */
-export interface NotificationsApi extends NotificationsSugar {
+export interface NotificationsApi {
+  /** Shows a notification to the user. */
+  show(params: NotificationsShowParams): Promise<void>;
 }
 /** Shows notifications to the user. */
 export const notifications: NotificationsApi;
 
 /** Runs and manages external processes. */
-export interface ProcessApi extends ProcessSugar {
+export interface ProcessApi {
+  /** Executes a process and waits for it to complete. */
+  exec(params: ProcessExecParams): Promise<ProcessOutput>;
+  /** Terminates a running child process. */
+  kill(params: ProcessKillParams): Promise<ProcessKillReply>;
+  /** Spawns an asynchronous child process. */
+  spawn(params: ProcessSpawnParams): Promise<ProcessSpawnReply>;
+  /** Writes data to a child process standard input. */
+  writeStdin(params: ProcessStdinParams): Promise<ProcessStdinReply>;
+  /** Fires when a child process exits. */
+  onExit(listener: (event: ProcessExit) => void): Disposable;
+  /** Fires when a child process writes to standard error. */
+  onStderr(listener: (event: ProcessData) => void): Disposable;
+  /** Fires when a child process writes to standard output. */
+  onStdout(listener: (event: ProcessData) => void): Disposable;
 }
 /** Runs and manages external processes. */
 export const process: ProcessApi;
 
 /** Creates and removes gutter items. */
-export interface UiGutterApi extends UiGutterSugar {
+export interface UiGutterApi {
   /** Removes every gutter item. */
   clear(): Promise<void>;
+  /** Creates a gutter item and returns its id. */
+  createItem(params: GutterCreateParams): Promise<void>;
   /** Removes one gutter item. */
   disposeItem(params: GutterDisposeParams): Promise<void>;
 }
@@ -125,15 +263,23 @@ export interface UiHoverApi {
 }
 
 /** Shows a picker and returns the chosen item. */
-export interface UiPickerApi extends UiPickerSugar {
+export interface UiPickerApi {
+  /** Shows a picker and resolves with the chosen item. */
+  show(params: PickerShowParams): Promise<PickerShowReply | null>;
 }
 
 /** Creates and updates status line items. */
-export interface UiStatuslineApi extends UiStatuslineSugar {
+export interface UiStatuslineApi {
+  /** Creates a status line item and returns its id. */
+  createItem(params: StatuslineCreateParams): Promise<void>;
+  /** Removes a status line item. */
+  disposeItem(params: StatuslineDisposeParams): Promise<void>;
+  /** Updates the fields of a status line item. */
+  updateItem(params: StatuslineUpdateParams): Promise<void>;
 }
 
 /** Builds native widget trees and updates UI slots. */
-export interface UiApi extends UiSugar {
+export interface UiApi {
   readonly gutter: UiGutterApi;
   readonly hover: UiHoverApi;
   readonly picker: UiPickerApi;
@@ -143,13 +289,27 @@ export interface UiApi extends UiSugar {
 export const ui: UiApi;
 
 /** Registers and looks up pane views. */
-export interface ViewsApi extends ViewsSugar {
+export interface ViewsApi {
+  /** Closes a view pane. */
+  close(params: ViewCloseParams): Promise<void>;
+  /** Opens a view pane. */
+  open(params: ViewOpenParams): Promise<void>;
+  /** Renders a registered view into a widget tree. */
+  render(params: ViewsRenderParams): Promise<void>;
+  /** Toggles a view pane. */
+  toggle(params: ViewToggleParams): Promise<void>;
 }
 /** Registers and looks up pane views. */
 export const views: ViewsApi;
 
 /** Describes the workspace and its open documents. */
-export interface WorkspaceApi extends WorkspaceSugar {
+export interface WorkspaceApi {
+  /** Returns the workspace root, name, folders, and trust state. */
+  info(): Promise<WorkspaceInfoReply>;
+  /** Returns the text documents open in the workspace. */
+  textDocuments(): Promise<Array<DocumentInfoReply>>;
+  /** Fires when the workspace folders change. */
+  onDidChangeWorkspaceFolders(listener: (event: WorkspaceFoldersChange) => void): Disposable;
 }
 /** Describes the workspace and its open documents. */
 export const workspace: WorkspaceApi;

@@ -1,18 +1,18 @@
 //! `config` namespace.
 
 /// Reads and writes settings.
-#[vy_api_schema::vy_api_namespace("config", sugar = ConfigSugar)]
+#[vy_api_schema::vy_api_namespace("config")]
 mod api {
     use serde_json::Value;
     use vy_api_schema::{
-        ConfigGetParams, ConfigInspectParams, ConfigInspectReply, ConfigSetParams, ConfigSetReply,
-        Json,
+        ConfigChange, ConfigGetParams, ConfigInspectParams, ConfigInspectReply, ConfigSetParams,
+        ConfigSetReply, Json,
     };
 
     use crate::api::{Call, CallError, Reply};
 
     /// Returns the effective value of a setting key.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method(typed_key = SettingsMap)]
     fn get(call: &mut Call<'_, '_>, params: ConfigGetParams) -> Result<Reply<Json>, CallError> {
         let value = call
             .context
@@ -24,7 +24,7 @@ mod api {
     }
 
     /// Sets one or more setting values in memory and returns the keys that changed.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn set(
         call: &mut Call<'_, '_>,
         params: ConfigSetParams,
@@ -49,6 +49,10 @@ mod api {
             effective: inspect.effective,
         }))
     }
+
+    /// Fires when the effective value of a setting key changes.
+    #[vy_api_schema::vy_api_event("config.onDidChange", payload = ConfigChange)]
+    const ON_DID_CHANGE: () = ();
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

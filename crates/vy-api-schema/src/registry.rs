@@ -46,6 +46,25 @@ pub struct MethodDecl {
     pub doc: &'static str,
     /// Whether the shim provides a hand-written wrapper for this method.
     pub manual: bool,
+    /// Type name of the map that keys this method's parameter, if any.
+    pub typed_key: Option<&'static str>,
+    /// Type name of the map that types the `args` field, if any.
+    pub typed_args: Option<&'static str>,
+}
+
+/// One event the host can emit to the script.
+#[derive(Clone, Copy, Debug)]
+pub struct EventDecl {
+    /// Wire topic, for example `editor.onDidChangeSelection`.
+    pub topic: &'static str,
+    /// Subscription method name, for example `onDidChangeSelection`.
+    pub name: &'static str,
+    /// Namespace that exposes the subscription.
+    pub namespace: &'static str,
+    /// TypeScript name of the payload.
+    pub payload: fn() -> String,
+    /// One-line description emitted as JSDoc.
+    pub doc: &'static str,
 }
 
 /// One namespace in the generated TypeScript surface.

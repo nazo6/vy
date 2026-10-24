@@ -53,20 +53,27 @@ pub enum ButtonVariant {
 pub enum WidgetNode {
     /// Vertical, horizontal, or stacked layout container.
     Container {
+        #[serde(default)]
+        #[ts(optional)]
         id: Option<String>,
         kind: ContainerKind,
         #[serde(default)]
+        #[ts(optional)]
         gap: Option<Gap>,
         #[serde(default)]
         children: Vec<WidgetNode>,
     },
     /// Static or dynamic text item.
     Text {
+        #[serde(default)]
+        #[ts(optional)]
         id: Option<String>,
         text: String,
         #[serde(default)]
+        #[ts(optional)]
         color: Option<ThemeColor>,
         #[serde(default)]
+        #[ts(optional)]
         font: Option<Font>,
     },
     /// Clickable action button triggering a registered command.
@@ -75,16 +82,24 @@ pub enum WidgetNode {
         label: String,
         command: String,
         #[serde(default)]
+        #[ts(optional)]
         variant: Option<ButtonVariant>,
     },
     /// Text input field.
     TextInput {
-        id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
         #[serde(default)]
         value: String,
         #[serde(default)]
+        #[ts(optional)]
         placeholder: Option<String>,
     },
     /// Visual separator line.
-    Separator { id: Option<String> },
+    Separator {
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
+    },
 }

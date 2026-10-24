@@ -1,7 +1,7 @@
 //! `keymap` namespace.
 
 /// Binds keys and updates keymap context values.
-#[vy_api_schema::vy_api_namespace("keymap", sugar = KeymapSugar)]
+#[vy_api_schema::vy_api_namespace("keymap")]
 mod api {
     use vy_api_schema::{
         KeyContextValue, KeymapBindParams, KeymapSetContextParams, KeymapUnbindParams,
@@ -12,7 +12,7 @@ mod api {
     use crate::when;
 
     /// Binds a key sequence to a command.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn bind(call: &mut Call<'_, '_>, params: KeymapBindParams) -> Result<Reply<()>, CallError> {
         call.context
             .keymap
@@ -61,4 +61,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

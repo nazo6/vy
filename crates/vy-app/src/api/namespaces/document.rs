@@ -12,7 +12,7 @@ mod api {
     use crate::api::{Call, CallError, Reply};
 
     /// Returns the document text, optionally limited to a range.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn get_text(
         call: &mut Call<'_, '_>,
         params: DocumentGetTextParams,
@@ -29,7 +29,7 @@ mod api {
     }
 
     /// Returns the text of a line, or null when the line is out of range.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn line_at(
         call: &mut Call<'_, '_>,
         params: DocumentLineAtParams,
@@ -38,7 +38,7 @@ mod api {
     }
 
     /// Converts a UTF-16 offset to a position.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn position_at(
         call: &mut Call<'_, '_>,
         params: DocumentPositionAtParams,
@@ -49,7 +49,7 @@ mod api {
     }
 
     /// Converts a position to a UTF-16 offset.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn offset_at(
         call: &mut Call<'_, '_>,
         params: DocumentOffsetAtParams,
@@ -60,4 +60,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};

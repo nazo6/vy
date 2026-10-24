@@ -68,9 +68,20 @@ wire 名は既定で「名前空間パス + camelCase(関数名)」です。例�
 経由ラッパーは、API を「オブジェクト 1 個 → Promise」に統一して廃止します。 JS
 側に残すのは、ホストから JS の関数を呼ぶためのコールバック登録と、イベント購読の
 汎用レジストリだけです。メソッドの forwarder は shim の Proxy が名前空間ごとに
-生成するため、`__vy_spec` の注入やメソッド表の受け渡しは不要です。
+生成するため、`__vy_spec` の注入やメソッド表の受け渡しは不要です。ウィジェット
+ツリーは `WidgetNode` のリテラルで書き、任意フィールドを `#[ts(optional)]`
+にしてビルダーなしでも短く書けるようにします。
 
-### 4. 生成物はコミットし、テストで再生成する
+### 4. イベントは topic と購読メソッドで宣言する
+
+イベントは `#[vy_api_event("config.onDidChange", payload = ConfigChange)]`
+を付けた マーカー const で宣言します。topic の末尾は `on`
+で始め、そのまま購読メソッド名に なります。ホストは
+`ScriptTask::Emit { topic, payload }` を送り、shim の `__vy_emit`
+が購読者へ配ります。shim は Proxy のプロパティ名が `on` で始まるかで
+イベントとメソッドを区別するため、イベント一覧の注入も不要です。
+
+### 5. 生成物はコミットし、テストで再生成する
 
 これまでどおり `packages/vy-api-types` と `packages/vy-api`
 の生成物はコミットし、CI で `git diff --exit-code` を検査します。生成の入り口は
@@ -108,8 +119,6 @@ wire 名は既定で「名前空間パス + camelCase(関数名)」です。例�
 
 ## 関連する未決定事項
 
-- ウィジェットツリーのビルダーを純 TS
-  のヘルパとして残すか、リテラルだけにするか。
-- `fs.readFile` の `Uint8Array` 表現をプロトコル側で変えるか。
-- `config.get` のキー別型と `commands.execute` の引数型を、codegen
-  がオーバーロードとして生成するか、`overrides.d.ts` に残すか。
+- `fs.readFile` の戻り値をプロトコル側で `Uint8Array` 相当にするか。
+- イベントのフィルタ（`config.onDidChange` のキー指定など）を型で表すか。
+- `views.render` の再描画をホスト主導にするか。

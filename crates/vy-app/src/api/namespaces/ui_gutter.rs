@@ -1,7 +1,7 @@
 //! `ui.gutter` namespace.
 
 /// Creates and removes gutter items.
-#[vy_api_schema::vy_api_namespace("ui.gutter", sugar = UiGutterSugar)]
+#[vy_api_schema::vy_api_namespace("ui.gutter")]
 mod api {
     use vy_api_schema::{GutterCreateParams, GutterDisposeParams};
 
@@ -9,7 +9,7 @@ mod api {
     use crate::slots::GutterItem;
 
     /// Creates a gutter item and returns its id.
-    #[vy_api_schema::vy_api_method(manual)]
+    #[vy_api_schema::vy_api_method]
     fn create_item(
         call: &mut Call<'_, '_>,
         params: GutterCreateParams,
@@ -44,4 +44,4 @@ mod api {
     }
 }
 
-pub use self::api::{METHODS, NAMESPACE, dispatch};
+pub use self::api::{EVENTS, METHODS, NAMESPACE, dispatch};
