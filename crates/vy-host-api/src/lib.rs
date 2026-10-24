@@ -64,110 +64,6 @@ crate::host_api! {
     }
 }
 
-/// Declares a host method without a handler.
-///
-/// The client and server crates attach their own handler to the same
-/// declaration, so the wire name and the TypeScript types have one source.
-#[macro_export]
-macro_rules! method_decl {
-    ($name:ident, $wire:literal, $result:ty, $doc:literal) => {
-        $crate::method_decl!(@build $name, $wire, None, $result, $doc, false, None, None);
-    };
-    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal) => {
-        $crate::method_decl!(
-            @build
-            $name,
-            $wire,
-            Some(::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$params>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            }),
-            $result,
-            $doc,
-            false,
-            None,
-            None
-        );
-    };
-    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, manual) => {
-        $crate::method_decl!(
-            @build
-            $name,
-            $wire,
-            Some(::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$params>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            }),
-            $result,
-            $doc,
-            true,
-            None,
-            None
-        );
-    };
-    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, typed_key = $key:literal) => {
-        $crate::method_decl!(
-            @build
-            $name,
-            $wire,
-            Some(::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$params>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            }),
-            $result,
-            $doc,
-            false,
-            Some($key),
-            None
-        );
-    };
-    ($name:ident, $wire:literal, $params:ty, $result:ty, $doc:literal, typed_args = $key:literal) => {
-        $crate::method_decl!(
-            @build
-            $name,
-            $wire,
-            Some(::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$params> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$params>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            }),
-            $result,
-            $doc,
-            false,
-            None,
-            Some($key)
-        );
-    };
-    (
-        @build
-        $name:ident,
-        $wire:literal,
-        $params:expr,
-        $result:ty,
-        $doc:literal,
-        $manual:expr,
-        $typed_key:expr,
-        $typed_args:expr
-    ) => {
-        pub static $name: ::vy_api_schema::MethodDecl = ::vy_api_schema::MethodDecl {
-            method: $wire,
-            params: $params,
-            result: ::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$result> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$result>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            },
-            doc: $doc,
-            manual: $manual,
-            typed_key: $typed_key,
-            typed_args: $typed_args,
-        };
-    };
-}
-
 /// Builds a facade trait and its codegen surface from namespace traits.
 ///
 /// Each entry is `module => Trait`; the module must expose `dispatch`,
@@ -239,24 +135,6 @@ macro_rules! host_api {
         }
     };
 
-}
-
-/// Declares an event without a handler.
-#[macro_export]
-macro_rules! event_decl {
-    ($name:ident, $topic:literal, $namespace:literal, $event:literal, $payload:ty, $doc:literal) => {
-        pub static $name: ::vy_api_schema::EventDecl = ::vy_api_schema::EventDecl {
-            topic: $topic,
-            name: $event,
-            namespace: $namespace,
-            payload: ::vy_api_schema::TypeRef {
-                name: ::vy_api_schema::ts_name::<$payload> as fn() -> String,
-                collect: ::vy_api_schema::collect::<$payload>
-                    as fn(&mut ::vy_api_schema::TypeCollector),
-            },
-            doc: $doc,
-        };
-    };
 }
 
 #[cfg(test)]

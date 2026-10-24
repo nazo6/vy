@@ -1,4 +1,4 @@
-//! Declarations produced by the `#[vy_api_namespace]` macro.
+//! Declarations produced by the `#[vy_api_trait]` macro.
 //!
 //! A namespace module lists its methods and the TypeScript types that describe
 //! them. The codegen and the shim read these declarations; see
@@ -111,7 +111,7 @@ pub fn collect<T: TS + 'static + ?Sized>(collector: &mut TypeCollector) {
     collector.insert::<T>();
 }
 
-/// One host method, as `#[vy_api_namespace]` collected it.
+/// One host method, as `#[vy_api_trait]` collected it.
 ///
 /// `params` is `None` for a method without arguments. The names are computed
 /// from the Rust types with `ts-rs`, so the declarations cannot drift from the

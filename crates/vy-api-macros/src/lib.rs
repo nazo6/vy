@@ -1,51 +1,37 @@
 //! Proc macros that declare the plugin API surface.
 //!
-//! [`vy_api_namespace`] wraps an inline module of handler functions, and
-//! [`vy_api_registry`] joins those modules into the registry the host and the
-//! codegen read. See `docs/adr/0008-declare-plugin-api-with-macros.md`.
+//! [`vy_api_trait`] turns a host trait into method/event metadata and a
+//! dispatch function. [`vy_api_method`] and [`vy_api_event`] mark the items it
+//! collects. See `docs/adr/0013-host-api-traits.md`.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Attribute, Expr, ExprLit, FnArg, GenericArgument, Ident, Item, ItemFn, ItemMod, ItemTrait, Lit,
-    LitStr, Meta, PathArguments, ReturnType, Token, TraitItem, Type,
+    Attribute, Expr, ExprLit, FnArg, GenericArgument, Ident, ItemTrait, Lit, LitStr, Meta,
+    PathArguments, ReturnType, Token, TraitItem, Type,
 };
 
-/// Marks a handler function as one host method.
+/// Marks a trait method as one host method.
 ///
-/// The enclosing [`vy_api_namespace`] collects the function and removes this
+/// The enclosing [`vy_api_trait`] collects the method and removes this
 /// attribute. The wire name defaults to the namespace path plus the camel-cased
-/// function name; pass a string to override it. `manual` keeps a hand-written
+/// method name; pass a string to override it. `manual` keeps a hand-written
 /// wrapper in the shim.
 #[proc_macro_attribute]
 pub fn vy_api_method(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
-/// Marks a const as the declaration of a host event.
+/// Marks a trait const as the declaration of a host event.
 ///
-/// The enclosing [`vy_api_namespace`] collects the declaration and removes this
+/// The enclosing [`vy_api_trait`] collects the declaration and removes this
 /// attribute. The event is exposed as a subscription method named after the
 /// last segment of the topic, which must start with `on`.
 #[proc_macro_attribute]
 pub fn vy_api_event(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
-}
-
-/// Declares an inline module as one namespace of the plugin API.
-///
-/// The argument is the dotted namespace path. A doc comment on the module
-/// becomes the JSDoc of the namespace; doc comments on the handler functions
-/// become the JSDoc of the methods. `sugar = Name` names the hand-written
-/// TypeScript interface that the generated namespace extends.
-#[proc_macro_attribute]
-pub fn vy_api_namespace(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match expand_namespace(attr.into(), item.into()) {
-        Ok(tokens) => tokens.into(),
-        Err(error) => error.to_compile_error().into(),
-    }
 }
 
 /// Declares a host namespace as a trait and generates its metadata and dispatch.
@@ -60,25 +46,10 @@ pub fn vy_api_trait(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Builds the registry that joins the namespace modules.
-///
-/// Apply it to an inline module whose only items are `mod name;` declarations.
-/// The generated `methods`, `dispatch`, and `namespace_decls` read each module's
-/// `METHODS`, `dispatch`, and `NAMESPACE`.
-#[proc_macro_attribute]
-pub fn vy_api_registry(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match expand_registry(attr.into(), item.into()) {
-        Ok(tokens) => tokens.into(),
-        Err(error) => error.to_compile_error().into(),
-    }
-}
-
 #[derive(Default)]
 struct NamespaceArgs {
     path: Option<LitStr>,
     sugar: Option<LitStr>,
-    /// A shared declaration module that owns the namespace and method metadata.
-    shared: Option<syn::Path>,
 }
 
 impl Parse for NamespaceArgs {
@@ -101,10 +72,6 @@ impl Parse for NamespaceArgs {
                 "sugar" => {
                     let name: Ident = input.parse()?;
                     args.sugar = Some(LitStr::new(&name.to_string(), name.span()));
-                }
-                "shared" => {
-                    let path: syn::Path = input.parse()?;
-                    args.shared = Some(path);
                 }
                 other => {
                     return Err(syn::Error::new(
@@ -189,317 +156,6 @@ impl Parse for EventArgs {
         let payload: Type = input.parse()?;
         Ok(Self { topic, payload })
     }
-}
-
-fn expand_namespace(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
-    let args: NamespaceArgs = syn::parse2(attr)?;
-    let path = args.path.ok_or_else(|| {
-        syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "`#[vy_api_namespace]` needs a path, for example `#[vy_api_namespace(\"editor\")]`",
-        )
-    })?;
-    let namespace = path.value();
-
-    let mut module: ItemMod = syn::parse2(item)?;
-    let namespace_doc = doc_of(&module.attrs);
-    let shared = args.shared.as_ref();
-    let Some((_, items)) = module.content.as_mut() else {
-        return Err(syn::Error::new_spanned(
-            &module,
-            "`#[vy_api_namespace]` requires an inline module (`mod name { ... }`); an out-of-line `mod name;` cannot be inspected",
-        ));
-    };
-
-    let mut generated_items = Vec::new();
-    let mut entries = Vec::new();
-    let mut arms = Vec::new();
-    let mut event_entries = Vec::new();
-    let mut retained = Vec::new();
-
-    for item in std::mem::take(items) {
-        match item {
-            Item::Fn(mut function) => {
-                let Some(position) = function
-                    .attrs
-                    .iter()
-                    .position(|attribute| is_attribute(attribute, "vy_api_method"))
-                else {
-                    retained.push(Item::Fn(function));
-                    continue;
-                };
-                let attribute = function.attrs.remove(position);
-                let method = parse_method_args(&attribute)?;
-
-                let call_arg = function.sig.inputs.first().ok_or_else(|| {
-                    syn::Error::new_spanned(
-                        &function.sig,
-                        "a handler needs `call: &mut Call<'_>` as its first argument",
-                    )
-                })?;
-                match call_arg {
-                    FnArg::Typed(typed) if is_call(&typed.ty) => {}
-                    _ => {
-                        return Err(syn::Error::new_spanned(
-                            call_arg,
-                            "the first argument must be `call: &mut Call<'_>`",
-                        ));
-                    }
-                }
-
-                let params = params_type(&function)?;
-                let value = reply_value_type(&function.sig.output)?;
-                let identifier = function.sig.ident.clone();
-                let adapter = format_ident!("__vy_invoke_{}", identifier);
-
-                let (parse_params, invoke) = match &params {
-                    Some(params) => (
-                        quote! { let params: #params = crate::api::parse_params(raw)?; },
-                        quote! { #identifier(call, params) },
-                    ),
-                    None => (quote! { let _ = raw; }, quote! { #identifier(call) }),
-                };
-
-                let adapter_item = quote! {
-                    fn #adapter(
-                        call: &mut crate::api::Call<'_, '_>,
-                        raw: &::serde_json::Value,
-                    ) -> ::core::result::Result<
-                        crate::api::Reply<::serde_json::Value>,
-                        crate::api::CallError,
-                    > {
-                        #parse_params
-                        let reply = #invoke?;
-                        crate::api::erase_reply(reply)
-                    }
-                };
-
-                if let Some(shared) = shared {
-                    let declaration = format_ident!("{}", identifier.to_string().to_uppercase());
-                    generated_items.push(adapter_item);
-                    entries.push(quote! {
-                        crate::api::HandlerDecl {
-                            decl: &#shared::#declaration,
-                            handler: #adapter,
-                        }
-                    });
-                    arms.push(quote! {
-                        _ if method == #shared::#declaration.method => {
-                            Some(#adapter(call, params))
-                        }
-                    });
-                    retained.push(Item::Fn(function));
-                    continue;
-                }
-
-                let wire = method.name.map(|name| name.value()).unwrap_or_else(|| {
-                    format!("{namespace}.{}", camel_case(&identifier.to_string()))
-                });
-                let doc = doc_of(&function.attrs);
-                let manual = method.manual;
-                let typed_key = match &method.typed_key {
-                    Some(name) => quote! { Some(#name) },
-                    None => quote! { None },
-                };
-                let typed_args = match &method.typed_args {
-                    Some(name) => quote! { Some(#name) },
-                    None => quote! { None },
-                };
-
-                let params_ts = format_ident!("__vy_params_ts_{}", identifier);
-                let params_collect = format_ident!("__vy_params_collect_{}", identifier);
-                let result_ts = format_ident!("__vy_result_ts_{}", identifier);
-                let result_collect = format_ident!("__vy_result_collect_{}", identifier);
-                let declaration =
-                    format_ident!("__VY_METHOD_{}", identifier.to_string().to_uppercase());
-
-                let (params_ts_item, params_field) = match &params {
-                    Some(params) => (
-                        quote! {
-                            fn #params_ts() -> String {
-                                ::vy_api_schema::ts_name::<#params>()
-                            }
-
-                            fn #params_collect(
-                                collector: &mut ::vy_api_schema::TypeCollector,
-                            ) {
-                                ::vy_api_schema::collect::<#params>(collector);
-                            }
-                        },
-                        quote! {
-                            Some(::vy_api_schema::TypeRef {
-                                name: #params_ts as fn() -> String,
-                                collect: #params_collect
-                                    as fn(&mut ::vy_api_schema::TypeCollector),
-                            })
-                        },
-                    ),
-                    None => (quote! {}, quote! { None }),
-                };
-
-                generated_items.push(quote! {
-                    #params_ts_item
-
-                    fn #result_ts() -> String {
-                        ::vy_api_schema::ts_name::<#value>()
-                    }
-
-                    fn #result_collect(collector: &mut ::vy_api_schema::TypeCollector) {
-                        ::vy_api_schema::collect::<#value>(collector);
-                    }
-
-                    #adapter_item
-
-                    static #declaration: ::vy_api_schema::MethodDecl =
-                        ::vy_api_schema::MethodDecl {
-                            method: #wire,
-                            params: #params_field,
-                            result: ::vy_api_schema::TypeRef {
-                                name: #result_ts as fn() -> String,
-                                collect: #result_collect
-                                    as fn(&mut ::vy_api_schema::TypeCollector),
-                            },
-                            doc: #doc,
-                            manual: #manual,
-                            typed_key: #typed_key,
-                            typed_args: #typed_args,
-                        };
-                });
-                entries.push(quote! {
-                    crate::api::HandlerDecl {
-                        decl: &#declaration,
-                        handler: #adapter,
-                    }
-                });
-                arms.push(quote! {
-                    #wire => Some(#adapter(call, params)),
-                });
-                retained.push(Item::Fn(function));
-            }
-            Item::Const(mut marker) => {
-                let Some(position) = marker
-                    .attrs
-                    .iter()
-                    .position(|attribute| is_attribute(attribute, "vy_api_event"))
-                else {
-                    retained.push(Item::Const(marker));
-                    continue;
-                };
-                let attribute = marker.attrs.remove(position);
-                if shared.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        &marker,
-                        "declare events in the shared namespace, not in a module that uses `shared = ...`",
-                    ));
-                }
-                let event = parse_event_args(&attribute)?;
-                let topic = event.topic.value();
-                let (event_namespace, name) = topic.rsplit_once('.').ok_or_else(|| {
-                    syn::Error::new_spanned(
-                        &event.topic,
-                        "an event topic must be `<namespace>.<name>`",
-                    )
-                })?;
-                if !name.starts_with("on") {
-                    return Err(syn::Error::new_spanned(
-                        &event.topic,
-                        "an event name must start with `on`",
-                    ));
-                }
-                let identifier = marker.ident.clone();
-                let doc = doc_of(&marker.attrs);
-                let payload = event.payload;
-                let payload_fn = format_ident!("__vy_event_payload_{}", identifier);
-                let payload_collect = format_ident!("__vy_event_collect_{}", identifier);
-                let declaration = format_ident!("__VY_EVENT_{}", identifier);
-                let topic_const = format_ident!("{}_TOPIC", identifier);
-
-                generated_items.push(quote! {
-                    #[allow(non_snake_case)]
-                    fn #payload_fn() -> String {
-                        ::vy_api_schema::ts_name::<#payload>()
-                    }
-
-                    #[allow(non_snake_case)]
-                    fn #payload_collect(collector: &mut ::vy_api_schema::TypeCollector) {
-                        ::vy_api_schema::collect::<#payload>(collector);
-                    }
-
-                    static #declaration: ::vy_api_schema::EventDecl =
-                        ::vy_api_schema::EventDecl {
-                            topic: #topic,
-                            name: #name,
-                            namespace: #event_namespace,
-                            payload: ::vy_api_schema::TypeRef {
-                                name: #payload_fn as fn() -> String,
-                                collect: #payload_collect
-                                    as fn(&mut ::vy_api_schema::TypeCollector),
-                            },
-                            doc: #doc,
-                        };
-
-                    pub const #topic_const: &str = #topic;
-                });
-                event_entries.push(quote! { #declaration });
-                // The marker const exists only to attach the attribute.
-            }
-            other => retained.push(other),
-        }
-    }
-    *items = retained;
-
-    let sugar = match &args.sugar {
-        Some(name) => quote! { Some(#name) },
-        None => quote! { None },
-    };
-
-    let metadata = match shared {
-        Some(shared) => quote! {
-            pub use #shared::{EVENTS, NAMESPACE};
-        },
-        None => quote! {
-            /// Every event declared by this namespace.
-            pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
-
-            /// JSDoc and sugar metadata for this namespace.
-            pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
-                ::vy_api_schema::NamespaceDecl {
-                    path: #namespace,
-                    doc: #namespace_doc,
-                    sugar: #sugar,
-                };
-        },
-    };
-
-    let generated = quote! {
-        #(#generated_items)*
-
-        /// Every method declared by this namespace.
-        pub static METHODS: &[crate::api::HandlerDecl] = &[#(#entries),*];
-
-        #metadata
-
-        /// Answers a call declared by this namespace.
-        pub fn dispatch(
-            call: &mut crate::api::Call<'_, '_>,
-            method: &str,
-            params: &::serde_json::Value,
-        ) -> Option<
-            ::core::result::Result<
-                crate::api::Reply<::serde_json::Value>,
-                crate::api::CallError,
-            >,
-        > {
-            match method {
-                #(#arms)*
-                _ => None,
-            }
-        }
-    };
-
-    let generated: syn::File = syn::parse2(generated)?;
-    items.extend(generated.items);
-    Ok(quote! { #module })
 }
 
 fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
@@ -766,83 +422,6 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
     Ok(quote! { #trait_item #generated })
 }
 
-fn expand_registry(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
-    if !attr.is_empty() {
-        return Err(syn::Error::new_spanned(
-            &attr,
-            "`#[vy_api_registry]` takes no arguments",
-        ));
-    }
-    let mut module: ItemMod = syn::parse2(item)?;
-    let Some((_, items)) = module.content.as_mut() else {
-        return Err(syn::Error::new_spanned(
-            &module,
-            "`#[vy_api_registry]` requires an inline module",
-        ));
-    };
-
-    let mut names = Vec::new();
-    for item in items.iter() {
-        if let Item::Mod(child) = item
-            && child.content.is_none()
-        {
-            names.push(child.ident.clone());
-        }
-    }
-    if names.is_empty() {
-        return Err(syn::Error::new_spanned(
-            &module,
-            "`#[vy_api_registry]` needs at least one `mod name;`",
-        ));
-    }
-
-    let generated = quote! {
-        /// Every declared method, across namespaces.
-        pub fn methods() -> Vec<&'static crate::api::HandlerDecl> {
-            let mut methods = Vec::new();
-            #(methods.extend(#names::METHODS);)*
-            methods
-        }
-
-        /// Every declared event, across namespaces.
-        pub fn events() -> Vec<&'static ::vy_api_schema::EventDecl> {
-            let mut events = Vec::new();
-            #(events.extend(#names::EVENTS);)*
-            events
-        }
-
-        /// Answers a call from any namespace.
-        pub fn dispatch(
-            call: &mut crate::api::Call<'_, '_>,
-            method: &str,
-            params: &::serde_json::Value,
-        ) -> Option<
-            ::core::result::Result<
-                crate::api::Reply<::serde_json::Value>,
-                crate::api::CallError,
-            >,
-        > {
-            #(
-                if let Some(result) = #names::dispatch(call, method, params) {
-                    return Some(result);
-                }
-            )*
-            None
-        }
-
-        /// JSDoc and sugar metadata for every namespace.
-        pub fn namespace_decls() -> Vec<&'static ::vy_api_schema::NamespaceDecl> {
-            let mut namespaces = Vec::new();
-            #(namespaces.push(&#names::NAMESPACE);)*
-            namespaces
-        }
-    };
-
-    let generated: syn::File = syn::parse2(generated)?;
-    items.extend(generated.items);
-    Ok(quote! { #module })
-}
-
 fn is_attribute(attribute: &Attribute, name: &str) -> bool {
     attribute
         .path()
@@ -870,43 +449,6 @@ fn parse_event_args(attribute: &Attribute) -> syn::Result<EventArgs> {
             "use `#[vy_api_event(\"topic\", payload = Type)]`",
         )),
     }
-}
-
-fn is_call(ty: &Type) -> bool {
-    let Type::Reference(reference) = ty else {
-        return false;
-    };
-    let Type::Path(path) = &*reference.elem else {
-        return false;
-    };
-    path.path
-        .segments
-        .last()
-        .is_some_and(|segment| segment.ident == "Call")
-}
-
-fn params_type(function: &ItemFn) -> syn::Result<Option<Type>> {
-    let mut inputs = function.sig.inputs.iter();
-    inputs.next().ok_or_else(|| {
-        syn::Error::new_spanned(&function.sig, "a handler needs `call: &mut Call<'_>`")
-    })?;
-    let params = match inputs.next() {
-        None => None,
-        Some(FnArg::Typed(typed)) => Some((*typed.ty).clone()),
-        Some(FnArg::Receiver(receiver)) => {
-            return Err(syn::Error::new_spanned(
-                receiver,
-                "a handler cannot take `self`",
-            ));
-        }
-    };
-    if let Some(extra) = inputs.next() {
-        return Err(syn::Error::new_spanned(
-            extra,
-            "a handler takes at most `call` and `params`",
-        ));
-    }
-    Ok(params)
 }
 
 fn reply_value_type(output: &ReturnType) -> syn::Result<Type> {

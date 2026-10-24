@@ -4,8 +4,6 @@
 //! the UI, view, keymap, command, and editor-client declarations, plus the
 //! value types that cross those APIs. Handlers stay in `vy-app`.
 
-pub use vy_host_api::{event_decl, method_decl};
-
 vy_host_api::host_api! {
     trait ClientHostApi: vy_host_api::HostApi {
         base_methods_fn = vy_host_api::host_api_methods;

@@ -1,5 +1,5 @@
 //! Writes the TypeScript declarations from the declarations that
-//! `#[vy_api_namespace]` generated.
+//! `#[vy_api_trait]` generated.
 //!
 //! `HostMethods.ts` lists every call; `packages/vy-api/index.d.ts` declares the
 //! namespaces scripts import. Hand-written sugar lives in
