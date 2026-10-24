@@ -1,6 +1,6 @@
 # ADR 0013: 名前空間 trait と `HostApi` facade でホスト API を実装する
 
-- 状態: 採用（`workspace`、`fs`、`config`、`commands`、`views`、`notifications` を trait 化）
+- 状態: 採用（すべての名前空間を trait 化）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -102,20 +102,21 @@ pub struct ClientHost<'a, 'b, 'c> {
     pub call: &'a mut Call<'b, 'c>,
 }
 
+// 各名前空間の trait を実装する。実装ファイルは api/host/<namespace>.rs。
 impl WorkspaceApi for ClientHost<'_, '_, '_> { ... }
 impl FsApi for ClientHost<'_, '_, '_> { ... }
 impl ConfigReadApi for ClientHost<'_, '_, '_> { ... }
 impl ConfigApi for ClientHost<'_, '_, '_> { ... }
-impl CommandsApi for ClientHost<'_, '_, '_> { ... }
-impl NotificationsApi for ClientHost<'_, '_, '_> { ... }
-impl ViewsApi for ClientHost<'_, '_, '_> { ... }
+// ... context, document, log, process, editor, keymap, ui.*, commands, views,
+// notifications も同じ形で実装する。
+
 impl vy_host_api::HostRoot for ClientHost<'_, '_, '_> {}
 impl vy_host_api::HostApi for ClientHost<'_, '_, '_> {}
 impl ClientHostApi for ClientHost<'_, '_, '_> {}
 ```
 
-`vy-app` の dispatch は `ClientHostApi::dispatch` を呼び、残りの
-宣言ベースの名前空間は従来の registry にフォールバックします。
+`vy-app` の dispatch は `ClientHostApi::dispatch` だけを呼びます。宣言ベースの
+registry はもうありません。
 
 ### 4. イベントは trait の関連定数として宣言する
 
@@ -140,33 +141,36 @@ pub trait WorkspaceApi {
 生成します。`host_api!` は `module::EVENTS` を集めるので、facade ごとの
 `events_fn` が共有イベントとクライアントイベントをまとめます。
 
-まだ trait 化していない名前空間（`process`、`editor` など）は、従来どおり
-`event_decl!` と `EVENTS` を使います。`vy-app` のコード生成は、facade の
-イベントと宣言ベースのイベントを合わせて出力します。
+すべての名前空間を trait 化したため、イベントもすべて trait の関連定数として
+宣言されています。`event_decl!` は、今後 trait ではない場所でイベントを宣言する
+場合のために残しています。
 
 ## 検証した範囲
 
-- `workspace`、`notifications` を trait 化
-- `fs` を trait 化し、クライアントの `Reply::Deferred` と `ServerRpc` を確認
-- `views` を trait 化し、`HostAction::Ui` と `RenderWidgetTree` を確認
-- `config` を `ConfigReadApi`（共有）と `ConfigApi`（クライアント）に分割
-- `commands` を trait 化し、`manual` と `typed_args` を確認
-- `host_api!` で facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集を生成
-- イベントを trait の `#[vy_api_event]` 関連定数として宣言
-- `vy-server` に検証用の `CoreHost` を追加し、`workspace.info` と `fs.readFile` を
-  コアの状態から直接実装
-- `fs` のケイパビリティ許可と拒否を確認
-- 生成される TypeScript は変えない
+すべての名前空間を trait 化しました。
+
+- 共有: `config`（読み取り）、`context`、`document`、`fs`、`log`、`process`、
+  `workspace`
+- クライアント: `commands`、`config`（書き込み）、`editor`、`keymap`、
+  `notifications`、`ui`、`ui.gutter`、`ui.hover`、`ui.picker`、`ui.statusline`、
+  `views`
+
+主な確認項目:
+
+- `fs` / `process` の `Reply::Deferred` と `ServerRpc`
+- `views` / `editor` の `HostAction`
+- `config` の共有 trait とクライアント trait の分割
+- `commands` の `manual` と `typed_args`
+- `host_api!` による facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集
+- `vy-server` の `CoreHost` による共有 trait の実装
+- `fs` のケイパビリティ許可と拒否
+- 生成される TypeScript が変わらないこと
 
 ### 検証で見つかった点
 
 `fs` のケイパビリティは、宣言では `${workspace}/**` のようなパスを使いますが、
 API は `file:` URI を渡します。そのままでは glob が一致しないため、クライアントと
 `CoreHost` の両方で `file:` URI をパスに変換してから照合するようにしました。
-
-`process`、`document`、`editor`、`ui` などはまだ宣言ベースです。`editor` の
-`HostAction::Edit` は `views` と同じ「即時 reply + action」の形なので、追加の
-検証は不要と判断しました。
 
 ## 帰結
 
@@ -188,7 +192,7 @@ API は `file:` URI を渡します。そのままでは glob が一致しない
 
 - 名前空間ごとに trait を分け、メソッド追加の影響をその名前空間に閉じる
 - `HostApi` は共有、`ClientHostApi` は共有 + クライアント専用と分ける
-- 試作で `workspace` と `notifications` を通し、移行コストを確認する
+- `fs` / `process` / `editor` などで先に検証してから全体へ広げる
 
 ## 見直しの条件
 
@@ -198,6 +202,6 @@ API は `file:` URI を渡します。そのままでは glob が一致しない
 
 ## 関連する未決定事項
 
-- `fs` や `process` の `Reply::Deferred` を trait でどう扱うか。
-- `config` の共有 trait とクライアント trait の分割方法。
-- `vy-api-macros` を facade の生成まで広げるか。
+- `CoreHost` を実際のプラグインホストへ接続する（Phase 6）。
+- `&mut dyn HostApi` を使うか、generic のままにするか。
+- `backend.d.ts` と `vy-api-codegen` の分離。
