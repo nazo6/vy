@@ -1,13 +1,14 @@
 //! Shared `config` method and event declarations.
 //!
-//! Writing settings (`config.set` / `config.define`) stays client-only.
+//! Writing settings (`config.set`) stays client-only.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, Json, MethodDecl, NamespaceDecl};
+use vy_api_schema::{EventDecl, Json};
 
-use crate::{event_decl, method_decl};
+use crate::event_decl;
+use crate::{CallError, Reply};
 
 /// `config.get` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -45,21 +46,20 @@ pub struct ConfigChange {
     pub key: String,
 }
 
-method_decl!(
-    GET,
-    "config.get",
-    ConfigGetParams,
-    Json,
-    "Returns the effective value of a setting key.",
-    typed_key = "SettingsMap"
-);
-method_decl!(
-    INSPECT,
-    "config.inspect",
-    ConfigInspectParams,
-    ConfigInspectReply,
-    "Returns every layer's value for a setting key, plus the effective value."
-);
+/// Reads and writes settings.
+#[vy_api_schema::vy_api_trait("config")]
+pub trait ConfigReadApi {
+    /// Returns the effective value of a setting key.
+    #[vy_api_schema::vy_api_method(typed_key = SettingsMap)]
+    fn get(&mut self, params: ConfigGetParams) -> Result<Reply<Json>, CallError>;
+
+    /// Returns every layer's value for a setting key, plus the effective value.
+    #[vy_api_schema::vy_api_method]
+    fn inspect(
+        &mut self,
+        params: ConfigInspectParams,
+    ) -> Result<Reply<ConfigInspectReply>, CallError>;
+}
 
 event_decl!(
     ON_DID_CHANGE,
@@ -70,15 +70,5 @@ event_decl!(
     "Fires when the effective value of a setting key changes."
 );
 
-/// Every method in this namespace that the core implements.
-pub static METHODS: &[MethodDecl] = &[GET, INSPECT];
-
 /// Every event in this namespace.
 pub static EVENTS: &[EventDecl] = &[ON_DID_CHANGE];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "config",
-    doc: "Reads and writes settings.",
-    sugar: None,
-};

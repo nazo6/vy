@@ -2,9 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
+use vy_host_api::{CallError, Reply};
 
-use crate::{WidgetNode, method_decl};
+use crate::WidgetNode;
 
 /// `views.render` parameters.
 ///
@@ -63,38 +63,22 @@ pub struct ViewToggleParams {
     pub direction: Option<ViewDirection>,
 }
 
-method_decl!(OPEN, "views.open", ViewOpenParams, (), "Opens a view pane.");
-method_decl!(
-    CLOSE,
-    "views.close",
-    ViewCloseParams,
-    (),
-    "Closes a view pane."
-);
-method_decl!(
-    TOGGLE,
-    "views.toggle",
-    ViewToggleParams,
-    (),
-    "Toggles a view pane."
-);
-method_decl!(
-    RENDER,
-    "views.render",
-    ViewsRenderParams,
-    (),
-    "Renders a registered view into a widget tree."
-);
+/// Registers and looks up pane views.
+#[vy_api_schema::vy_api_trait("views")]
+pub trait ViewsApi {
+    /// Opens a view pane.
+    #[vy_api_schema::vy_api_method]
+    fn open(&mut self, params: ViewOpenParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[OPEN, CLOSE, TOGGLE, RENDER];
+    /// Closes a view pane.
+    #[vy_api_schema::vy_api_method]
+    fn close(&mut self, params: ViewCloseParams) -> Result<Reply<()>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
+    /// Toggles a view pane.
+    #[vy_api_schema::vy_api_method]
+    fn toggle(&mut self, params: ViewToggleParams) -> Result<Reply<()>, CallError>;
 
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "views",
-    doc: "Registers and looks up pane views.",
-    sugar: None,
-};
+    /// Renders a registered view into a widget tree.
+    #[vy_api_schema::vy_api_method]
+    fn render(&mut self, params: ViewsRenderParams) -> Result<Reply<()>, CallError>;
+}

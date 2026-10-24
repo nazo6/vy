@@ -6541,7 +6541,9 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vy-capabilities",
  "vy-core",
+ "vy-host-api",
  "vy-proto",
 ]
 

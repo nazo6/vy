@@ -55,7 +55,20 @@ pub(crate) fn check_capability(
     target: Option<&str>,
 ) -> Result<(), CallError> {
     let request = match target {
-        Some(target) => format!("{kind}:{target}"),
+        Some(target) => {
+            // Capability patterns use paths (`${workspace}/**`), while the API
+            // passes file URIs. Normalize before matching.
+            let target = if target.starts_with("file:") {
+                Uri::parse(target)
+                    .ok()
+                    .and_then(|uri| uri.file_path())
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| target.to_string())
+            } else {
+                target.to_string()
+            };
+            format!("{kind}:{target}")
+        }
         None => kind.to_string(),
     };
     let Ok(requested) = vy_capabilities::Capability::parse(&request) else {
@@ -84,12 +97,9 @@ use host::ClientHost;
 
 #[vy_api_schema::vy_api_registry]
 mod namespaces {
-    mod commands;
-    mod config;
     mod context;
     mod document;
     mod editor;
-    mod fs;
     mod keymap;
     mod log;
     mod process;
@@ -98,7 +108,6 @@ mod namespaces {
     mod ui_hover;
     mod ui_picker;
     mod ui_statusline;
-    mod views;
 }
 
 pub use namespaces::{events, methods, namespace_decls};
@@ -122,8 +131,13 @@ pub fn dispatch(
 /// Every declared method, including the trait-based namespaces.
 pub fn declarations() -> Vec<&'static MethodDecl> {
     let mut declarations = Vec::new();
+    declarations.extend(vy_client_api::namespaces::commands::METHODS.iter());
+    declarations.extend(vy_host_api::config::METHODS.iter());
+    declarations.extend(vy_client_api::namespaces::config::METHODS.iter());
+    declarations.extend(vy_host_api::fs::METHODS.iter());
     declarations.extend(vy_host_api::workspace::METHODS.iter());
     declarations.extend(vy_client_api::namespaces::notifications::METHODS.iter());
+    declarations.extend(vy_client_api::namespaces::views::METHODS.iter());
     declarations.extend(methods().iter().map(|entry| entry.decl));
     declarations
 }
@@ -131,8 +145,12 @@ pub fn declarations() -> Vec<&'static MethodDecl> {
 /// Every declared namespace, including the trait-based namespaces.
 pub fn all_namespace_decls() -> Vec<&'static NamespaceDecl> {
     let mut decls = vec![
+        &vy_client_api::namespaces::commands::NAMESPACE,
+        &vy_host_api::config::NAMESPACE,
+        &vy_host_api::fs::NAMESPACE,
         &vy_host_api::workspace::NAMESPACE,
         &vy_client_api::namespaces::notifications::NAMESPACE,
+        &vy_client_api::namespaces::views::NAMESPACE,
     ];
     decls.extend(namespace_decls());
     decls
@@ -141,6 +159,7 @@ pub fn all_namespace_decls() -> Vec<&'static NamespaceDecl> {
 /// Every declared event, including the trait-based namespaces.
 pub fn all_events() -> Vec<&'static EventDecl> {
     let mut events: Vec<&'static EventDecl> = Vec::new();
+    events.extend(vy_host_api::config::EVENTS.iter());
     events.extend(vy_host_api::workspace::EVENTS.iter());
     events.extend(namespaces::events());
     events

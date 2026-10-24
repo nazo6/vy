@@ -3,7 +3,11 @@
 //! `ClientHost` owns the per-call state. Each namespace implements its trait in
 //! its own file under this module.
 
+mod commands;
+mod config;
+mod fs;
 mod notifications;
+mod views;
 mod workspace;
 
 use vy_client_api::ClientHostApi;

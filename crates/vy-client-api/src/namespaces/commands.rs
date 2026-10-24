@@ -3,9 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
-
-use crate::method_decl;
+use vy_host_api::{CallError, Reply};
 
 /// `commands.registerCommand` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -22,38 +20,18 @@ pub struct CommandsExecuteParams {
     pub args: Value,
 }
 
-method_decl!(
-    REGISTER_COMMAND,
-    "commands.registerCommand",
-    CommandsRegisterParams,
-    (),
-    "Registers a command handler and returns a disposable registration.",
-    manual
-);
-method_decl!(
-    EXECUTE,
-    "commands.execute",
-    CommandsExecuteParams,
-    (),
-    "Runs a command by id with optional arguments.",
-    typed_args = "CommandMap"
-);
-method_decl!(
-    GET_COMMANDS,
-    "commands.getCommands",
-    Vec<String>,
-    "Lists the ids of every registered command."
-);
+/// Registers command handlers and runs commands by id.
+#[vy_api_schema::vy_api_trait("commands", sugar = CommandsSugar)]
+pub trait CommandsApi {
+    /// Registers a command handler and returns a disposable registration.
+    #[vy_api_schema::vy_api_method(manual)]
+    fn register_command(&mut self, params: CommandsRegisterParams) -> Result<Reply<()>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[REGISTER_COMMAND, EXECUTE, GET_COMMANDS];
+    /// Runs a command by id with optional arguments.
+    #[vy_api_schema::vy_api_method(typed_args = CommandMap)]
+    fn execute(&mut self, params: CommandsExecuteParams) -> Result<Reply<()>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
-
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "commands",
-    doc: "Registers command handlers and runs commands by id.",
-    sugar: Some("CommandsSugar"),
-};
+    /// Lists the ids of every registered command.
+    #[vy_api_schema::vy_api_method]
+    fn get_commands(&mut self) -> Result<Reply<Vec<String>>, CallError>;
+}

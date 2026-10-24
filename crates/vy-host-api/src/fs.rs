@@ -5,11 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use vy_api_schema::{EventDecl, MethodDecl, NamespaceDecl};
 use vy_core::Uri;
 use vy_proto::{DirEntry, FileStat};
 
-use crate::method_decl;
+use crate::{CallError, Reply};
 
 /// `fs.readFile` parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -165,97 +164,55 @@ pub struct FsCopyReply {
     pub success: bool,
 }
 
-method_decl!(
-    READ_FILE,
-    "fs.readFile",
-    FsReadFileParams,
-    FsReadFileReply,
-    "Reads the binary contents of a file."
-);
-method_decl!(
-    READ_TEXT_FILE,
-    "fs.readTextFile",
-    FsReadTextFileParams,
-    FsReadTextFileReply,
-    "Reads the UTF-8 text contents of a file."
-);
-method_decl!(
-    WRITE_FILE,
-    "fs.writeFile",
-    FsWriteFileParams,
-    FsWriteFileReply,
-    "Writes binary or text contents to a file."
-);
-method_decl!(
-    READ_DIR,
-    "fs.readDir",
-    FsReadDirParams,
-    FsReadDirReply,
-    "Lists entries in a directory."
-);
-method_decl!(
-    STAT,
-    "fs.stat",
-    FsStatParams,
-    FsStatReply,
-    "Retrieves metadata about a file or directory."
-);
-method_decl!(
-    EXISTS,
-    "fs.exists",
-    FsExistsParams,
-    FsExistsReply,
-    "Checks whether a file or directory exists."
-);
-method_decl!(
-    CREATE_DIR,
-    "fs.createDir",
-    FsCreateDirParams,
-    FsCreateDirReply,
-    "Creates a directory."
-);
-method_decl!(
-    REMOVE,
-    "fs.remove",
-    FsRemoveParams,
-    FsRemoveReply,
-    "Removes a file or directory."
-);
-method_decl!(
-    RENAME,
-    "fs.rename",
-    FsRenameParams,
-    FsRenameReply,
-    "Renames or moves a file or directory."
-);
-method_decl!(
-    COPY,
-    "fs.copy",
-    FsCopyParams,
-    FsCopyReply,
-    "Copies a file or directory."
-);
+/// Reads, writes, and inspects files in the workspace.
+#[vy_api_schema::vy_api_trait("fs")]
+pub trait FsApi {
+    /// Reads the binary contents of a file.
+    #[vy_api_schema::vy_api_method]
+    fn read_file(&mut self, params: FsReadFileParams) -> Result<Reply<FsReadFileReply>, CallError>;
 
-/// Every method in this namespace.
-pub static METHODS: &[MethodDecl] = &[
-    READ_FILE,
-    READ_TEXT_FILE,
-    WRITE_FILE,
-    READ_DIR,
-    STAT,
-    EXISTS,
-    CREATE_DIR,
-    REMOVE,
-    RENAME,
-    COPY,
-];
+    /// Reads the UTF-8 text contents of a file.
+    #[vy_api_schema::vy_api_method]
+    fn read_text_file(
+        &mut self,
+        params: FsReadTextFileParams,
+    ) -> Result<Reply<FsReadTextFileReply>, CallError>;
 
-/// Every event in this namespace.
-pub static EVENTS: &[EventDecl] = &[];
+    /// Writes binary or text contents to a file.
+    #[vy_api_schema::vy_api_method]
+    fn write_file(
+        &mut self,
+        params: FsWriteFileParams,
+    ) -> Result<Reply<FsWriteFileReply>, CallError>;
 
-/// JSDoc and sugar metadata for the namespace.
-pub static NAMESPACE: NamespaceDecl = NamespaceDecl {
-    path: "fs",
-    doc: "Reads, writes, and inspects files in the workspace.",
-    sugar: None,
-};
+    /// Lists entries in a directory.
+    #[vy_api_schema::vy_api_method]
+    fn read_dir(&mut self, params: FsReadDirParams) -> Result<Reply<FsReadDirReply>, CallError>;
+
+    /// Retrieves metadata about a file or directory.
+    #[vy_api_schema::vy_api_method]
+    fn stat(&mut self, params: FsStatParams) -> Result<Reply<FsStatReply>, CallError>;
+
+    /// Checks whether a file or directory exists.
+    #[vy_api_schema::vy_api_method]
+    fn exists(&mut self, params: FsExistsParams) -> Result<Reply<FsExistsReply>, CallError>;
+
+    /// Creates a directory.
+    #[vy_api_schema::vy_api_method]
+    fn create_dir(
+        &mut self,
+        params: FsCreateDirParams,
+    ) -> Result<Reply<FsCreateDirReply>, CallError>;
+
+    /// Removes a file or directory.
+    #[vy_api_schema::vy_api_method]
+    fn remove(&mut self, params: FsRemoveParams) -> Result<Reply<FsRemoveReply>, CallError>;
+
+    /// Renames or moves a file or directory.
+    #[vy_api_schema::vy_api_method]
+    fn rename(&mut self, params: FsRenameParams) -> Result<Reply<FsRenameReply>, CallError>;
+
+    /// Copies a file or directory.
+    #[vy_api_schema::vy_api_method]
+    fn copy(&mut self, params: FsCopyParams) -> Result<Reply<FsCopyReply>, CallError>;
+}

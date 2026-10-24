@@ -1,6 +1,8 @@
 mod buffer;
 mod fs;
 mod history;
+#[cfg(test)]
+mod host;
 mod init;
 mod layout;
 mod pane;

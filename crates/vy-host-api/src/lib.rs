@@ -19,17 +19,24 @@ pub mod workspace;
 
 pub use document::DocumentInfoReply;
 pub use runtime::{CallError, Reply, erase_reply, parse_params};
+pub use vy_api_schema::Json;
 
 /// The core-side host surface shared by the client and the server.
 ///
 /// Implementors provide the namespace traits; `dispatch` is the single entry
 /// point used by the host loop.
-pub trait HostApi: workspace::WorkspaceApi {
+pub trait HostApi: config::ConfigReadApi + fs::FsApi + workspace::WorkspaceApi {
     fn dispatch(
         &mut self,
         method: &str,
         params: &serde_json::Value,
     ) -> Option<Result<Reply<serde_json::Value>, CallError>> {
+        if let Some(result) = config::dispatch(self, method, params) {
+            return Some(result);
+        }
+        if let Some(result) = fs::dispatch(self, method, params) {
+            return Some(result);
+        }
         if let Some(result) = workspace::dispatch(self, method, params) {
             return Some(result);
         }

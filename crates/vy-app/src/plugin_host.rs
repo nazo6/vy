@@ -910,6 +910,49 @@ commands.registerCommand("user.hello", async () => {
     }
 
     #[test]
+    fn views_open_triggers_ui_action() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        let (req, rec) = HostRequest::new(
+            "views.open",
+            json!({ "view": "example.tree", "direction": "right" }),
+        );
+        let ctx = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        let outcome = handle_request(ctx, req);
+        match outcome.action {
+            HostAction::Ui { command, args } => {
+                assert_eq!(command, UiCommand::ViewOpen);
+                let args = args.expect("args");
+                assert_eq!(
+                    args.get("view").and_then(|value| value.as_str()),
+                    Some("example.tree")
+                );
+                assert_eq!(
+                    args.get("direction").and_then(|value| value.as_str()),
+                    Some("right")
+                );
+            }
+            _ => panic!("expected a UI action"),
+        }
+        assert!(matches!(
+            rec.recv().expect("reply"),
+            vy_js::HostReply::Ok(_)
+        ));
+    }
+
+    #[test]
     fn ui_gutter_and_hover_requests() {
         let mut editor = Editor::new();
         let mut config = Config::with_defaults();
