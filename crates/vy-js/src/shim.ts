@@ -1,7 +1,8 @@
-// The runtime `vy-api` module served to scripts.
+// The runtime API installed as the global `vy`.
 //
-// The host installs two globals before a script runs:
+// The host installs three globals before a script runs:
 //
+//   vy                                 the API object defined here
 //   __vy_host_call(method, paramsJson)  the blocking bridge to the client
 //   __vy_emit(topic, payloadJson)       host-to-script events
 //
@@ -53,8 +54,12 @@ interface HostGlobals {
 const globals = globalThis as unknown as HostGlobals;
 const hostCall = globals.__vy_host_call;
 
-/** Augment this interface to type the arguments of your own commands. */
-export interface CommandMap {}
+declare global {
+  namespace Vy {
+    /** Augment this interface to type the arguments of your own commands. */
+    interface CommandMap {}
+  }
+}
 
 // Calls the host and returns the value. Host errors become exceptions with a
 // stable `code`, as `docs/api.md` §20 describes.
@@ -135,8 +140,8 @@ globals.__vy_run_command = (id: string, argsJson?: string) => {
 
 type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap
   ? never
-  : K extends keyof CommandMap
-    ? (args: CommandMap[K]) => unknown
+  : K extends keyof Vy.CommandMap
+    ? (args: Vy.CommandMap[K]) => unknown
     : (args?: unknown) => unknown;
 
 function registerCommand<const K extends string>(
@@ -158,10 +163,10 @@ function registerCommand<const K extends string>(
 
 type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap
   ? { id: K; args?: BuiltinCommandMap[K] }
-  : K extends keyof CommandMap
-    ? undefined extends CommandMap[K]
-      ? { id: K; args?: CommandMap[K] }
-      : { id: K; args: CommandMap[K] }
+  : K extends keyof Vy.CommandMap
+    ? undefined extends Vy.CommandMap[K]
+      ? { id: K; args?: Vy.CommandMap[K] }
+      : { id: K; args: Vy.CommandMap[K] }
     : { id: K; args?: unknown };
 
 function execute<const K extends string>(params: ExecuteParams<K>): Promise<unknown> {
@@ -179,7 +184,7 @@ export const editor = methods<EditorApi>("editor");
 export const fs = methods<FsApi>("fs");
 
 const keymapBase = methods<KeymapApi>("keymap");
-function bind<K extends string & (BuiltinCommandId | keyof CommandMap)>(
+function bind<K extends string & (BuiltinCommandId | keyof Vy.CommandMap)>(
   params: { keys: string; command: K; when?: string | null },
 ): Promise<void>;
 function bind(params: {
@@ -209,3 +214,23 @@ export const ui = Object.assign(methods<UiApi>("ui"), {
   picker: methods<UiPickerApi>("ui.picker"),
   statusline: methods<UiStatuslineApi>("ui.statusline"),
 });
+
+// The host evaluates this module before any script. The exports stay for type
+// generation; scripts use the global object.
+const api = {
+  commands,
+  config,
+  context,
+  document,
+  editor,
+  fs,
+  keymap,
+  log,
+  notifications,
+  process,
+  ui,
+  views,
+  workspace,
+};
+
+(globalThis as unknown as { vy: typeof api }).vy = api;

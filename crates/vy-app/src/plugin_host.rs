@@ -523,11 +523,9 @@ mod tests {
         std::fs::write(
             paths.init_ts(),
             r#"
-import { config, commands, notifications } from "vy-api";
-
-config.set({ values: { "ui.fontSize": 15 } });
-commands.registerCommand("user.hello", async () => {
-  await notifications.show({ message: "hello from init.ts" });
+vy.config.set({ values: { "ui.fontSize": 15 } });
+vy.commands.registerCommand("user.hello", async () => {
+  await vy.notifications.show({ message: "hello from init.ts" });
 });
 "#,
         )

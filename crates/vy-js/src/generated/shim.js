@@ -1,7 +1,8 @@
-// The runtime `vy-api` module served to scripts.
+// The runtime API installed as the global `vy`.
 //
-// The host installs two globals before a script runs:
+// The host installs three globals before a script runs:
 //
+//   vy                                 the API object defined here
 //   __vy_host_call(method, paramsJson)  the blocking bridge to the client
 //   __vy_emit(topic, payloadJson)       host-to-script events
 //
@@ -120,3 +121,21 @@ export const ui = Object.assign(methods("ui"), {
     picker: methods("ui.picker"),
     statusline: methods("ui.statusline"),
 });
+// The host evaluates this module before any script. The exports stay for type
+// generation; scripts use the global object.
+const api = {
+    commands,
+    config,
+    context,
+    document,
+    editor,
+    fs,
+    keymap,
+    log,
+    notifications,
+    process,
+    ui,
+    views,
+    workspace,
+};
+globalThis.vy = api;

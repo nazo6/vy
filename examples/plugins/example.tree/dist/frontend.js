@@ -1,5 +1,3 @@
-import { commands, fs, views, workspace } from "vy-api";
-
 // Cache of directory entries: uri -> DirEntry[]
 const treeCache = new Map();
 // Set of expanded directory URIs
@@ -8,14 +6,14 @@ let workspaceInfo = { rootUri: ".", name: "PROJECT" };
 let isInitialized = false;
 
 async function loadWorkspace() {
-  workspaceInfo = await workspace.info();
+  workspaceInfo = await vy.workspace.info();
   workspaceInfo.rootUri ??= ".";
   workspaceInfo.name ??= "PROJECT";
 }
 
 async function loadDirectory(dirUri) {
   try {
-    const { entries } = await fs.readDir({ uri: dirUri });
+    const { entries } = await vy.fs.readDir({ uri: dirUri });
     entries.sort((a, b) => {
       const aDir = Boolean(a.is_directory || a.isDirectory);
       const bDir = Boolean(b.is_directory || b.isDirectory);
@@ -110,30 +108,30 @@ async function refreshAll() {
       await loadDirectory(dir);
     }
   }
-  await views.render({ id: "example.tree", tree: renderView() });
+  await vy.views.render({ id: "example.tree", tree: renderView() });
 }
 
-commands.registerCommand("example.tree.toggle", async () => {
+vy.commands.registerCommand("example.tree.toggle", async () => {
   if (!isInitialized) {
     isInitialized = true;
     await refreshAll();
   }
-  await views.toggle({ view: "example.tree", direction: "left" });
+  await vy.views.toggle({ view: "example.tree", direction: "left" });
 });
 
-commands.registerCommand("example.tree.open", async () => {
+vy.commands.registerCommand("example.tree.open", async () => {
   if (!isInitialized) {
     isInitialized = true;
     await refreshAll();
   }
-  await views.open({ view: "example.tree", direction: "left" });
+  await vy.views.open({ view: "example.tree", direction: "left" });
 });
 
-commands.registerCommand("example.tree.refresh", async () => {
+vy.commands.registerCommand("example.tree.refresh", async () => {
   await refreshAll();
 });
 
-commands.registerCommand("example.tree.toggle_dir", async (args) => {
+vy.commands.registerCommand("example.tree.toggle_dir", async (args) => {
   const dirUri = typeof args === "string" ? args : args?.raw || args?.uri;
   if (!dirUri) return;
   if (expandedDirs.has(dirUri)) {
@@ -144,7 +142,7 @@ commands.registerCommand("example.tree.toggle_dir", async (args) => {
       await loadDirectory(dirUri);
     }
   }
-  await views.render({ id: "example.tree", tree: renderView() });
+  await vy.views.render({ id: "example.tree", tree: renderView() });
 });
 
 refreshAll().catch((err) => {

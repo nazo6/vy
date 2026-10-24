@@ -17,7 +17,7 @@ use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, 
 use serde::Serialize;
 use vy_core::Uri;
 
-use crate::api::{VyLoader, VyResolver};
+use crate::api::SHIM_SOURCE;
 use crate::transpile::strip_types;
 
 /// Time given to one evaluation of `init.ts`.
@@ -291,8 +291,6 @@ fn run(
         until != 0 && now_millis() > until
     })));
 
-    runtime.set_loader(VyResolver, VyLoader);
-
     let context = match Context::full(&runtime) {
         Ok(context) => context,
         Err(error) => {
@@ -317,12 +315,9 @@ fn run(
         )?;
         ctx.globals().set("__vy_host_call", call)?;
 
-        // Expose `vy` on globalThis so interactive evaluations can use the API directly.
-        let promise = Module::evaluate(
-            ctx.clone(),
-            "<vy-global>",
-            "import * as vy from 'vy-api'; globalThis.vy = vy;\n",
-        )?;
+        // Expose `vy` on globalThis. The shim has no imports and assigns the
+        // global itself.
+        let promise = Module::evaluate(ctx.clone(), "<vy-global>", SHIM_SOURCE)?;
         promise.finish::<()>()?;
         drain_jobs(&ctx);
 
@@ -693,10 +688,8 @@ mod tests {
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { config, commands } from "vy-api";
-
-config.set({ values: { "ui.fontSize": 18 } });
-commands.registerCommand("user.hello", async () => {});
+vy.config.set({ values: { "ui.fontSize": 18 } });
+vy.commands.registerCommand("user.hello", async () => {});
 export const answer: number = 42;
 "#,
         );
@@ -750,12 +743,10 @@ export const answer: number = 42;
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { commands, config, editor } from "vy-api";
-
-commands.registerCommand("user.check", async () => {
-  await editor.setMode({ mode: "insert" });
-  const mode = await editor.mode();
-  const size = await config.get({ key: "ui.fontSize" });
+vy.commands.registerCommand("user.check", async () => {
+  await vy.editor.setMode({ mode: "insert" });
+  const mode = await vy.editor.mode();
+  const size = await vy.config.get({ key: "ui.fontSize" });
   return { mode, size };
 });
 "#,
@@ -828,9 +819,8 @@ commands.registerCommand("user.check", async () => {
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { commands, notifications } from "vy-api";
-commands.registerCommand("user.hello", async () => {
-  await notifications.show("hi");
+vy.commands.registerCommand("user.hello", async () => {
+  await vy.notifications.show("hi");
   return 42;
 });
 "#,
@@ -878,13 +868,12 @@ commands.registerCommand("user.hello", async () => {
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { commands } from "vy-api";
-commands.registerCommand("user.add", async (args) => {
+vy.commands.registerCommand("user.add", async (args) => {
   return (args.a || 0) + (args.b || 0);
 });
 
-commands.registerCommand("user.compute", async () => {
-  const result = await commands.execute({ id: "user.add", args: { a: 10, b: 20 } });
+vy.commands.registerCommand("user.compute", async () => {
+  const result = await vy.commands.execute({ id: "user.add", args: { a: 10, b: 20 } });
   return result;
 });
 "#,
@@ -924,10 +913,8 @@ commands.registerCommand("user.compute", async () => {
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { ui, commands } from "vy-api";
-
-commands.registerCommand("user.pick", async () => {
-  const result = await ui.picker.show({
+vy.commands.registerCommand("user.pick", async () => {
+  const result = await vy.ui.picker.show({
     placeholder: "Select one",
     items: [{ id: "foo", title: "Foo Title" }, { id: "bar", title: "Bar Title" }]
   });
@@ -979,12 +966,10 @@ commands.registerCommand("user.pick", async () => {
         host.evaluate(
             PathBuf::from("init.ts"),
             r#"
-import { ui } from "vy-api";
-
-ui.gutter.createItem({ id: "g1", line: 15, text: "+", color: "success" });
-ui.hover.show({ line: 15, character: 3, text: "type Info = string" });
-ui.gutter.disposeItem({ id: "g1" });
-ui.hover.hide();
+vy.ui.gutter.createItem({ id: "g1", line: 15, text: "+", color: "success" });
+vy.ui.hover.show({ line: 15, character: 3, text: "type Info = string" });
+vy.ui.gutter.disposeItem({ id: "g1" });
+vy.ui.hover.hide();
 "#,
         );
 
@@ -1063,7 +1048,7 @@ ui.hover.hide();
     }
 
     #[test]
-    fn evals_import_vy_api() {
+    fn evals_global_vy() {
         let host = ScriptHost::spawn(test_env());
         host.eval("vy.commands.registerCommand ? 'has_register' : 'no'");
 

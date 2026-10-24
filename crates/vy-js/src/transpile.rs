@@ -152,7 +152,7 @@ export const result = twice(options.size as number, name);
     #[test]
     fn keeps_generics_and_imports_out_of_the_runtime() {
         let source = r#"
-import { config } from "vy-api";
+import { helper } from "./helper";
 
 type Value<T> = T | null;
 
@@ -160,12 +160,12 @@ function first<T>(items: T[]): T | undefined {
   return items[0];
 }
 
-config.set({ "ui.fontSize": 16 });
+helper({ size: 16 });
 export const picked = first<number>([1, 2, 3]);
 "#;
 
         let output = strip(source).expect("transpile");
-        assert!(output.contains("from \"vy-api\""), "{output}");
+        assert!(output.contains("from \"./helper\""), "{output}");
         assert!(output.contains("function first(items)"), "{output}");
         assert!(output.contains("first(["), "{output}");
         assert!(!output.contains("type Value"), "{output}");

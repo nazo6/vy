@@ -75,7 +75,7 @@ Phase 8 で扱います。
   - シムは `crates/vy-js/src/shim.ts` から生成した `generated/shim.js`。プロトコル境界の型は ts-rs で
     `packages/vy-api/types` に生成し、名前空間の API は `#[vy_api_trait]`
     の宣言から生成する
-- [ ] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
+- [x] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
 - [ ] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`

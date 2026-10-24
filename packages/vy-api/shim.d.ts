@@ -3,20 +3,24 @@
 
 import type { CommandsApi, ConfigApi, ContextApi, Disposable, DocumentApi, EditorApi, FsApi, KeymapApi, LogApi, NotificationsApi, ProcessApi, UiApi, UiGutterApi, UiHoverApi, UiPickerApi, UiStatuslineApi, ViewsApi, WorkspaceApi } from "./api-base";
 import type { BuiltinCommandId, BuiltinCommandMap } from "./types";
-/** Augment this interface to type the arguments of your own commands. */
-export interface CommandMap {
+declare global {
+    namespace Vy {
+        /** Augment this interface to type the arguments of your own commands. */
+        interface CommandMap {
+        }
+    }
 }
-type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap ? never : K extends keyof CommandMap ? (args: CommandMap[K]) => unknown : (args?: unknown) => unknown;
+type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap ? never : K extends keyof Vy.CommandMap ? (args: Vy.CommandMap[K]) => unknown : (args?: unknown) => unknown;
 declare function registerCommand<const K extends string>(id: K, handler: RegisterHandler<K>): Disposable;
 type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap ? {
     id: K;
     args?: BuiltinCommandMap[K];
-} : K extends keyof CommandMap ? undefined extends CommandMap[K] ? {
+} : K extends keyof Vy.CommandMap ? undefined extends Vy.CommandMap[K] ? {
     id: K;
-    args?: CommandMap[K];
+    args?: Vy.CommandMap[K];
 } : {
     id: K;
-    args: CommandMap[K];
+    args: Vy.CommandMap[K];
 } : {
     id: K;
     args?: unknown;
@@ -31,7 +35,7 @@ export declare const context: ContextApi;
 export declare const document: DocumentApi;
 export declare const editor: EditorApi;
 export declare const fs: FsApi;
-declare function bind<K extends string & (BuiltinCommandId | keyof CommandMap)>(params: {
+declare function bind<K extends string & (BuiltinCommandId | keyof Vy.CommandMap)>(params: {
     keys: string;
     command: K;
     when?: string | null;

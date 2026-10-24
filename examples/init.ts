@@ -4,9 +4,9 @@
 // commands, keymap, config, editor, document, workspace, context,
 // notifications, log, fs, process, ui, and views.
 
-import { commands, config, document, editor, notifications } from "vy-api";
+import type {} from "vy-api";
 
-config.set({
+vy.config.set({
   values: {
     "ui.fontFamily": "JetBrains Mono",
     "ui.fontSize": 14,
@@ -15,14 +15,14 @@ config.set({
   },
 });
 
-commands.registerCommand("user.uppercase-document", async () => {
-  const active = await editor.activeDocument();
+vy.commands.registerCommand("user.uppercase-document", async () => {
+  const active = await vy.editor.activeDocument();
   if (!active) {
     return;
   }
 
-  const text = await document.getText({ documentId: active.id });
-  await editor.edit({
+  const text = await vy.document.getText({ documentId: active.id });
+  await vy.editor.edit({
     edits: [
       {
         range: {
@@ -34,5 +34,5 @@ commands.registerCommand("user.uppercase-document", async () => {
     ],
   });
 
-  await notifications.show({ message: "Uppercased the document" });
+  await vy.notifications.show({ message: "Uppercased the document" });
 });
