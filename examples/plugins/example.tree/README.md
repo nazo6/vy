@@ -2,6 +2,9 @@
 
 An interactive sidebar file explorer built for Vy using native declarative UI widgets.
 
+This example uses the source form: `plugin.json` points at `frontend.ts`, so Vy
+loads the TypeScript directly without a build step.
+
 ## Features
 
 - Tree view of directories and files using `fs.readDir`.

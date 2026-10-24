@@ -1,42 +1,55 @@
-// Cache of directory entries: uri -> DirEntry[]
-const treeCache = new Map();
-// Set of expanded directory URIs
-const expandedDirs = new Set();
-let workspaceInfo = { rootUri: ".", name: "PROJECT" };
-let isInitialized = false;
+import type { DirEntry, WidgetNode, WorkspaceInfoReply } from "vy-api";
 
-async function loadWorkspace() {
-  workspaceInfo = await vy.workspace.info();
-  workspaceInfo.rootUri ??= ".";
-  workspaceInfo.name ??= "PROJECT";
+declare global {
+  namespace Vy {
+    interface CommandMap {
+      "example.tree.toggle_dir": string;
+    }
+  }
 }
 
-async function loadDirectory(dirUri) {
+const treeCache = new Map<string, DirEntry[]>();
+const expandedDirs = new Set<string>();
+let workspaceInfo: WorkspaceInfoReply = {
+  rootUri: ".",
+  name: "PROJECT",
+  folders: [],
+  trusted: false,
+};
+let isInitialized = false;
+
+async function loadWorkspace(): Promise<void> {
+  workspaceInfo = await vy.workspace.info();
+}
+
+async function loadDirectory(dirUri: string): Promise<void> {
   try {
     const { entries } = await vy.fs.readDir({ uri: dirUri });
     entries.sort((a, b) => {
-      const aDir = Boolean(a.is_directory || a.isDirectory);
-      const bDir = Boolean(b.is_directory || b.isDirectory);
-      if (aDir !== bDir) {
-        return aDir ? -1 : 1;
+      if (a.is_directory !== b.is_directory) {
+        return a.is_directory ? -1 : 1;
       }
       return a.name.localeCompare(b.name);
     });
     treeCache.set(dirUri, entries);
-  } catch (err) {
-    console.error(`Failed to read directory "${dirUri}": ${err}`);
+  } catch (error) {
     treeCache.set(dirUri, []);
+    await vy.log.write({
+      channel: "example.tree",
+      level: "error",
+      message: `Failed to read directory "${dirUri}"`,
+      data: String(error),
+    });
   }
 }
 
-function renderTree(dirUri, depth = 0) {
-  const entries = treeCache.get(dirUri) || [];
-  const nodes = [];
+function renderTree(dirUri: string, depth = 0): WidgetNode[] {
+  const entries = treeCache.get(dirUri) ?? [];
+  const nodes: WidgetNode[] = [];
 
   for (const entry of entries) {
     const indent = "  ".repeat(depth);
-    const isDir = Boolean(entry.is_directory || entry.isDirectory);
-    if (isDir) {
+    if (entry.is_directory) {
       const isExpanded = expandedDirs.has(entry.uri);
       const icon = isExpanded ? "▾ 📁 " : "▸ 📁 ";
       nodes.push({
@@ -61,11 +74,11 @@ function renderTree(dirUri, depth = 0) {
   return nodes;
 }
 
-function renderView() {
+function renderView(): WidgetNode {
   const root = workspaceInfo.rootUri ?? ".";
   const rootName = workspaceInfo.name ?? "PROJECT";
 
-  const header = {
+  const header: WidgetNode = {
     type: "container",
     kind: "row",
     gap: "sm",
@@ -81,7 +94,7 @@ function renderView() {
   };
 
   const items = renderTree(root);
-  const body =
+  const body: WidgetNode[] =
     items.length > 0
       ? items
       : [{ type: "text", text: "  (Empty folder or loading...)", color: "muted" }];
@@ -98,7 +111,7 @@ function renderView() {
   };
 }
 
-async function refreshAll() {
+async function refreshAll(): Promise<void> {
   await loadWorkspace();
   const root = workspaceInfo.rootUri ?? ".";
   expandedDirs.add(root);
@@ -113,16 +126,16 @@ async function refreshAll() {
 
 vy.commands.registerCommand("example.tree.toggle", async () => {
   if (!isInitialized) {
-    isInitialized = true;
     await refreshAll();
+    isInitialized = true;
   }
   await vy.views.toggle({ view: "example.tree", direction: "left" });
 });
 
 vy.commands.registerCommand("example.tree.open", async () => {
   if (!isInitialized) {
-    isInitialized = true;
     await refreshAll();
+    isInitialized = true;
   }
   await vy.views.open({ view: "example.tree", direction: "left" });
 });
@@ -131,8 +144,7 @@ vy.commands.registerCommand("example.tree.refresh", async () => {
   await refreshAll();
 });
 
-vy.commands.registerCommand("example.tree.toggle_dir", async (args) => {
-  const dirUri = typeof args === "string" ? args : args?.raw || args?.uri;
+vy.commands.registerCommand("example.tree.toggle_dir", async (dirUri) => {
   if (!dirUri) return;
   if (expandedDirs.has(dirUri)) {
     expandedDirs.delete(dirUri);
@@ -145,6 +157,14 @@ vy.commands.registerCommand("example.tree.toggle_dir", async (args) => {
   await vy.views.render({ id: "example.tree", tree: renderView() });
 });
 
-refreshAll().catch((err) => {
-  console.error(`Explorer initial load failed: ${err}`);
-});
+try {
+  await refreshAll();
+  isInitialized = true;
+} catch (error) {
+  await vy.log.write({
+    channel: "example.tree",
+    level: "error",
+    message: "Explorer initial load failed",
+    data: String(error),
+  });
+}

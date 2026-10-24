@@ -185,6 +185,28 @@ export const picked = first<number>([1, 2, 3]);
     }
 
     #[test]
+    fn removes_ambient_command_map_declarations() {
+        let source = r#"
+import type { DirEntry } from "vy-api";
+
+declare global {
+  namespace Vy {
+    interface CommandMap {
+      "example.tree.toggle_dir": string;
+    }
+  }
+}
+
+export const answer: number = 42;
+"#;
+        let output = strip(source).expect("transpile");
+        assert!(!output.contains("declare"), "{output}");
+        assert!(!output.contains("CommandMap"), "{output}");
+        assert!(!output.contains("vy-api"), "{output}");
+        assert!(output.contains("export const answer = 42"), "{output}");
+    }
+
+    #[test]
     fn transpiles_expression() {
         let source = "1 + 2 as number";
         let out = strip(source).expect("transpile");

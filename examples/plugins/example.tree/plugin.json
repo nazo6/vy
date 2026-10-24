@@ -6,7 +6,7 @@
   "engines": {
     "vy": ">=0.1.0"
   },
-  "main": "dist/frontend.js",
+  "main": "frontend.ts",
   "permissions": [
     "fs:read:${workspace}/**"
   ],
