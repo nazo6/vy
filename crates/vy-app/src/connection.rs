@@ -325,7 +325,10 @@ mod tests {
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(args, vec!["-T", "example.com", "--", "vy-server", "--stdio"]);
+        assert_eq!(
+            args,
+            vec!["-T", "example.com", "--", "vy-server", "--stdio"]
+        );
     }
 
     #[test]
@@ -339,8 +342,7 @@ mod tests {
         assert_eq!(options.connect.as_deref(), Some("dev"));
         assert_eq!(options.file.as_deref(), Some("src/main.rs"));
 
-        let options =
-            CliOptions::parse(["--connect=dev".to_string()]).expect("parse equals form");
+        let options = CliOptions::parse(["--connect=dev".to_string()]).expect("parse equals form");
         assert_eq!(options.connect.as_deref(), Some("dev"));
         assert!(options.file.is_none());
     }
@@ -353,10 +355,7 @@ mod tests {
 
     #[test]
     fn reads_profiles_and_builds_the_startup_values() {
-        let directory = std::env::temp_dir().join(format!(
-            "vy-connections-{}",
-            std::process::id()
-        ));
+        let directory = std::env::temp_dir().join(format!("vy-connections-{}", std::process::id()));
         let path = directory.join("connections.json");
         std::fs::create_dir_all(&directory).expect("mkdir");
         std::fs::write(
@@ -382,7 +381,10 @@ mod tests {
         assert_eq!(profile.workspace_uri(), "file:///home/nazo/project");
         assert!(matches!(
             profile.spec(),
-            ConnectionSpec::Ssh { port: Some(2222), .. }
+            ConnectionSpec::Ssh {
+                port: Some(2222),
+                ..
+            }
         ));
 
         let startup = Startup::remote("dev".to_string(), profile, None);
@@ -399,10 +401,8 @@ mod tests {
 
     #[test]
     fn a_missing_profile_is_an_error() {
-        let directory = std::env::temp_dir().join(format!(
-            "vy-connections-missing-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("vy-connections-missing-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("mkdir");
         let paths = Paths::under(&directory);
         let options = CliOptions {

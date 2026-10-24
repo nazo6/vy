@@ -57,11 +57,8 @@ fn resolve_uri(argument: &str, base_uri: Option<&str>, canonicalize: bool) -> St
         }
     };
 
-    if canonicalize {
-        match std::fs::canonicalize(&path) {
-            Ok(absolute) => return format!("file://{}", absolute.display()),
-            Err(_) => {}
-        }
+    if canonicalize && let Ok(absolute) = std::fs::canonicalize(&path) {
+        return format!("file://{}", absolute.display());
     }
     format!("file://{}", path.display())
 }
@@ -142,10 +139,7 @@ mod tests {
     fn names_the_workspace_from_its_uri() {
         let info = workspace_info_for(Some("file:///home/user/project".to_string()));
         assert_eq!(info.name.as_deref(), Some("project"));
-        assert_eq!(
-            info.root_uri.as_deref(),
-            Some("file:///home/user/project")
-        );
+        assert_eq!(info.root_uri.as_deref(), Some("file:///home/user/project"));
         assert_eq!(info.folders, vec!["file:///home/user/project"]);
     }
 }

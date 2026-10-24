@@ -9,24 +9,73 @@ use vy_app::geometry::collect_pane_ids;
 use vy_app::rpc::Client;
 use vy_app::state::{DocumentState, PaneState};
 use vy_proto::{
-    DidChangeParams, DocumentIdParams, DocumentSavedResult, HistoryResult, InitializeResult,
-    LayoutDidChangeNotification, PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult,
-    SnapshotResult, decode_value, to_value,
+    DidChangeParams, DocumentIdParams, DocumentSavedResult, HistoryResult, InitializeParams,
+    InitializeResult, LayoutDidChangeNotification, LayoutGetResult, PROTOCOL_VERSION,
+    PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult, SnapshotResult, SyncDocument,
+    SyncRequestParams, SyncRequestResult, decode_value, to_value,
 };
 
 use super::{EditorView, Pending};
 
 impl EditorView {
+    /// Starts the first connection and the reconnect loop.
+    pub(super) fn connect(&mut self, cx: &mut Context<Self>) {
+        self.connection_generation += 1;
+        match Client::connect(self.connection.clone()) {
+            Ok(mut client) => {
+                let id = client.request(
+                    "initialize",
+                    to_value(&InitializeParams {
+                        protocol_version: PROTOCOL_VERSION,
+                        client_version: env!("CARGO_PKG_VERSION").into(),
+                        client_capabilities: vec!["session-restore".to_string()],
+                        workspace: Some(self.workspace_uri.clone()),
+                        resume_session: None,
+                    }),
+                );
+                self.pending.clear();
+                self.pending.insert(id, Pending::Initialize);
+                self.client = Some(client);
+                self.reconnecting = false;
+                self.status = "connected; restoring the session".into();
+                self.start_receiving(cx);
+            }
+            Err(error) => {
+                self.client = None;
+                self.status = format!(
+                    "could not start vy-server for {}: {error}",
+                    self.connection_name
+                )
+                .into();
+                self.schedule_reconnect(cx);
+            }
+        }
+    }
+
+    /// Drops the current client and connects again, without waiting for the
+    /// reconnect backoff. Used by `vy.reconnect_server`.
+    pub(super) fn reconnect_now(&mut self, cx: &mut Context<Self>) {
+        self.connection_generation += 1;
+        self.client = None;
+        self.pending.clear();
+        self.reconnecting = false;
+        self.connect(cx);
+    }
+
     /// Receives messages as they arrive. The reader thread pushes into an async
     /// channel, so the UI only wakes when there is something to handle.
     pub(super) fn start_receiving(&self, cx: &mut Context<Self>) {
         let Some(receiver) = self.client.as_ref().map(Client::receiver) else {
             return;
         };
+        let generation = self.connection_generation;
 
         cx.spawn(async move |this, cx| {
             while let Ok(message) = receiver.recv().await {
                 let updated = this.update(cx, |this, cx| {
+                    if this.connection_generation != generation {
+                        return;
+                    }
                     this.handle(message);
                     cx.notify();
                 });
@@ -37,14 +86,92 @@ impl EditorView {
 
             // The reader stopped: the server closed the connection.
             let _ = this.update(cx, |this, cx| {
-                if this.client.is_some() {
-                    this.status = "lost the connection to vy-server; restart it manually".into();
-                    this.client = None;
+                if this.connection_generation == generation {
+                    this.handle_disconnect(cx);
+                    cx.notify();
                 }
-                cx.notify();
             });
         })
         .detach();
+    }
+
+    fn handle_disconnect(&mut self, cx: &mut Context<Self>) {
+        self.client = None;
+        for (_, pending) in self.pending.drain() {
+            if let Pending::HostCall { request } = pending {
+                request.respond_error("RemoteDisconnected", "the connection to the core closed");
+            }
+        }
+        self.status = format!(
+            "lost the connection to {}; reconnecting",
+            self.connection_name
+        )
+        .into();
+        self.schedule_reconnect(cx);
+    }
+
+    fn schedule_reconnect(&mut self, cx: &mut Context<Self>) {
+        if self.reconnecting {
+            return;
+        }
+        self.reconnecting = true;
+        let generation = self.connection_generation;
+
+        cx.spawn(async move |this, cx| {
+            let mut attempt = 0u32;
+            loop {
+                let delay = reconnect_delay(attempt);
+                cx.background_executor().timer(delay).await;
+
+                let connected = this.update(cx, |this, cx| {
+                    if this.connection_generation != generation {
+                        return true;
+                    }
+                    this.try_reconnect(cx)
+                });
+
+                match connected {
+                    Ok(true) => break,
+                    Ok(false) => attempt = attempt.saturating_add(1),
+                    Err(_) => break,
+                }
+            }
+
+            let _ = this.update(cx, |this, _| {
+                this.reconnecting = false;
+            });
+        })
+        .detach();
+    }
+
+    /// One reconnect attempt. Returns whether it succeeded.
+    fn try_reconnect(&mut self, cx: &mut Context<Self>) -> bool {
+        match Client::connect(self.connection.clone()) {
+            Ok(mut client) => {
+                self.connection_generation += 1;
+                let id = client.request(
+                    "initialize",
+                    to_value(&InitializeParams {
+                        protocol_version: PROTOCOL_VERSION,
+                        client_version: env!("CARGO_PKG_VERSION").into(),
+                        client_capabilities: vec!["session-restore".to_string()],
+                        workspace: Some(self.workspace_uri.clone()),
+                        resume_session: None,
+                    }),
+                );
+                self.pending.clear();
+                self.pending.insert(id, Pending::Initialize);
+                self.client = Some(client);
+                self.reconnecting = false;
+                self.status = "reconnected; restoring the session".into();
+                self.start_receiving(cx);
+                true
+            }
+            Err(error) => {
+                self.status = format!("reconnect failed: {error}").into();
+                false
+            }
+        }
     }
 
     pub(super) fn handle(&mut self, message: RpcMessage) {
@@ -91,6 +218,8 @@ impl EditorView {
                         client.set_session_id(init.session_id);
                     }
                 }
+                Pending::Layout => self.received_layout_get(&value),
+                Pending::Sync => self.received_sync(&value),
                 Pending::Open => self.opened(&value),
                 Pending::Snapshot => self.received_snapshot(&value),
                 Pending::Undo | Pending::Redo => self.received_history(&value),
@@ -141,8 +270,8 @@ impl EditorView {
     fn handle_notification(&mut self, method: &str, params: Value) {
         match method {
             "initialized" => {
-                self.status = "connected; opening the document".into();
-                self.open_document();
+                self.status = "connected; restoring the session".into();
+                self.request("layout/get", Value::Nil, Pending::Layout);
             }
             "buffer/resync" => self.received_snapshot(&params),
             "layout/did_change" => self.received_layout(&params),
@@ -201,6 +330,134 @@ impl EditorView {
             }),
             Pending::Open,
         );
+    }
+
+    /// Applies the layout the core restored after a reconnect.
+    ///
+    /// The client keeps its text and cursor by URI; document and pane IDs may
+    /// differ from the previous connection.
+    fn received_layout_get(&mut self, value: &Value) {
+        let Some(result) = decode_value::<LayoutGetResult>(value) else {
+            self.status = "layout/get response could not be decoded".into();
+            return;
+        };
+
+        if result.layout.is_none() && result.panes.is_empty() {
+            self.layout = None;
+            self.layout_revision = 0;
+            self.panes.clear();
+            self.documents.clear();
+            self.active_pane = None;
+            self.open_document();
+            return;
+        }
+
+        let mut previous: std::collections::HashMap<String, DocumentState> = self
+            .documents
+            .drain()
+            .map(|(_, document)| (document.uri.clone(), document))
+            .collect();
+
+        self.layout = result.layout;
+        self.layout_revision = result.revision;
+        if let Some(window_id) = result.window_id {
+            self.window_id = window_id;
+        }
+
+        let idle = Duration::from_millis(self.config.transaction_idle_ms());
+        let mut panes = std::collections::HashMap::new();
+        let mut documents = std::collections::HashMap::new();
+        for info in result.panes {
+            let mut pane = PaneState::new(info.pane_id, None);
+            pane.view_type = info.view;
+            if let Some(document_id) = info.document_id {
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    documents.entry(document_id)
+                {
+                    let uri = info.uri.unwrap_or_else(|| "vy:untitled".to_string());
+                    let mut document = previous
+                        .remove(&uri)
+                        .unwrap_or_else(|| DocumentState::new(document_id, uri.clone(), "", 0));
+                    document.id = document_id;
+                    document.editor.set_transaction_idle(idle);
+                    entry.insert(document);
+                }
+                pane.document_id = Some(document_id);
+            }
+            panes.insert(info.pane_id, pane);
+        }
+
+        self.active_pane = result.active_pane.or_else(|| panes.keys().copied().next());
+        self.panes = panes;
+        self.documents = documents;
+        self.activate_active_view();
+        self.send_sync();
+    }
+
+    /// Sends the client's open documents after a reconnect. Only dirty documents
+    /// carry their text; the core reads the rest from disk.
+    fn send_sync(&mut self) {
+        let documents: Vec<SyncDocument> = self
+            .documents
+            .values()
+            .map(|document| SyncDocument {
+                uri: document.uri.clone(),
+                version: document.editor.version(),
+                saved_version: document.saved_version,
+                text: document.is_dirty().then(|| document.editor.text()),
+            })
+            .collect();
+
+        if documents.is_empty() {
+            self.status = "reconnected; there are no open documents".into();
+            return;
+        }
+
+        self.status = format!("restoring {} document(s)", documents.len()).into();
+        self.request(
+            "sync/request",
+            to_value(&SyncRequestParams { documents }),
+            Pending::Sync,
+        );
+    }
+
+    /// Applies the text and versions returned by `sync/request`.
+    fn received_sync(&mut self, value: &Value) {
+        let Some(result) = decode_value::<SyncRequestResult>(value) else {
+            self.status = "sync/request response could not be decoded".into();
+            return;
+        };
+
+        let idle = Duration::from_millis(self.config.transaction_idle_ms());
+        let mut documents = std::collections::HashMap::new();
+        for document in result.documents {
+            let mut state = DocumentState::new(
+                document.document_id,
+                document.uri,
+                &document.text,
+                document.version,
+            );
+            state.saved_version = document.saved_version;
+            state.loaded = true;
+            state.editor.set_transaction_idle(idle);
+            documents.insert(document.document_id, state);
+        }
+
+        self.documents = documents;
+        for pane in self.panes.values_mut() {
+            if let Some(document_id) = pane.document_id
+                && !self.documents.contains_key(&document_id)
+            {
+                pane.document_id = None;
+            }
+        }
+
+        let ids: Vec<u64> = self.documents.keys().copied().collect();
+        for document_id in ids {
+            self.clamp_views_for_document(document_id);
+        }
+        self.activate_active_view();
+        self.status = format!("reconnected; restored {} document(s)", self.documents.len()).into();
     }
 
     fn opened(&mut self, value: &Value) {
@@ -452,4 +709,11 @@ impl EditorView {
         let id = client.request(method, to_value(&DocumentIdParams { document_id }));
         self.pending.insert(id, pending);
     }
+}
+
+/// Backoff for automatic reconnects. The first retry is quick because a local
+/// server usually restarts immediately.
+fn reconnect_delay(attempt: u32) -> Duration {
+    let millis = 500u64.saturating_mul(1 << attempt.min(4));
+    Duration::from_millis(millis.min(5_000))
 }

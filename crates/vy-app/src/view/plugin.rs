@@ -60,8 +60,11 @@ impl EditorView {
         self.keymap.unbind_owner(&vy_app::commands::Owner::Init);
         self.config.clear_memory();
 
-        let (env, warnings) =
-            plugin_host::script_env_with_remote(&self.workspace_info(), &self.paths, self.remote_env());
+        let (env, warnings) = plugin_host::script_env_with_remote(
+            &self.workspace_info(),
+            &self.paths,
+            self.remote_env(),
+        );
         for warning in &warnings {
             eprintln!("vy: trusted.json: {warning}");
         }

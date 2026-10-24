@@ -33,12 +33,13 @@ use vy_app::text_layout::scroll_lines;
 use vy_app::workspace::{document_uri, workspace_info_for};
 use vy_core::{LayoutNode, PaneId};
 use vy_js::RemoteEnv;
-use vy_proto::{InitializeParams, PROTOCOL_VERSION, to_value};
 
 /// The kind of request we are waiting for a response to.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Pending {
     Initialize,
+    Layout,
+    Sync,
     Open,
     Snapshot,
     Undo,
@@ -52,6 +53,12 @@ pub(super) enum Pending {
 
 pub struct EditorView {
     client: Option<Client>,
+    /// Bumped for every connection attempt. Old reader tasks ignore messages.
+    connection_generation: u64,
+    /// Whether a reconnect loop is already running.
+    reconnecting: bool,
+    /// Set by `vy.reconnect_server`; the connection watcher performs it.
+    reconnect_requested: bool,
     pending: HashMap<u64, Pending>,
     config: Config,
     paths: Paths,
@@ -169,6 +176,9 @@ impl EditorView {
 
         let mut view = Self {
             client: None,
+            connection_generation: 0,
+            reconnecting: false,
+            reconnect_requested: false,
             pending: HashMap::new(),
             config,
             paths,
@@ -213,35 +223,10 @@ impl EditorView {
             view_widget_trees: HashMap::new(),
         };
 
-        match Client::connect(startup.connection.clone()) {
-            Ok(mut client) => {
-                let id = client.request(
-                    "initialize",
-                    to_value(&InitializeParams {
-                        protocol_version: PROTOCOL_VERSION,
-                        client_version: env!("CARGO_PKG_VERSION").into(),
-                        client_capabilities: vec!["session-restore".to_string()],
-                        workspace: Some(startup.workspace_uri.clone()),
-                        resume_session: None,
-                    }),
-                );
-                view.pending.insert(id, Pending::Initialize);
-                view.client = Some(client);
-                view.status = match warnings.last() {
-                    Some(warning) => format!("settings: {warning}").into(),
-                    None => "waiting for the initialize response".into(),
-                };
-            }
-            Err(error) => {
-                view.status = format!(
-                    "could not start vy-server for {}: {error}",
-                    startup.connection_name
-                )
-                .into();
-            }
+        if let Some(warning) = warnings.last() {
+            view.status = format!("settings: {warning}").into();
         }
-
-        view.start_receiving(cx);
+        view.connect(cx);
         view.start_config_watch(cx);
         view.start_script(cx);
         view
@@ -252,10 +237,7 @@ impl EditorView {
     }
 
     fn remote_env(&self) -> RemoteEnv {
-        remote_env_for(
-            &self.connection,
-            &self.connection_name,
-        )
+        remote_env_for(&self.connection, &self.connection_name)
     }
 
     fn active_pane_state(&self) -> Option<&PaneState> {
@@ -418,6 +400,10 @@ impl EditorView {
                     .await;
 
                 let updated = this.update(cx, |this, cx| {
+                    if this.reconnect_requested {
+                        this.reconnect_requested = false;
+                        this.reconnect_now(cx);
+                    }
                     let config_changed = this.reload_config_if_changed();
                     // Editing `init.ts` starts a fresh runtime, so registrations
                     // from the previous evaluation cannot pile up.

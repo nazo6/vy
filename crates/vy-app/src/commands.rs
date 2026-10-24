@@ -238,6 +238,7 @@ define_command_enum! {
         CommandPalette => ("vy.ui.command_palette", "Command Palette"),
         ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
         ScriptEval => ("vy.script.eval", "Script Evaluate"),
+        ReconnectServer => ("vy.reconnect_server", "Reconnect Server"),
         ViewOpen => ("vy.view.open", "Open View"),
         ViewClose => ("vy.view.close", "Close View"),
         ViewToggle => ("vy.view.toggle", "Toggle View"),
@@ -343,6 +344,10 @@ pub const EX_ALIASES: &[ExAlias] = &[
     ExAlias {
         name: "ts",
         id: "vy.script.eval",
+    },
+    ExAlias {
+        name: "reconnect",
+        id: "vy.reconnect_server",
     },
 ];
 
@@ -901,6 +906,7 @@ mod tests {
         assert_eq!(resolve_ex_name("b"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve_ex_name("buffer"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve_ex_name("ts"), Ok("vy.script.eval"));
+        assert_eq!(resolve_ex_name("reconnect"), Ok("vy.reconnect_server"));
         assert_eq!(
             resolve_ex_name("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
@@ -919,6 +925,7 @@ mod tests {
                     "b".to_string(),
                     "buffer".to_string(),
                     "ts".to_string(),
+                    "reconnect".to_string(),
                 ],
             })
         );

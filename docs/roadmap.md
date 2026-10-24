@@ -166,13 +166,13 @@ Phase 8 で扱います。
 ローカルと同じ RPC を SSH の標準入出力で流し、接続が切れても作業を続けられる
 ようにします。方式は [ADR 0010](./adr/0010-remote-connection.md) に記録しました。
 
-- [ ] Transport をローカルと SSH で切り替えられるようにする
-- [ ] `~/.config/vy/connections.json` と `vy-app --connect <name>` を追加する
-- [ ] SSH 経由で導入済みの `vy-server` を起動する
-- [ ] 接続先の workspace を `initialize` で渡し、`file:` URI を不透明に扱う
-- [ ] コアがワークスペースごとにレイアウトと開いていた文書を保存する
-- [ ] 再接続と再同期（`layout/get`、`sync/request`、version の突き合わせ）
-- [ ] 未保存の本文をクライアントから復元する
+- [x] Transport をローカルと SSH で切り替えられるようにする
+- [x] `~/.config/vy/connections.json` と `vy-app --connect <name>` を追加する
+- [x] SSH 経由で導入済みの `vy-server` を起動する
+- [x] 接続先の workspace を `initialize` で渡し、`file:` URI を不透明に扱う
+- [x] コアがワークスペースごとにレイアウトと開いていた文書を保存する
+- [x] 再接続と再同期（`layout/get`、`sync/request`、version の突き合わせ）
+- [x] 未保存の本文をクライアントから復元する
 - [ ] 遅延の計測と、先読み描画の範囲の調整
 
 ### Phase 6: リモートプラグイン

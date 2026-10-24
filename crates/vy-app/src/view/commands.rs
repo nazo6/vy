@@ -670,6 +670,10 @@ impl EditorView {
         match command {
             UiCommand::CommandPalette => self.open_palette(),
             UiCommand::ExCommandLine => self.open_ex(),
+            UiCommand::ReconnectServer => {
+                self.reconnect_requested = true;
+                self.status = "reconnecting".into();
+            }
             UiCommand::ScriptEval => {
                 let Some(raw) = invocation.ex_raw() else {
                     self.status = "script.eval requires an expression".into();

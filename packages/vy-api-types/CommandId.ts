@@ -58,6 +58,7 @@ export type CommandId =
   | "vy.pane.split_left"
   | "vy.pane.split_right"
   | "vy.pane.split_up"
+  | "vy.reconnect_server"
   | "vy.script.eval"
   | "vy.text_object.angle"
   | "vy.text_object.backtick"
