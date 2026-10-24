@@ -196,9 +196,12 @@ mod tests {
                 "{} would be treated as an event",
                 entry.method
             );
+            let expected_manual = matches!(
+                entry.method,
+                "commands.registerCommand" | "commands.execute" | "keymap.bind"
+            );
             assert_eq!(
-                entry.manual,
-                entry.method == "commands.registerCommand",
+                entry.manual, expected_manual,
                 "{} has the wrong manual flag",
                 entry.method
             );
@@ -232,7 +235,6 @@ mod tests {
         assert_eq!((find("editor.setMode").result.name)(), "null");
         assert_eq!((find("config.get").result.name)(), "unknown");
         assert_eq!(find("config.get").typed_key, Some("SettingsMap"));
-        assert_eq!(find("commands.execute").typed_args, Some("CommandMap"));
         assert_eq!(
             find("fs.readFile")
                 .params
@@ -274,8 +276,6 @@ mod tests {
                 "{} has no description",
                 namespace.path
             );
-            let expected = (namespace.path == "commands").then_some("CommandsSugar");
-            assert_eq!(namespace.sugar, expected, "{}", namespace.path);
         }
     }
 

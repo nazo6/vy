@@ -13,6 +13,9 @@
     },
     "include": [
         "examples/**/*.ts",
-        "packages/vy-api/**/*.ts"
-    ]
+        "packages/vy-api/**/*.ts",
+        "crates/vy-js/src/shim.ts",
+        "type-tests/**/*.ts"
+    ],
+    "exclude": ["packages/vy-api/shim.d.ts"]
 }

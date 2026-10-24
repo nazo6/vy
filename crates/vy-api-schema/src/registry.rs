@@ -130,8 +130,6 @@ pub struct MethodDecl {
     pub manual: bool,
     /// Type name of the map that keys this method's parameter, if any.
     pub typed_key: Option<&'static str>,
-    /// Type name of the map that types the `args` field, if any.
-    pub typed_args: Option<&'static str>,
 }
 
 /// One event the host can emit to the script.
@@ -156,8 +154,6 @@ pub struct NamespaceDecl {
     pub path: &'static str,
     /// Description emitted as JSDoc for the namespace.
     pub doc: &'static str,
-    /// Hand-written sugar interface that `index.d.ts` extends, if any.
-    pub sugar: Option<&'static str>,
 }
 
 /// The TypeScript name of a boundary type.

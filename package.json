@@ -4,6 +4,7 @@
     "packageManager": "pnpm@12.11.2",
     "scripts": {
         "check:types": "tsc --noEmit",
+        "generate:api": "cargo run -p vy-api-codegen -- client && tsc -p tsconfig.shim.json && node scripts/generate-shim.mjs",
         "docs:api": "typedoc",
         "docs:api:serve": "typedoc && python3 -m http.server 8000 --directory target/docs/vy-api"
     },

@@ -21,14 +21,14 @@ pub struct CommandsExecuteParams {
 }
 
 /// Registers command handlers and runs commands by id.
-#[vy_api_schema::vy_api_trait("commands", sugar = CommandsSugar)]
+#[vy_api_schema::vy_api_trait("commands")]
 pub trait CommandsApi {
     /// Registers a command handler and returns a disposable registration.
     #[vy_api_schema::vy_api_method(manual)]
     fn register_command(&mut self, params: CommandsRegisterParams) -> Result<Reply<()>, CallError>;
 
     /// Runs a command by id with optional arguments.
-    #[vy_api_schema::vy_api_method(typed_args = CommandMap)]
+    #[vy_api_schema::vy_api_method(manual)]
     fn execute(&mut self, params: CommandsExecuteParams) -> Result<Reply<()>, CallError>;
 
     /// Lists the ids of every registered command.

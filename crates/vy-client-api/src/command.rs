@@ -1,8 +1,9 @@
 //! Built-in command identifiers owned by the client.
 //!
 //! These are part of the client API surface: `commands.execute` accepts the
-//! same ids, and `CommandId.ts` is generated from them. They live here rather
-//! than in `vy-app` so the codegen can run without building the GPUI client.
+//! same ids, and `BuiltinCommandMap.ts` is generated from them. They live here
+//! rather than in `vy-app` so the codegen can run without building the GPUI
+//! client.
 
 use strum::VariantArray;
 

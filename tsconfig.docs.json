@@ -9,5 +9,6 @@
     },
     "include": [
         "packages/vy-api/**/*.ts"
-    ]
+    ],
+    "exclude": ["packages/vy-api/shim.d.ts"]
 }

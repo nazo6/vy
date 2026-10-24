@@ -11,8 +11,8 @@ use rquickjs::{Ctx, Error, Module, Result};
 /// The module name scripts import.
 pub const API_MODULE: &str = "vy-api";
 
-/// Source of the shim module. It is plain JavaScript: no build step is needed.
-pub const SHIM_SOURCE: &str = include_str!("shim.js");
+/// Source of the shim module, generated from `shim.ts` by `pnpm generate:api`.
+pub const SHIM_SOURCE: &str = include_str!("generated/shim.js");
 
 /// Resolves `vy-api` and rejects everything else.
 ///

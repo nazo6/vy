@@ -49,7 +49,6 @@ pub fn vy_api_trait(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[derive(Default)]
 struct NamespaceArgs {
     path: Option<LitStr>,
-    sugar: Option<LitStr>,
 }
 
 impl Parse for NamespaceArgs {
@@ -61,25 +60,8 @@ impl Parse for NamespaceArgs {
         if input.peek(LitStr) {
             args.path = Some(input.parse()?);
         }
-        while input.peek(Token![,]) {
-            input.parse::<Token![,]>()?;
-            if input.is_empty() {
-                break;
-            }
-            let key: Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-            match key.to_string().as_str() {
-                "sugar" => {
-                    let name: Ident = input.parse()?;
-                    args.sugar = Some(LitStr::new(&name.to_string(), name.span()));
-                }
-                other => {
-                    return Err(syn::Error::new(
-                        key.span(),
-                        format!("unknown namespace option `{other}`"),
-                    ));
-                }
-            }
+        if input.peek(Token![,]) {
+            return Err(input.error("unexpected namespace option"));
         }
         Ok(args)
     }
@@ -90,7 +72,6 @@ struct MethodArgs {
     name: Option<LitStr>,
     manual: bool,
     typed_key: Option<LitStr>,
-    typed_args: Option<LitStr>,
 }
 
 impl Parse for MethodArgs {
@@ -114,15 +95,10 @@ impl Parse for MethodArgs {
             let key_name = key.to_string();
             match key_name.as_str() {
                 "manual" => args.manual = true,
-                "typed_key" | "typed_args" => {
+                "typed_key" => {
                     input.parse::<Token![=]>()?;
                     let name: Ident = input.parse()?;
-                    let value = LitStr::new(&name.to_string(), name.span());
-                    if key_name == "typed_key" {
-                        args.typed_key = Some(value);
-                    } else {
-                        args.typed_args = Some(value);
-                    }
+                    args.typed_key = Some(LitStr::new(&name.to_string(), name.span()));
                 }
                 other => {
                     return Err(syn::Error::new(
@@ -310,10 +286,6 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
             Some(name) => quote! { Some(#name) },
             None => quote! { None },
         };
-        let typed_args = match &method_args.typed_args {
-            Some(name) => quote! { Some(#name) },
-            None => quote! { None },
-        };
 
         let params_ts = format_ident!("__vy_params_ts_{}", identifier);
         let params_collect = format_ident!("__vy_params_collect_{}", identifier);
@@ -366,7 +338,6 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                     doc: #doc,
                     manual: #manual,
                     typed_key: #typed_key,
-                    typed_args: #typed_args,
                 };
         });
         declarations.push(quote! { #declaration });
@@ -389,10 +360,6 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
     }
     trait_item.items = retained;
 
-    let sugar = match &args.sugar {
-        Some(name) => quote! { Some(#name) },
-        None => quote! { None },
-    };
     let generated = quote! {
         #(#generated_items)*
 
@@ -402,12 +369,11 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
         /// Every event declared by this trait.
         pub static EVENTS: &[::vy_api_schema::EventDecl] = &[#(#event_entries),*];
 
-        /// JSDoc and sugar metadata for the namespace.
+        /// JSDoc for the namespace.
         pub static NAMESPACE: ::vy_api_schema::NamespaceDecl =
             ::vy_api_schema::NamespaceDecl {
                 path: #namespace,
                 doc: #trait_doc,
-                sugar: #sugar,
             };
 
         /// Answers a call declared by this trait.

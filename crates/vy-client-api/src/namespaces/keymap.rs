@@ -41,7 +41,7 @@ pub struct KeymapSetContextParams {
 #[vy_api_schema::vy_api_trait("keymap")]
 pub trait KeymapApi {
     /// Binds a key sequence to a command.
-    #[vy_api_schema::vy_api_method]
+    #[vy_api_schema::vy_api_method(manual)]
     fn bind(&mut self, params: KeymapBindParams) -> Result<Reply<()>, CallError>;
 
     /// Removes a key binding and returns the number removed.

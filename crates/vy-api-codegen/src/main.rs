@@ -16,7 +16,7 @@ use vy_client_api::command::{
 };
 use vy_client_api::settings::SETTINGS;
 
-const REGENERATE: &str = "cargo run -p vy-api-codegen -- client";
+const REGENERATE: &str = "pnpm generate:api";
 
 fn main() {
     if let Err(error) = run() {
@@ -75,7 +75,7 @@ fn generate_client(output: &Output) -> Result<(), Box<dyn Error>> {
     let namespaces = vy_client_api::client_host_api_namespaces();
     let events = vy_client_api::client_host_api_events();
     std::fs::create_dir_all(&output.types_dir)?;
-    write_command_ids(&output.types_dir)?;
+    write_builtin_commands(&output.types_dir)?;
     write_settings_keys(&output.types_dir)?;
     codegen::export_to(output, &methods, &namespaces, &events)?;
     Ok(())
@@ -154,7 +154,7 @@ fn header() -> String {
     )
 }
 
-fn write_command_ids(directory: &Path) -> io::Result<()> {
+fn write_builtin_commands(directory: &Path) -> io::Result<()> {
     let mut ids: Vec<&str> = Vec::new();
     ids.extend(BuiltinCommand::all().iter().map(|command| command.id()));
     ids.extend(PaneCommand::all().iter().map(|command| command.id()));
@@ -165,17 +165,16 @@ fn write_command_ids(directory: &Path) -> io::Result<()> {
     ids.dedup();
 
     let mut output = header();
+    output.push_str("/** Arguments of each command built into the client. */\n");
+    output.push_str("export interface BuiltinCommandMap {\n");
+    for id in &ids {
+        output.push_str(&format!("  \"{id}\": unknown;\n"));
+    }
+    output.push_str("}\n\n");
     output.push_str("/** Identifiers of the commands built into the client. */\n");
-    output.push_str("export type CommandId =\n");
-    output.push_str(
-        &ids.iter()
-            .map(|id| format!("  | \"{id}\""))
-            .collect::<Vec<_>>()
-            .join("\n"),
-    );
-    output.push_str(";\n");
+    output.push_str("export type BuiltinCommandId = keyof BuiltinCommandMap;\n");
 
-    std::fs::write(directory.join("CommandId.ts"), output)
+    std::fs::write(directory.join("BuiltinCommandMap.ts"), output)
 }
 
 fn write_settings_keys(directory: &Path) -> io::Result<()> {
@@ -220,10 +219,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("vy-api-codegen-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create test directory");
-        write_command_ids(&root).expect("write command ids");
+        write_builtin_commands(&root).expect("write builtin commands");
         write_settings_keys(&root).expect("write settings keys");
 
-        let commands = std::fs::read_to_string(root.join("CommandId.ts")).expect("read commands");
+        let commands =
+            std::fs::read_to_string(root.join("BuiltinCommandMap.ts")).expect("read commands");
         assert!(commands.contains("\"vy.motion.left\""));
         let settings = std::fs::read_to_string(root.join("SettingsKey.ts")).expect("read settings");
         assert!(settings.contains("\"ui.fontSize\": number;"));
