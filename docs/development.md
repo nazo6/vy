@@ -98,7 +98,8 @@ pnpm check:types
   は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`BuiltinCommandMap.ts`
   と `SettingsKey.ts` も同じ CLI が生成します。JS 向けの型は
   `crates/vy-js/src/shim.ts` から `tsc` で `packages/vy-api/shim.d.ts` に生成します。
-  `shim.js` は `globalThis.vy` を代入するスクリプトで、仮想モジュールではありません。
+  `shim.js` は評価時に `globalThis.vy` を代入するモジュールで、ユーザー向けの
+  仮想モジュールではありません。
   生成はテストではなく [ADR 0014](./adr/0014-api-codegen-cli.md) と
   [ADR 0016](./adr/0016-command-types-and-ts-shim.md) のコマンドで行います。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の

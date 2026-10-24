@@ -42,9 +42,11 @@
 
 - プラグインと `init.ts` は `vy` グローバルを使います。
 - `vy-api` 仮想モジュールは廃止します。
-- ホストはスクリプトを評価する前に `globalThis.vy` をインストールします。
-- shim は ESM の export ではなく、`globalThis.vy` を代入するスクリプトとして
-  生成します。
+- `globalThis.vy` は既にホストがインストールしています。現在は `vy-api` を
+  import するブートストラップで代入しているため、これを shim の評価時の代入に
+  置き換えます。
+- shim の export は型生成のために残してよく、ユーザーが import するモジュール
+  ではありません。
 
 ```typescript
 // init.ts
