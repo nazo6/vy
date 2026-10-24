@@ -9,10 +9,10 @@ use vy_app::geometry::collect_pane_ids;
 use vy_app::rpc::Client;
 use vy_app::state::{DocumentState, PaneState};
 use vy_proto::{
-    DidChangeParams, DocumentIdParams, DocumentSavedResult, HistoryResult, InitializeParams,
-    InitializeResult, LayoutDidChangeNotification, LayoutGetResult, PROTOCOL_VERSION,
-    PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult, SnapshotResult, SyncDocument,
-    SyncRequestParams, SyncRequestResult, decode_value, to_value,
+    DidChangeParams, DocumentIdParams, DocumentSavedResult, EditorOpenParams, HistoryResult,
+    InitializeParams, InitializeResult, LayoutDidChangeNotification, LayoutGetResult,
+    PROTOCOL_VERSION, PaneOpenParams, PaneOpenResult, RpcMessage, RpcResult, SnapshotResult,
+    SyncDocument, SyncRequestParams, SyncRequestResult, decode_value, to_value,
 };
 
 use super::{EditorView, Pending};
@@ -348,6 +348,7 @@ impl EditorView {
             self.panes.clear();
             self.documents.clear();
             self.active_pane = None;
+            self.open_initial_after_restore = false;
             self.open_document();
             return;
         }
@@ -458,6 +459,24 @@ impl EditorView {
         }
         self.activate_active_view();
         self.status = format!("reconnected; restored {} document(s)", self.documents.len()).into();
+
+        if self.open_initial_after_restore {
+            self.open_initial_after_restore = false;
+            let already_open = self
+                .documents
+                .values()
+                .any(|document| document.uri == self.initial_uri);
+            if !already_open && self.initial_uri != "vy:untitled" {
+                self.request(
+                    "editor/open",
+                    to_value(&EditorOpenParams {
+                        uri: self.initial_uri.clone(),
+                        pane_id: self.active_pane,
+                    }),
+                    Pending::EditorOpen,
+                );
+            }
+        }
     }
 
     fn opened(&mut self, value: &Value) {

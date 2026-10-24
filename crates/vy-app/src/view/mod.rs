@@ -82,6 +82,8 @@ pub struct EditorView {
     init_evaluated: bool,
     /// URI of the document opened at startup.
     initial_uri: String,
+    /// Whether the startup file still needs to be opened after a restored layout.
+    open_initial_after_restore: bool,
     window_id: u64,
     layout: Option<LayoutNode>,
     layout_revision: u64,
@@ -194,6 +196,7 @@ impl EditorView {
             script_generation: 0,
             init_evaluated: false,
             initial_uri: uri,
+            open_initial_after_restore: startup.initial_file.is_some(),
             window_id: 1,
             layout: None,
             layout_revision: 0,
