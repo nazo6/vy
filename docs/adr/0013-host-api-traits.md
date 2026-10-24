@@ -1,6 +1,6 @@
 # ADR 0013: 名前空間 trait と `HostApi` facade でホスト API を実装する
 
-- 状態: 採用（試作: `workspace` と `notifications`）
+- 状態: 採用（`workspace`、`fs`、`config`、`commands`、`views`、`notifications` を trait 化）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -88,17 +88,27 @@ impl ClientHostApi for ClientHost<'_, '_, '_> {}
 イベントはハンドラではないため、`event_decl!` と `EVENTS` で宣言します。
 trait マクロはメソッドのメタデータだけを生成します。
 
-## 今回の試作
+## 検証した範囲
 
-- `workspace` を `vy-host-api` の trait に変更
-- `notifications` を `vy-client-api` の trait に変更
-- `HostApi` と `ClientHostApi` を追加
-- `Reply`、`CallError`、`parse_params`、`erase_reply` を `vy-host-api` に移動
-- `vy-app` に `ClientHost` を追加し、`workspace` と `notifications` を実装
+- `workspace`、`notifications` を trait 化
+- `fs` を trait 化し、クライアントの `Reply::Deferred` と `ServerRpc` を確認
+- `views` を trait 化し、`HostAction::Ui` と `RenderWidgetTree` を確認
+- `config` を `ConfigReadApi`（共有）と `ConfigApi`（クライアント）に分割
+- `commands` を trait 化し、`manual` と `typed_args` を確認
+- `vy-server` に検証用の `CoreHost` を追加し、`workspace.info` と `fs.readFile` を
+  コアの状態から直接実装
+- `fs` のケイパビリティ許可と拒否を確認
 - 生成される TypeScript は変えない
 
-`fs`、`process`、`document`、`config`、`editor`、`views` などは、試作の結果を見て
-同じ形に移します。
+### 検証で見つかった点
+
+`fs` のケイパビリティは、宣言では `${workspace}/**` のようなパスを使いますが、
+API は `file:` URI を渡します。そのままでは glob が一致しないため、クライアントと
+`CoreHost` の両方で `file:` URI をパスに変換してから照合するようにしました。
+
+`process`、`document`、`editor`、`ui` などはまだ宣言ベースです。`editor` の
+`HostAction::Edit` は `views` と同じ「即時 reply + action」の形なので、追加の
+検証は不要と判断しました。
 
 ## 帰結
 
