@@ -32,108 +32,8 @@ import type {
   WorkspaceSugar,
 } from "./overrides";
 
-export type {
-  ButtonVariant,
-  CommandId,
-  CommandsExecuteParams,
-  CommandsRegisterParams,
-  ConfigGetParams,
-  ConfigInspectParams,
-  ConfigInspectReply,
-  ConfigSetParams,
-  ConfigSetReply,
-  ContainerKind,
-  DirEntry,
-  DocumentGetTextParams,
-  DocumentInfoReply,
-  DocumentLineAtParams,
-  DocumentOffsetAtParams,
-  DocumentPositionAtParams,
-  EditorEditParams,
-  EditorEditReply,
-  EditorSetModeParams,
-  EditorSetSelectionsParams,
-  ErrorCode,
-  FileStat,
-  Font,
-  FsCopyParams,
-  FsCopyReply,
-  FsCreateDirParams,
-  FsCreateDirReply,
-  FsExistsParams,
-  FsExistsReply,
-  FsReadDirParams,
-  FsReadDirReply,
-  FsReadFileParams,
-  FsReadFileReply,
-  FsReadTextFileParams,
-  FsReadTextFileReply,
-  FsRemoveParams,
-  FsRemoveReply,
-  FsRenameParams,
-  FsRenameReply,
-  FsStatParams,
-  FsStatReply,
-  FsWriteFileParams,
-  FsWriteFileReply,
-  Gap,
-  GutterCreateParams,
-  GutterDisposeParams,
-  HoverShowParams,
-  KeymapBindParams,
-  KeymapSetContextParams,
-  KeymapUnbindParams,
-  LogLevel,
-  LogWriteParams,
-  Mode,
-  NotificationsShowParams,
-  PickerItem,
-  PickerShowParams,
-  Position,
-  ProcessExecParams,
-  ProcessKillParams,
-  ProcessKillReply,
-  ProcessOutput,
-  ProcessSpawnParams,
-  ProcessSpawnReply,
-  ProcessStdinParams,
-  ProcessStdinReply,
-  Range,
-  Selection,
-  SettingsKey,
-  SettingsMap,
-  StatuslineAlignment,
-  StatuslineCreateParams,
-  StatuslineDisposeParams,
-  StatuslineUpdateParams,
-  TextEdit,
-  ThemeColor,
-  Uri,
-  ViewsRenderParams,
-  WidgetNode,
-} from "../vy-api-types";
-
-export type {
-  ChildProcess,
-  Disposable,
-  Document,
-  EditorEditBuilder,
-  GutterItem,
-  GutterItemOptions,
-  LogChannel,
-  PluginContext,
-  ProcessOptions,
-  RemoteApi,
-  ShowPickerOptions,
-  StatuslineItem,
-  StatuslineItemOptions,
-  UiButtonOptions,
-  UiContainerOptions,
-  UiTextInputOptions,
-  UiTextOptions,
-  ViewKind,
-  ViewOptions,
-} from "./overrides";
+export * from "../vy-api-types";
+export * from "./overrides";
 
 /** Augment this interface to type the arguments of your own commands. */
 export interface CommandMap {}
@@ -141,20 +41,10 @@ export interface CommandMap {}
 /** Registers command handlers and runs commands by id. */
 export interface CommandsApi extends CommandsSugar {
   /** Lists the ids of every registered command. */
-  getCommands(): Promise<string[]>;
+  getCommands(): Promise<Array<string>>;
 }
 /** Registers command handlers and runs commands by id. */
 export const commands: CommandsApi;
-
-/** Binds keys and updates keymap context values. */
-export interface KeymapApi extends KeymapSugar {
-  /** Sets a keymap context value used by `when` clauses. */
-  setContext(params: KeymapSetContextParams): Promise<void>;
-  /** Removes a key binding and returns the number removed. */
-  unbind(params: KeymapUnbindParams): Promise<number>;
-}
-/** Binds keys and updates keymap context values. */
-export const keymap: KeymapApi;
 
 /** Reads and writes settings. */
 export interface ConfigApi extends ConfigSugar {
@@ -171,7 +61,7 @@ export interface EditorApi extends EditorSugar {
   /** Redoes the last undone transaction. */
   redo(): Promise<void>;
   /** Returns the selections of the focused pane. */
-  selections(): Promise<Selection[]>;
+  selections(): Promise<Array<Selection>>;
   /** Switches the focused pane to a mode. */
   setMode(params: EditorSetModeParams): Promise<void>;
   /** Replaces the selections of the focused pane. */
@@ -182,17 +72,21 @@ export interface EditorApi extends EditorSugar {
 /** Reads and edits the active document. */
 export const editor: EditorApi;
 
-/** Describes the workspace and its open documents. */
-export interface WorkspaceApi extends WorkspaceSugar {
+/** Reads, writes, and inspects files in the workspace. */
+export interface FsApi extends FsSugar {
 }
-/** Describes the workspace and its open documents. */
-export const workspace: WorkspaceApi;
+/** Reads, writes, and inspects files in the workspace. */
+export const fs: FsApi;
 
-/** Shows notifications to the user. */
-export interface NotificationsApi extends NotificationsSugar {
+/** Binds keys and updates keymap context values. */
+export interface KeymapApi extends KeymapSugar {
+  /** Sets a keymap context value used by `when` clauses. */
+  setContext(params: KeymapSetContextParams): Promise<void>;
+  /** Removes a key binding and returns the number removed. */
+  unbind(params: KeymapUnbindParams): Promise<number>;
 }
-/** Shows notifications to the user. */
-export const notifications: NotificationsApi;
+/** Binds keys and updates keymap context values. */
+export const keymap: KeymapApi;
 
 /** Writes to plugin log channels. */
 export interface LogApi extends LogSugar {
@@ -201,6 +95,18 @@ export interface LogApi extends LogSugar {
 }
 /** Writes to plugin log channels. */
 export const log: LogApi;
+
+/** Shows notifications to the user. */
+export interface NotificationsApi extends NotificationsSugar {
+}
+/** Shows notifications to the user. */
+export const notifications: NotificationsApi;
+
+/** Runs and manages external processes. */
+export interface ProcessApi extends ProcessSugar {
+}
+/** Runs and manages external processes. */
+export const process: ProcessApi;
 
 /** Creates and removes gutter items. */
 export interface UiGutterApi extends UiGutterSugar {
@@ -242,19 +148,11 @@ export interface ViewsApi extends ViewsSugar {
 /** Registers and looks up pane views. */
 export const views: ViewsApi;
 
-/** Reads, writes, and inspects files in the workspace. */
-export interface FsApi extends FsSugar {
+/** Describes the workspace and its open documents. */
+export interface WorkspaceApi extends WorkspaceSugar {
 }
-/** Reads, writes, and inspects files in the workspace. */
-export const fs: FsApi;
-
-/** Runs and manages external processes. */
-export interface ProcessApi extends ProcessSugar {
-}
-/** Runs and manages external processes. */
-export const process: ProcessApi;
-
-export { context, remote } from "./overrides";
+/** Describes the workspace and its open documents. */
+export const workspace: WorkspaceApi;
 
 declare global {
   /** The Vy client API exposed in the global scope. */

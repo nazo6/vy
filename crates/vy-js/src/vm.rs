@@ -15,7 +15,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Module, Runtime, Value as JsValue};
 use serde::Serialize;
-use vy_api_schema::HOST_METHODS;
 use vy_core::Uri;
 
 use crate::api::{VyLoader, VyResolver};
@@ -309,28 +308,6 @@ impl Drop for ScriptHost {
     }
 }
 
-/// One entry of the method table as the shim sees it.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ShimMethod {
-    method: &'static str,
-    manual: bool,
-    has_params: bool,
-}
-
-/// Serializes `HOST_METHODS` for `globalThis.__vy_spec`.
-fn shim_spec_json() -> String {
-    let methods: Vec<ShimMethod> = HOST_METHODS
-        .iter()
-        .map(|spec| ShimMethod {
-            method: spec.method,
-            manual: spec.manual,
-            has_params: spec.has_params(),
-        })
-        .collect();
-    serde_json::to_string(&methods).unwrap_or_else(|_| "[]".to_string())
-}
-
 /// Runs the thread until the task channel closes.
 fn run(
     env_json: String,
@@ -372,9 +349,6 @@ fn run(
     let setup = context.with(|ctx| -> rquickjs::Result<()> {
         let env = ctx.json_parse(env_json)?;
         ctx.globals().set("__vy_env", env)?;
-
-        let spec = ctx.json_parse(shim_spec_json())?;
-        ctx.globals().set("__vy_spec", spec)?;
 
         let bridge = Bridge { requests };
         let call = Function::new(

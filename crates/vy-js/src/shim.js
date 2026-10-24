@@ -1,22 +1,20 @@
 // `vy-api` shim.
 //
-// The host installs three globals before a script runs:
+// The host installs two globals before a script runs:
 //
 //   __vy_host_call(method, paramsJson)  the blocking bridge to the client
 //   __vy_env                            constants such as workspace.rootUri
-//   __vy_spec                           HOST_METHODS from vy-api-schema
 //
-// Most methods are generated from `__vy_spec`: the caller passes one object and
-// it is forwarded unchanged, so adding an API never needs an edit here. The rest
-// need JavaScript state (a handler map, a builder, a handle returned to the
-// script) and are written by hand below.
+// Method namespaces are proxies: reading a property that is not hand-written
+// sugar returns a forwarder for `<namespace>.<property>`, so adding a method in
+// Rust needs no edit here. The hand-written functions below keep JavaScript
+// state (a handler map, a builder, a handle returned to the script).
 //
 // Keep this file plain JavaScript: QuickJS loads it as an ES module without a
 // build step, so no type annotations may appear here.
 
 const hostCall = globalThis.__vy_host_call;
 const env = globalThis.__vy_env || {};
-const spec = globalThis.__vy_spec || [];
 
 // Calls the host and returns the value. Host errors become exceptions with a
 // stable `code`, as `docs/api.md` §20 describes.
@@ -31,23 +29,40 @@ function call(method, params) {
   return reply.value;
 }
 
-export const commands = {};
-export const keymap = {};
-export const config = {};
-export const editor = {};
-export const notifications = {};
-export const log = {};
-export const views = {};
-export const fs = {};
-export const process = {};
+// A namespace whose unknown properties are host forwarders.
+function methods(path) {
+  return new Proxy(
+    {},
+    {
+      get(target, name) {
+        if (typeof name !== "string" || name === "then") {
+          return undefined;
+        }
+        if (!Object.prototype.hasOwnProperty.call(target, name)) {
+          target[name] = async (params) => call(`${path}.${name}`, params ?? {});
+        }
+        return target[name];
+      },
+    }
+  );
+}
+
+export const commands = methods("commands");
+export const keymap = methods("keymap");
+export const config = methods("config");
+export const editor = methods("editor");
+export const notifications = methods("notifications");
+export const log = methods("log");
+export const views = methods("views");
+export const fs = methods("fs");
+export const process = methods("process");
 
 // `workspace` is mostly constants; `textDocuments` is added below.
-export const workspace = {
-  rootUri: env.workspace?.rootUri ?? null,
-  name: env.workspace?.name ?? null,
-  trusted: env.workspace?.trusted ?? false,
-  folders: () => env.workspace?.folders ?? [],
-};
+export const workspace = methods("workspace");
+workspace.rootUri = env.workspace?.rootUri ?? null;
+workspace.name = env.workspace?.name ?? null;
+workspace.trusted = env.workspace?.trusted ?? false;
+workspace.folders = () => env.workspace?.folders ?? [];
 
 export const remote = {
   isRemote: env.remote?.isRemote ?? false,
@@ -56,12 +71,11 @@ export const remote = {
   pathSeparator: env.remote?.pathSeparator ?? "/",
 };
 
-export const ui = {
-  picker: {},
-  statusline: {},
-  gutter: {},
-  hover: {},
-};
+export const ui = methods("ui");
+ui.picker = methods("ui.picker");
+ui.statusline = methods("ui.statusline");
+ui.gutter = methods("ui.gutter");
+ui.hover = methods("ui.hover");
 
 // Turns a host document into the object scripts use. Text and positions are in
 // UTF-16 code units, as JavaScript counts them.
@@ -85,43 +99,6 @@ function makeDocument(info) {
       end: { line: info.end.line, character: info.end.character },
     }),
   };
-}
-
-// --- generated forwarders ---------------------------------------------------
-
-const namespaces = {
-  commands,
-  keymap,
-  config,
-  editor,
-  workspace,
-  notifications,
-  log,
-  ui,
-  views,
-  fs,
-  process,
-};
-
-for (const entry of spec) {
-  if (entry.manual) {
-    continue;
-  }
-  const segments = entry.method.split(".");
-  let target = namespaces[segments[0]];
-  if (!target) {
-    continue;
-  }
-  for (let index = 1; index < segments.length - 1; index += 1) {
-    const name = segments[index];
-    if (!target[name]) {
-      target[name] = {};
-    }
-    target = target[name];
-  }
-  target[segments[segments.length - 1]] = entry.hasParams
-    ? async (params) => call(entry.method, params ?? {})
-    : async () => call(entry.method, {});
 }
 
 // --- commands ---------------------------------------------------------------

@@ -1,162 +1,74 @@
-//! Writes the TypeScript declarations from [`crate::HOST_METHODS`].
+//! Writes the TypeScript declarations from the declarations that
+//! `#[vy_api_namespace]` generated.
 //!
 //! `HostMethods.ts` lists every call; `packages/vy-api/index.d.ts` declares the
-//! namespaces scripts import. Hand-written sugar (wrappers that keep JavaScript
-//! state in the shim) lives in `packages/vy-api/overrides.d.ts` and is composed
-//! here. See `docs/adr/0007-rust-typed-plugin-api.md`.
+//! namespaces scripts import. Hand-written sugar lives in
+//! `packages/vy-api/overrides.d.ts` and is composed here. See
+//! `docs/adr/0008-declare-plugin-api-with-macros.md`.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::HOST_METHODS;
-use crate::MethodSpec;
-
-/// Namespaces the shim exports as constants, with their JSDoc descriptions.
-const TOP_LEVEL: &[(&str, &str)] = &[
-    (
-        "commands",
-        "Registers command handlers and runs commands by id.",
-    ),
-    ("keymap", "Binds keys and updates keymap context values."),
-    ("config", "Reads and writes settings."),
-    ("editor", "Reads and edits the active document."),
-    (
-        "workspace",
-        "Describes the workspace and its open documents.",
-    ),
-    ("notifications", "Shows notifications to the user."),
-    ("log", "Writes to plugin log channels."),
-    ("ui", "Builds native widget trees and updates UI slots."),
-    ("views", "Registers and looks up pane views."),
-    ("fs", "Reads, writes, and inspects files in the workspace."),
-    ("process", "Runs and manages external processes."),
-];
-
-/// Nested namespaces that need a description in the generated declarations.
-const NAMESPACE_DOCS: &[(&[&str], &str)] = &[
-    (&["ui", "gutter"], "Creates and removes gutter items."),
-    (&["ui", "hover"], "Shows and hides hover popups."),
-    (
-        &["ui", "picker"],
-        "Shows a picker and returns the chosen item.",
-    ),
-    (
-        &["ui", "statusline"],
-        "Creates and updates status line items.",
-    ),
-];
+use crate::MethodDecl;
+use crate::NamespaceDecl;
 
 /// Tokens that are types in the emitted signature rather than imported names.
 const TYPE_KEYWORDS: &[&str] = &[
-    "boolean", "never", "null", "number", "Record", "string", "unknown", "void",
+    "Array", "boolean", "never", "null", "number", "Record", "string", "unknown", "void",
 ];
 
-/// Types scripts can import from `vy-api` even when no generated signature uses
-/// them.
-const EXTRA_TYPES: &[&str] = &[
-    "ButtonVariant",
-    "CommandId",
-    "ContainerKind",
-    "DirEntry",
-    "ErrorCode",
-    "FileStat",
-    "Font",
-    "Gap",
-    "LogLevel",
-    "Mode",
-    "PickerItem",
-    "Position",
-    "ProcessExecParams",
-    "ProcessOutput",
-    "Range",
-    "Selection",
-    "SettingsKey",
-    "SettingsMap",
-    "StatuslineAlignment",
-    "TextEdit",
-    "ThemeColor",
-    "Uri",
-    "WidgetNode",
-];
-
-/// Types the hand-written declarations export.
-const OVERRIDE_TYPES: &[&str] = &[
-    "ChildProcess",
-    "Disposable",
-    "Document",
-    "EditorEditBuilder",
-    "GutterItem",
-    "GutterItemOptions",
-    "LogChannel",
-    "PluginContext",
-    "ProcessOptions",
-    "RemoteApi",
-    "ShowPickerOptions",
-    "StatuslineItem",
-    "StatuslineItemOptions",
-    "UiButtonOptions",
-    "UiContainerOptions",
-    "UiTextInputOptions",
-    "UiTextOptions",
-    "ViewKind",
-    "ViewOptions",
-];
-
-/// Sugar interfaces `index.d.ts` extends, grouped by namespace path.
-const SUGAR: &[(&[&str], &str)] = &[
-    (&["commands"], "CommandsSugar"),
-    (&["config"], "ConfigSugar"),
-    (&["editor"], "EditorSugar"),
-    (&["fs"], "FsSugar"),
-    (&["keymap"], "KeymapSugar"),
-    (&["log"], "LogSugar"),
-    (&["notifications"], "NotificationsSugar"),
-    (&["process"], "ProcessSugar"),
-    (&["ui"], "UiSugar"),
-    (&["ui", "gutter"], "UiGutterSugar"),
-    (&["ui", "picker"], "UiPickerSugar"),
-    (&["ui", "statusline"], "UiStatuslineSugar"),
-    (&["views"], "ViewsSugar"),
-    (&["workspace"], "WorkspaceSugar"),
-];
-
-/// One namespace in the tree built from the method names.
+/// One namespace in the tree built from the declarations.
 #[derive(Default)]
 struct Namespace<'a> {
-    methods: Vec<&'a MethodSpec>,
+    methods: Vec<&'a MethodDecl>,
     children: BTreeMap<&'a str, Namespace<'a>>,
+    decl: Option<&'a NamespaceDecl>,
 }
 
 impl<'a> Namespace<'a> {
-    fn insert(&mut self, path: &[&'a str], spec: &'a MethodSpec) {
+    fn insert(&mut self, path: &[&'a str], method: &'a MethodDecl) {
         match path.split_first() {
-            None => {
-                if !spec.manual {
-                    self.methods.push(spec);
-                }
-            }
+            None => self.methods.push(method),
             Some((head, rest)) => {
-                let child = self.children.entry(head).or_default();
-                child.insert(rest, spec);
+                self.children.entry(head).or_default().insert(rest, method);
             }
         }
     }
+
+    fn declare(&mut self, path: &[&'a str], decl: &'a NamespaceDecl) {
+        match path.split_first() {
+            None => self.decl = Some(decl),
+            Some((head, rest)) => {
+                self.children.entry(head).or_default().declare(rest, decl);
+            }
+        }
+    }
+
+    /// Whether the generated declarations need an interface for this node.
+    fn is_visible(&self) -> bool {
+        self.decl.and_then(|decl| decl.sugar).is_some()
+            || self.methods.iter().any(|method| !method.manual)
+            || self.children.values().any(Namespace::is_visible)
+    }
 }
 
-/// Writes every generated file. The tests call this.
-pub fn export() {
+/// Writes every generated file. The export test calls this.
+pub fn export(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) {
     let types_dir = export_dir();
     std::fs::create_dir_all(&types_dir).expect("create the TypeScript export directory");
-    write_host_methods(&types_dir);
+    write_host_methods(&types_dir, methods);
+    write_barrel(&types_dir);
 
     let api_dir = types_dir
         .parent()
         .map_or_else(|| types_dir.clone(), Path::to_path_buf)
         .join("vy-api");
     std::fs::create_dir_all(&api_dir).expect("create the vy-api directory");
-    std::fs::write(api_dir.join("index.d.ts"), render_api()).expect("write index.d.ts");
+    std::fs::write(api_dir.join("index.d.ts"), render_api(methods, namespaces))
+        .expect("write index.d.ts");
+    std::fs::write(api_dir.join("docs.d.ts"), render_docs()).expect("write docs.d.ts");
 }
 
 /// `TS_RS_EXPORT_DIR` when set by cargo, otherwise the repository default.
@@ -167,20 +79,29 @@ fn export_dir() -> PathBuf {
     )
 }
 
-fn write_host_methods(directory: &Path) {
+fn write_host_methods(directory: &Path, methods: &[&MethodDecl]) {
+    let mut sorted = methods.to_vec();
+    sorted.sort_by_key(|method| method.method);
+
     let mut output = header();
-    for name in used_types(false) {
+    for name in used_types(&sorted) {
         output.push_str(&format!("import type {{ {name} }} from \"./{name}\";\n"));
     }
     output.push('\n');
 
     output.push_str("// Parameters and reply of every host call, keyed by method name.\n");
     output.push_str("export interface HostMethods {\n");
-    for spec in HOST_METHODS {
-        push_doc(&mut output, "  ", spec.doc);
+    for method in sorted {
+        push_doc(&mut output, "  ", method.doc);
+        let params = method
+            .params
+            .map(|params| params())
+            .unwrap_or_else(|| "Record<string, never>".to_string());
         output.push_str(&format!(
             "  \"{}\": {{ params: {}; result: {} }};\n",
-            spec.method, spec.params, spec.result
+            method.method,
+            params,
+            (method.result)()
         ));
     }
     output.push_str("}\n\n");
@@ -190,11 +111,47 @@ fn write_host_methods(directory: &Path) {
     std::fs::write(directory.join("HostMethods.ts"), output).expect("write HostMethods.ts");
 }
 
+fn write_barrel(directory: &Path) {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .expect("read the TypeScript export directory")
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("ts") {
+                return None;
+            }
+            let name = path.file_stem()?.to_str()?.to_string();
+            (name != "index").then_some(name)
+        })
+        .collect();
+    names.sort();
+
+    let mut output = header();
+    for name in names {
+        output.push_str(&format!("export * from \"./{name}\";\n"));
+    }
+    std::fs::write(directory.join("index.ts"), output).expect("write index.ts");
+}
+
 /// Renders `packages/vy-api/index.d.ts`.
-fn render_api() -> String {
+fn render_api(methods: &[&MethodDecl], namespaces: &[&NamespaceDecl]) -> String {
+    let mut tree = Namespace::default();
+    for method in methods {
+        let path: Vec<&str> = method.method.split('.').collect();
+        tree.insert(&path[..path.len() - 1], method);
+    }
+    for decl in namespaces {
+        let path: Vec<&str> = decl.path.split('.').collect();
+        tree.declare(&path, decl);
+    }
+
     let mut output = header();
 
-    let generated_types = used_types(true);
+    let generated: Vec<&MethodDecl> = methods
+        .iter()
+        .copied()
+        .filter(|method| !method.manual)
+        .collect();
+    let generated_types = used_types(&generated);
     if !generated_types.is_empty() {
         output.push_str("import type {\n");
         for name in &generated_types {
@@ -203,12 +160,7 @@ fn render_api() -> String {
         output.push_str("} from \"../vy-api-types\";\n\n");
     }
 
-    let mut sugars: BTreeSet<&str> = BTreeSet::new();
-    for (path, sugar) in SUGAR {
-        if declares_namespace(path) {
-            sugars.insert(*sugar);
-        }
-    }
+    let sugars: BTreeSet<&str> = namespaces.iter().filter_map(|decl| decl.sugar).collect();
     if !sugars.is_empty() {
         output.push_str("import type {\n");
         for name in &sugars {
@@ -217,38 +169,31 @@ fn render_api() -> String {
         output.push_str("} from \"./overrides\";\n\n");
     }
 
-    let mut exported = used_types(false);
-    for name in EXTRA_TYPES {
-        exported.insert(*name);
-    }
-    output.push_str("export type {\n");
-    for name in &exported {
-        output.push_str(&format!("  {name},\n"));
-    }
-    output.push_str("} from \"../vy-api-types\";\n\n");
-
-    output.push_str("export type {\n");
-    for name in OVERRIDE_TYPES {
-        output.push_str(&format!("  {name},\n"));
-    }
-    output.push_str("} from \"./overrides\";\n\n");
+    output.push_str("export * from \"../vy-api-types\";\n");
+    output.push_str("export * from \"./overrides\";\n\n");
 
     output.push_str("/** Augment this interface to type the arguments of your own commands. */\n");
     output.push_str("export interface CommandMap {}\n\n");
 
-    let tree = build_tree();
-    for &(name, _) in TOP_LEVEL {
-        if let Some(namespace) = tree.children.get(name) {
-            render_namespace(&mut output, &[name], namespace);
+    for (name, namespace) in &tree.children {
+        if namespace.is_visible() {
+            render_namespace(&mut output, &[*name], namespace);
         }
     }
 
-    output.push_str("export { context, remote } from \"./overrides\";\n\n");
     output.push_str("declare global {\n");
     output.push_str("  /** The Vy client API exposed in the global scope. */\n");
     output.push_str("  const vy: typeof import(\"vy-api\");\n");
     output.push_str("}\n");
 
+    output
+}
+
+/// Renders the TypeDoc entry point.
+fn render_docs() -> String {
+    let mut output = header();
+    output.push_str("export * from \"./index\";\n");
+    output.push_str("export * from \"./overrides\";\n");
     output
 }
 
@@ -259,71 +204,50 @@ fn header() -> String {
     output
 }
 
-fn build_tree<'a>() -> Namespace<'a> {
-    let mut tree = Namespace::default();
-    for spec in HOST_METHODS {
-        let path: Vec<&str> = spec.method.split('.').collect();
-        // The last segment is the method name; the rest is its namespace.
-        let namespace = &path[..path.len() - 1];
-        tree.insert(namespace, spec);
-    }
-    tree
-}
-
-fn declares_namespace(path: &[&str]) -> bool {
-    TOP_LEVEL.iter().any(|(name, _)| *name == path[0])
-}
-
-/// The JSDoc description for a namespace path, if one is declared.
-fn namespace_doc(path: &[&str]) -> Option<&'static str> {
-    NAMESPACE_DOCS
-        .iter()
-        .find(|(candidate, _)| *candidate == path)
-        .map(|(_, doc)| *doc)
-        .or_else(|| {
-            TOP_LEVEL
-                .iter()
-                .find(|(name, _)| *name == path[0])
-                .map(|(_, doc)| *doc)
-        })
-}
-
 fn push_doc(output: &mut String, indent: &str, doc: &str) {
     output.push_str(&format!("{indent}/** {doc} */\n"));
 }
 
 fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_>) {
     for (name, child) in &namespace.children {
-        let mut child_path = path.to_vec();
-        child_path.push(*name);
-        render_namespace(output, &child_path, child);
+        if child.is_visible() {
+            let mut child_path = path.to_vec();
+            child_path.push(*name);
+            render_namespace(output, &child_path, child);
+        }
     }
     let name = api_name(path);
-    let extends = SUGAR
-        .iter()
-        .find(|(candidate, _)| *candidate == path)
-        .map(|(_, sugar)| format!(" extends {sugar}"))
+    let extends = namespace
+        .decl
+        .and_then(|decl| decl.sugar)
+        .map(|sugar| format!(" extends {sugar}"))
         .unwrap_or_default();
-    if let Some(doc) = namespace_doc(path) {
+    if let Some(doc) = namespace.decl.map(|decl| decl.doc) {
         push_doc(output, "", doc);
     }
     output.push_str(&format!("export interface {name}{extends} {{\n"));
 
-    for child in namespace.children.keys() {
+    for (child, child_namespace) in &namespace.children {
+        if !child_namespace.is_visible() {
+            continue;
+        }
         let mut child_path = path.to_vec();
         child_path.push(*child);
         output.push_str(&format!("  readonly {child}: {};\n", api_name(&child_path)));
     }
     let mut methods = namespace.methods.clone();
-    methods.sort_by_key(|spec| spec.method);
-    for spec in methods {
-        push_doc(output, "  ", spec.doc);
-        output.push_str(&format!("  {}\n", signature(spec)));
+    methods.sort_by_key(|method| method.method);
+    for method in methods {
+        if method.manual {
+            continue;
+        }
+        push_doc(output, "  ", method.doc);
+        output.push_str(&format!("  {}\n", signature(method)));
     }
     output.push_str("}\n");
 
     if path.len() == 1 {
-        if let Some(doc) = namespace_doc(path) {
+        if let Some(doc) = namespace.decl.map(|decl| decl.doc) {
             push_doc(output, "", doc);
         }
         output.push_str(&format!("export const {}: {name};\n", path[0]));
@@ -332,17 +256,17 @@ fn render_namespace(output: &mut String, path: &[&str], namespace: &Namespace<'_
 }
 
 /// A method declaration, with `Promise<void>` for calls that reply with null.
-fn signature(spec: &MethodSpec) -> String {
-    let name = spec.method.rsplit('.').next().unwrap_or(spec.method);
-    let params = if spec.has_params() {
-        format!("params: {}", spec.params)
-    } else {
-        String::new()
+fn signature(method: &MethodDecl) -> String {
+    let name = method.method.rsplit('.').next().unwrap_or(method.method);
+    let params = match method.params {
+        Some(params) => format!("params: {}", params()),
+        None => String::new(),
     };
-    let result = if spec.result == "null" {
+    let result = (method.result)();
+    let result = if result == "null" {
         "void".to_string()
     } else {
-        spec.result.to_string()
+        result
     };
     format!("{name}({params}): Promise<{result}>;")
 }
@@ -361,64 +285,23 @@ fn api_name(path: &[&str]) -> String {
 }
 
 /// Type names the generated signatures refer to.
-fn used_types(generated_only: bool) -> BTreeSet<&'static str> {
+fn used_types(methods: &[&MethodDecl]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
-    for spec in HOST_METHODS {
-        if generated_only && spec.manual {
-            continue;
-        }
-        for source in [spec.params, spec.result] {
+    for method in methods {
+        let sources = [
+            method.params.map(|params| params()),
+            Some((method.result)()),
+        ];
+        for source in sources.into_iter().flatten() {
             for token in source
                 .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
             {
                 if token.is_empty() || TYPE_KEYWORDS.contains(&token) {
                     continue;
                 }
-                names.insert(token);
+                names.insert(token.to_string());
             }
         }
     }
     names
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn api_declarations_cover_generated_methods() {
-        let output = render_api();
-        for spec in HOST_METHODS {
-            if spec.manual {
-                continue;
-            }
-            let name = spec.method.rsplit('.').next().expect("method name");
-            assert!(output.contains(name), "{} is missing", spec.method);
-        }
-        assert!(output.contains("export interface CommandMap"));
-        assert!(output.contains("export const ui: UiApi;"));
-        assert!(output.contains("/** Lists the ids of every registered command. */"));
-        assert!(output.contains("/** Builds native widget trees and updates UI slots. */"));
-    }
-
-    #[test]
-    fn exported_types_resolve_to_generated_files() {
-        let directory = export_dir();
-        for name in used_types(false) {
-            let path = directory.join(format!("{name}.ts"));
-            assert!(path.exists(), "{} is not exported", name);
-        }
-    }
-
-    #[test]
-    fn typedoc_entry_exports_every_sugar_interface() {
-        let path = export_dir()
-            .parent()
-            .expect("packages directory")
-            .join("vy-api/docs.d.ts");
-        let text = std::fs::read_to_string(&path).expect("read docs.d.ts");
-        for (_, sugar) in SUGAR {
-            assert!(text.contains(sugar), "{sugar} is missing from docs.d.ts");
-        }
-    }
 }

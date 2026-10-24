@@ -22,10 +22,14 @@ flowchart TD
     P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
 ```
 
-画面の骨格を早く固めるため、ペインとビュー、ユーザー制御 UI スロット群を Phase 3 で完成させます。
-Phase 4 では外部プラグインのマニフェスト読み込みや承認 UI、エディタ・ワークスペースイベントを整備し、`nvim-tree` のようなファイラーをはじめとする実用プラグインを実際に実装できるようにします。
-Phase 5 では Tree-sitter と LSP による言語機能を拡充して日常的に使える実用エディタに仕上げます。
-Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と Notebook は最後の手段として Phase 7 で扱います。
+画面の骨格を早く固めるため、ペインとビュー、ユーザー制御 UI スロット群を Phase 3
+で完成させます。 Phase 4 では外部プラグインのマニフェスト読み込みや承認
+UI、エディタ・ワークスペースイベントを整備し、`nvim-tree`
+のようなファイラーをはじめとする実用プラグインを実際に実装できるようにします。
+Phase 5 では Tree-sitter と LSP
+による言語機能を拡充して日常的に使える実用エディタに仕上げます。 Phase 6
+でリモート接続（SSH起動・再同期）を通し、Webview と Notebook は最後の手段として
+Phase 7 で扱います。
 
 ### Phase 1: 2プロセスの骨格と編集の最小経路
 
@@ -68,7 +72,8 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
     `init.ts` の評価・再評価を実装した
 - [x] `vy-api` のシムを作り、`vy-api.d.ts` を Rust の型から生成する
   - シムは `crates/vy-js/src/shim.js`。プロトコル境界の型は ts-rs で
-    `packages/vy-api-types` に生成し、名前空間の API は手書き
+    `packages/vy-api-types` に生成し、名前空間の API は `#[vy_api_namespace]`
+    の宣言から生成する
 - [x] コマンドとキーバインドの登録（`commands.registerCommand`、`keymap.bind`）
   - Rust 側のコマンドレジストリ、キーマップ、既定キーマップ、`y`
     とテキストオブジェクトを実装した
@@ -92,31 +97,37 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
   `y`、テキストオブジェクト、行単位レジスタ、単語クラス
 - 2F: ts-rs による `packages/vy-api-types` の生成、
   `packages/vy-api/index.d.ts`、`examples/init.ts`、ドキュメント
-- 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents`、イベント API（Phase 4）
+- 残り: 外部プラグインのマニフェスト、承認 UI、`activationEvents`、イベント
+  API（Phase 4）
 
 ### Phase 3: 画面の骨格とユーザー制御 UI の完成
 
 - [x] レイアウト木（分割、フォーカス）と `pane/open` / `pane/focus` /
       `pane/close` / `layout/get`
-  - `layout/did_change` で確定した木を送る。比率の固定分割に対応。フローティング、比率の動的変更はまだ無い
+  - `layout/did_change`
+    で確定した木を送る。比率の固定分割に対応。フローティング、比率の動的変更はまだ無い
 - [x] 同じバッファを複数のペインで開く（マルチバッファ）と、ペインごとのカーソル・選択・スクロール
   - モードと IME の前編集もペインごと。最後の選択範囲は文書ごとに `g v`
     で復元できる
 - [x] `editor.open`（`:e`）
 - [x] `document.save`（`:w`）
 - [x] ペイン・ビュー・文書の操作を組み込みコマンドとして公開する
-  - `vy.pane.split_right` (`:vsp`)、`vy.pane.split_down` (`:sp`)、`vy.pane.close` (`:q`)、
-    `vy.pane.focus_*`、`vy.pane.next`
+  - `vy.pane.split_right` (`:vsp`)、`vy.pane.split_down`
+    (`:sp`)、`vy.pane.close` (`:q`)、 `vy.pane.focus_*`、`vy.pane.next`
 - [x] 開いている文書の一覧・切り替え
-  - `vy.editor.switch_document`、Ex コマンド（`:b` / `:buffer`）、ドキュメントピッカーモーダルによるファジー検索と切り替え
+  - `vy.editor.switch_document`、Ex コマンド（`:b` /
+    `:buffer`）、ドキュメントピッカーモーダルによるファジー検索と切り替え
 - [x] `views.register`
       と6種類のビュー（`editor`、`ui`、`list`、`text`、`image`、`terminal`）
-  - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row, stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 7
+  - `views.register` と `ui` 名前空間による宣言的ウィジェット木（column, row,
+    stack, text, button, textInput 等）の基盤を実装。`webview` は Phase 7
 - [x] `ui` ビューのウィジェット木と、キーマップからのアクション解決
   - GPUI によるネイティブウィジェット描画とコマンドバインド対応
-- [x] ユーザー制御 UI とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
+- [x] ユーザー制御 UI
+      とスロット（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）
   - [x] 固定ヘッダー・フッター・外枠余白の全廃と画面全域の利用
-  - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim 相当の最小既定表示
+  - [x] グローバルステータスライン（`ui.statusline`）と標準 Vim
+        相当の最小既定表示
   - [x] ピッカー（`ui.picker`、`ui.picker.show`）
   - [ ] ピッカーのソース登録（`ui.picker.registerSource`。ホストから提供関数を呼ぶ経路ができるまで保留）
   - [x] ガター（`ui.gutter`、行横のマークやサイン表示スロット）
@@ -134,16 +145,20 @@ Phase 6 でリモート接続（SSH起動・再同期）を通し、Webview と 
 
 ### Phase 4: プラグイン拡充と実用拡張の基盤
 
-外部プラグインの導入と実用的なプラグイン（`nvim-tree` 風のファイラー、Git、ステータス拡張など）を実装・動作させられる基盤を整えます。
+外部プラグインの導入と実用的なプラグイン（`nvim-tree`
+風のファイラー、Git、ステータス拡張など）を実装・動作させられる基盤を整えます。
 
-- [x] 外部プラグインのマニフェスト読み込みと初回の承認 UI（`trusted.json` の対話的承認）
+- [x] 外部プラグインのマニフェスト読み込みと初回の承認 UI（`trusted.json`
+      の対話的承認）
 - [x] `activationEvents` による遅延読み込み（`onView:xxx`、`onCommand:xxx`）
 - [x] エディタとワークスペースのイベント通知 API
   - `editor.onDidChangeSelection`、`editor.onDidChangeActiveEditor`
   - `workspace.onDidChangeWorkspaceFolders`
 - [x] プロセス実行とファイルシステムアクセスの API 拡張（`fs.*`、`process.*`）
 - [x] 実用プラグインの検証
-  - サイドバー的なツリービューペイン（`views.register` と `ui` ウィジェット木を用いた `nvim-tree` 相当のファイルエクスプローラー）の実装と検証
+  - サイドバー的なツリービューペイン（`views.register` と `ui`
+    ウィジェット木を用いた `nvim-tree`
+    相当のファイルエクスプローラー）の実装と検証
 
 ### Phase 5: 実用エディタ化と言語機能拡充
 

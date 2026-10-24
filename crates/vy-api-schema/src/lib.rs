@@ -9,8 +9,7 @@
 //! both use these types.
 
 mod calls;
-#[cfg(test)]
-mod codegen;
+pub mod codegen;
 mod color;
 mod mode;
 mod picker;
@@ -22,7 +21,7 @@ pub use calls::*;
 pub use color::ThemeColor;
 pub use mode::Mode;
 pub use picker::PickerItem;
-pub use registry::{MethodDecl, NamespaceDecl, ts_name};
+pub use registry::{Json, MethodDecl, NamespaceDecl, ts_name};
 pub use slots::StatuslineAlignment;
 pub use vy_api_macros::{vy_api_method, vy_api_namespace, vy_api_registry};
 pub use widget::{ButtonVariant, ContainerKind, Font, Gap, WidgetNode};

@@ -76,12 +76,12 @@ cargo fmt --all --check
   `cargo test --workspace export_bindings` を実行し、`packages/vy-api-types` を
   一緒にコミットします。CI では生成後に `git diff --exit-code packages`
   で差分がないことを確かめます。生成先は `.cargo/config.toml` の
-  `TS_RS_EXPORT_DIR` です。プラグイン API の型とメソッド表は
-  `crates/vy-api-schema` が持ち、`HostMethods.ts` と
-  `packages/vy-api/index.d.ts` も同じテストで生成します。手で書くのは糖衣の
-  `packages/vy-api/overrides.d.ts` だけです。`CommandId.ts` と `SettingsKey.ts`
-  は `vy-app`
-  のテストが生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
+  `TS_RS_EXPORT_DIR` です。プラグイン API の型は `crates/vy-api-schema`
+  が持ち、メソッド宣言は `vy-app` の `#[vy_api_namespace]`
+  モジュールが持ちます。`HostMethods.ts` と `packages/vy-api/index.d.ts`
+  も同じテストで生成します。手で書くのは糖衣の `packages/vy-api/overrides.d.ts`
+  だけです。`CommandId.ts` と `SettingsKey.ts` は `vy-app`
+  のテストが生成します（[ADR 0008](./adr/0008-declare-plugin-api-with-macros.md)）。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`

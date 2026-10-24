@@ -4,7 +4,30 @@
 //! them. The codegen and the shim read these declarations; see
 //! `docs/adr/0008-declare-plugin-api-with-macros.md`.
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ts_rs::{Config, TS};
+
+/// Any JSON value. Its TypeScript type is `unknown`.
+///
+/// Methods whose reply shape is not fixed (currently `config.get`) return this
+/// instead of a named type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Json(pub Value);
+
+impl TS for Json {
+    type WithoutGenerics = Self;
+    type OptionInnerType = Self;
+
+    fn name(_: &Config) -> String {
+        "unknown".to_string()
+    }
+
+    fn inline(_: &Config) -> String {
+        "unknown".to_string()
+    }
+}
 
 /// One host method, as `#[vy_api_namespace]` collected it.
 ///

@@ -23,7 +23,8 @@ Phase に分けます。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
 - 境界の型は Rust を正とします。`crates/vy-api-schema` がメソッド表と params /
-  reply 型を持ち、`packages/vy-api` と `packages/vy-api-types` の宣言はそこから生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
+  reply 型を持ち、`packages/vy-api` と `packages/vy-api-types`
+  の宣言はそこから生成します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)）。
 
 ## 2. 表記の約束
 
@@ -50,13 +51,18 @@ API と、コアが状態の正を持つ API です。
 
 ### 2.1 引数の形
 
-パラメータを取る低レベル API は、オブジェクトを 1 つ渡します。`editor.setMode({ mode: "insert" })`、`config.get({ key: "ui.fontSize" })`、`ui.hover.show({ line, character, text })` のように、メソッドごとの params 型がそのまま引数になります。パラメータの無いメソッドは引数を取りません（`editor.mode()`）。型は
-[`packages/vy-api-types`](../packages/vy-api-types) に生成され、メソッド名と型の対応は
-`HostMethods` が持ちます。
+パラメータを取る低レベル API は、オブジェクトを 1
+つ渡します。`editor.setMode({ mode: "insert" })`、`config.get({ key: "ui.fontSize" })`、`ui.hover.show({ line, character, text })`
+のように、メソッドごとの params
+型がそのまま引数になります。パラメータの無いメソッドは引数を取りません（`editor.mode()`）。型は
+[`packages/vy-api-types`](../packages/vy-api-types)
+に生成され、メソッド名と型の対応は `HostMethods` が持ちます。
 
-`Document`、`editor.edit` のビルダー、ステータスラインのハンドルのように、JavaScript
-側に状態を持つ糖衣だけは位置引数を使います。どのメソッドが糖衣かは `HOST_METHODS`
-の `manual` で表します（[ADR 0007](./adr/0007-rust-typed-plugin-api.md) §3）。
+`Document`、`editor.edit`
+のビルダー、ステータスラインのハンドルのように、JavaScript
+側に状態を持つ糖衣だけは位置引数を使います。どのメソッドが糖衣かは
+`#[vy_api_method(manual)]`
+で表します（[ADR 0008](./adr/0008-declare-plugin-api-with-macros.md)）。
 
 優先度は Phase に対応します。
 
@@ -273,7 +279,7 @@ keymap.bind("normal", "space f f", "vy.find_files", { when: "editorFocus" });
 
 | API                                 | 実行場所 | ケイパビリティ | 優先度 |
 | :---------------------------------- | :------- | :------------- | :----- |
-| `config.get({ key })`                   | both     | なし           | P0     |
+| `config.get({ key })`               | both     | なし           | P0     |
 | `config.set(key, value, options?)`  | local    | なし           | P0     |
 | `config.inspect({ key })`           | local    | なし           | P1     |
 | `config.onDidChange(key, listener)` | local    | なし           | P0     |
@@ -303,9 +309,9 @@ JSON Schema として登録し、設定画面の生成と検証に使います�
 | `channel.warn(message, data?)`         | local    | なし           | P0     |
 | `channel.error(message, data?)`        | local    | なし           | P0     |
 
-`notifications.show` は level、message、actions
-を受け取る設計です。Phase 2 では `message` だけを受け付け、`level` と `actions`
-は Phase 3 以降です。`progress.withProgress` は `report` と `CancellationToken`
+`notifications.show` は level、message、actions を受け取る設計です。Phase 2 では
+`message` だけを受け付け、`level` と `actions` は Phase 3
+以降です。`progress.withProgress` は `report` と `CancellationToken`
 を渡します。
 
 ## 13. ペインとビュー
@@ -496,7 +502,12 @@ Webview は最終手段です。Notebook の出力、HTML
 | `PanePlacement`     | 対象のペイン、方向、比率                                                            |
 | `FloatingRect`      | フローティングの位置と大きさ                                                        |
 
-`ThemeColor`（`default`、`muted`、`primary`、`info`、`success`、`warning`、`danger`、`error` など）と、ウィジェットの語彙（`Gap` の `sm`/`md`/`lg`、`Font` の `mono`、`ButtonVariant` の `primary`/`danger`）は列挙です。未知の値は `InvalidParams` で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](./adr/0007-rust-typed-plugin-api.md) §6）。
+`ThemeColor`（`default`、`muted`、`primary`、`info`、`success`、`warning`、`danger`、`error`
+など）と、ウィジェットの語彙（`Gap` の `sm`/`md`/`lg`、`Font` の
+`mono`、`ButtonVariant` の `primary`/`danger`）は列挙です。未知の値は
+`InvalidParams`
+で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)
+§6）。
 
 ## 20. エラー
 
@@ -523,20 +534,22 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
 [`packages/vy-api/overrides.d.ts`](../packages/vy-api/overrides.d.ts)（糖衣）にあり、引数の形は
 §2.1 のとおりです。
 
-| 名前空間        | 実装済み                                                                                                |
-| :-------------- | :------------------------------------------------------------------------------------------------------ |
-| `commands`      | `registerCommand`、`execute`、`getCommands`                                                             |
-| `keymap`        | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
-| `config`        | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
-| `editor`        | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
+| 名前空間                            | 実装済み                                                                                                |
+| :---------------------------------- | :------------------------------------------------------------------------------------------------------ |
+| `commands`                          | `registerCommand`、`execute`、`getCommands`                                                             |
+| `keymap`                            | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
+| `config`                            | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
+| `editor`                            | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
 | `document`（`Document` のメソッド） | `getText`、`lineAt`、`positionAt`、`offsetAt`、`fullRange`                                              |
-| `workspace`     | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
-| `notifications` | `show`                                                                                                  |
-| `log`           | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
-| `remote`        | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
-| `context`       | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
+| `workspace`                         | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
+| `notifications`                     | `show`                                                                                                  |
+| `log`                               | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
+| `remote`                            | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
+| `context`                           | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
 
-スロットは `ui.statusline`、`ui.gutter`、`ui.hover`、`ui.picker.show` とウィジェット木のビルダーだけを提供します。プロバイダの登録（`ui.picker.registerSource`、`ui.gutter.registerProvider`、`ui.hover.registerProvider`）は、ホストから JS の関数を呼ぶ経路ができるまで API から外しました（Phase 3）。
+スロットは `ui.statusline`、`ui.gutter`、`ui.hover`、`ui.picker.show`
+とウィジェット木のビルダーだけを提供します。プロバイダの登録（`ui.picker.registerSource`、`ui.gutter.registerProvider`、`ui.hover.registerProvider`）は、ホストから
+JS の関数を呼ぶ経路ができるまで API から外しました（Phase 3）。
 
 先送りしたもの:
 
@@ -554,8 +567,8 @@ Phase 2 では `init.ts` から呼べる範囲を次のとおり実装しまし�
   です。
 - `editor.edit` は1回の呼び出しを1トランザクションにしますが、複数カーソルの
   選択はまだ扱いません。
-- `notifications.show` の `level` と `actions`、`notifications.onDidClose`
-  は Phase 3 以降です。今は `message` だけを受け付けます。
+- `notifications.show` の `level` と `actions`、`notifications.onDidClose` は
+  Phase 3 以降です。今は `message` だけを受け付けます。
 
 `init.ts` は常に信頼し、ケイパビリティの承認を求めません。外部プラグインの
 マニフェストと承認 UI は Phase 3 です。

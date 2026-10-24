@@ -64,104 +64,104 @@ import type { ViewsRenderParams } from "./ViewsRenderParams";
 
 // Parameters and reply of every host call, keyed by method name.
 export interface HostMethods {
-  /** Returns the effective value of a setting key. */
-  "config.get": { params: ConfigGetParams; result: unknown };
-  /** Sets one or more setting values in memory and returns the keys that changed. */
-  "config.set": { params: ConfigSetParams; result: ConfigSetReply };
-  /** Returns every layer's value for a setting key, plus the effective value. */
-  "config.inspect": { params: ConfigInspectParams; result: ConfigInspectReply };
-  /** Registers a command handler and returns a disposable registration. */
-  "commands.registerCommand": { params: CommandsRegisterParams; result: null };
   /** Runs a command by id with optional arguments. */
   "commands.execute": { params: CommandsExecuteParams; result: null };
   /** Lists the ids of every registered command. */
-  "commands.getCommands": { params: Record<string, never>; result: string[] };
-  /** Binds a key sequence to a command. */
-  "keymap.bind": { params: KeymapBindParams; result: null };
-  /** Removes a key binding and returns the number removed. */
-  "keymap.unbind": { params: KeymapUnbindParams; result: number };
-  /** Sets a keymap context value used by `when` clauses. */
-  "keymap.setContext": { params: KeymapSetContextParams; result: null };
-  /** Returns the document in the focused pane, or null when none is open. */
-  "editor.activeDocument": { params: Record<string, never>; result: DocumentInfoReply | null };
-  /** Returns every open document. */
-  "editor.documents": { params: Record<string, never>; result: DocumentInfoReply[] };
-  /** Returns the editor mode of the focused pane. */
-  "editor.mode": { params: Record<string, never>; result: Mode };
-  /** Switches the focused pane to a mode. */
-  "editor.setMode": { params: EditorSetModeParams; result: null };
-  /** Returns the selections of the focused pane. */
-  "editor.selections": { params: Record<string, never>; result: Selection[] };
-  /** Replaces the selections of the focused pane. */
-  "editor.setSelections": { params: EditorSetSelectionsParams; result: null };
-  /** Applies edits to the active document in one transaction. */
-  "editor.edit": { params: EditorEditParams; result: EditorEditReply };
-  /** Undoes the last transaction. */
-  "editor.undo": { params: Record<string, never>; result: null };
-  /** Redoes the last undone transaction. */
-  "editor.redo": { params: Record<string, never>; result: null };
-  /** Returns the text documents open in the workspace. */
-  "workspace.textDocuments": { params: Record<string, never>; result: DocumentInfoReply[] };
+  "commands.getCommands": { params: Record<string, never>; result: Array<string> };
+  /** Registers a command handler and returns a disposable registration. */
+  "commands.registerCommand": { params: CommandsRegisterParams; result: null };
+  /** Returns the effective value of a setting key. */
+  "config.get": { params: ConfigGetParams; result: unknown };
+  /** Returns every layer's value for a setting key, plus the effective value. */
+  "config.inspect": { params: ConfigInspectParams; result: ConfigInspectReply };
+  /** Sets one or more setting values in memory and returns the keys that changed. */
+  "config.set": { params: ConfigSetParams; result: ConfigSetReply };
   /** Returns the document text, optionally limited to a range. */
   "document.getText": { params: DocumentGetTextParams; result: string };
   /** Returns the text of a line, or null when the line is out of range. */
   "document.lineAt": { params: DocumentLineAtParams; result: string | null };
-  /** Converts a UTF-16 offset to a position. */
-  "document.positionAt": { params: DocumentPositionAtParams; result: Position };
   /** Converts a position to a UTF-16 offset. */
   "document.offsetAt": { params: DocumentOffsetAtParams; result: number };
-  /** Shows a notification to the user. */
-  "notifications.show": { params: NotificationsShowParams; result: null };
-  /** Writes one entry to a log channel. */
-  "log.write": { params: LogWriteParams; result: null };
-  /** Creates a status line item and returns its id. */
-  "ui.statusline.createItem": { params: StatuslineCreateParams; result: null };
-  /** Updates the fields of a status line item. */
-  "ui.statusline.updateItem": { params: StatuslineUpdateParams; result: null };
-  /** Removes a status line item. */
-  "ui.statusline.disposeItem": { params: StatuslineDisposeParams; result: null };
-  /** Renders a registered view into a widget tree. */
-  "views.render": { params: ViewsRenderParams; result: null };
-  /** Shows a picker and resolves with the chosen item. */
-  "ui.picker.show": { params: PickerShowParams; result: null };
-  /** Creates a gutter item and returns its id. */
-  "ui.gutter.createItem": { params: GutterCreateParams; result: null };
-  /** Removes one gutter item. */
-  "ui.gutter.disposeItem": { params: GutterDisposeParams; result: null };
-  /** Removes every gutter item. */
-  "ui.gutter.clear": { params: Record<string, never>; result: null };
-  /** Shows a hover popup at a position. */
-  "ui.hover.show": { params: HoverShowParams; result: null };
-  /** Hides the hover popup. */
-  "ui.hover.hide": { params: Record<string, never>; result: null };
+  /** Converts a UTF-16 offset to a position. */
+  "document.positionAt": { params: DocumentPositionAtParams; result: Position };
+  /** Returns the document in the focused pane, or null when none is open. */
+  "editor.activeDocument": { params: Record<string, never>; result: DocumentInfoReply | null };
+  /** Returns every open document. */
+  "editor.documents": { params: Record<string, never>; result: Array<DocumentInfoReply> };
+  /** Applies edits to the active document in one transaction. */
+  "editor.edit": { params: EditorEditParams; result: EditorEditReply };
+  /** Returns the editor mode of the focused pane. */
+  "editor.mode": { params: Record<string, never>; result: Mode };
+  /** Redoes the last undone transaction. */
+  "editor.redo": { params: Record<string, never>; result: null };
+  /** Returns the selections of the focused pane. */
+  "editor.selections": { params: Record<string, never>; result: Array<Selection> };
+  /** Switches the focused pane to a mode. */
+  "editor.setMode": { params: EditorSetModeParams; result: null };
+  /** Replaces the selections of the focused pane. */
+  "editor.setSelections": { params: EditorSetSelectionsParams; result: null };
+  /** Undoes the last transaction. */
+  "editor.undo": { params: Record<string, never>; result: null };
+  /** Copies a file or directory. */
+  "fs.copy": { params: FsCopyParams; result: FsCopyReply };
+  /** Creates a directory. */
+  "fs.createDir": { params: FsCreateDirParams; result: FsCreateDirReply };
+  /** Checks whether a file or directory exists. */
+  "fs.exists": { params: FsExistsParams; result: FsExistsReply };
+  /** Lists entries in a directory. */
+  "fs.readDir": { params: FsReadDirParams; result: FsReadDirReply };
   /** Reads the binary contents of a file. */
   "fs.readFile": { params: FsReadFileParams; result: FsReadFileReply };
   /** Reads the UTF-8 text contents of a file. */
   "fs.readTextFile": { params: FsReadTextFileParams; result: FsReadTextFileReply };
-  /** Writes binary or text contents to a file. */
-  "fs.writeFile": { params: FsWriteFileParams; result: FsWriteFileReply };
-  /** Lists entries in a directory. */
-  "fs.readDir": { params: FsReadDirParams; result: FsReadDirReply };
-  /** Retrieves metadata about a file or directory. */
-  "fs.stat": { params: FsStatParams; result: FsStatReply };
-  /** Checks whether a file or directory exists. */
-  "fs.exists": { params: FsExistsParams; result: FsExistsReply };
-  /** Creates a directory. */
-  "fs.createDir": { params: FsCreateDirParams; result: FsCreateDirReply };
   /** Removes a file or directory. */
   "fs.remove": { params: FsRemoveParams; result: FsRemoveReply };
   /** Renames or moves a file or directory. */
   "fs.rename": { params: FsRenameParams; result: FsRenameReply };
-  /** Copies a file or directory. */
-  "fs.copy": { params: FsCopyParams; result: FsCopyReply };
+  /** Retrieves metadata about a file or directory. */
+  "fs.stat": { params: FsStatParams; result: FsStatReply };
+  /** Writes binary or text contents to a file. */
+  "fs.writeFile": { params: FsWriteFileParams; result: FsWriteFileReply };
+  /** Binds a key sequence to a command. */
+  "keymap.bind": { params: KeymapBindParams; result: null };
+  /** Sets a keymap context value used by `when` clauses. */
+  "keymap.setContext": { params: KeymapSetContextParams; result: null };
+  /** Removes a key binding and returns the number removed. */
+  "keymap.unbind": { params: KeymapUnbindParams; result: number };
+  /** Writes one entry to a log channel. */
+  "log.write": { params: LogWriteParams; result: null };
+  /** Shows a notification to the user. */
+  "notifications.show": { params: NotificationsShowParams; result: null };
   /** Executes a process and waits for it to complete. */
   "process.exec": { params: ProcessExecParams; result: ProcessOutput };
-  /** Spawns an asynchronous child process. */
-  "process.spawn": { params: ProcessSpawnParams; result: ProcessSpawnReply };
   /** Terminates a running child process. */
   "process.kill": { params: ProcessKillParams; result: ProcessKillReply };
+  /** Spawns an asynchronous child process. */
+  "process.spawn": { params: ProcessSpawnParams; result: ProcessSpawnReply };
   /** Writes data to a child process standard input. */
   "process.writeStdin": { params: ProcessStdinParams; result: ProcessStdinReply };
+  /** Removes every gutter item. */
+  "ui.gutter.clear": { params: Record<string, never>; result: null };
+  /** Creates a gutter item and returns its id. */
+  "ui.gutter.createItem": { params: GutterCreateParams; result: null };
+  /** Removes one gutter item. */
+  "ui.gutter.disposeItem": { params: GutterDisposeParams; result: null };
+  /** Hides the hover popup. */
+  "ui.hover.hide": { params: Record<string, never>; result: null };
+  /** Shows a hover popup at a position. */
+  "ui.hover.show": { params: HoverShowParams; result: null };
+  /** Shows a picker and resolves with the chosen item. */
+  "ui.picker.show": { params: PickerShowParams; result: null };
+  /** Creates a status line item and returns its id. */
+  "ui.statusline.createItem": { params: StatuslineCreateParams; result: null };
+  /** Removes a status line item. */
+  "ui.statusline.disposeItem": { params: StatuslineDisposeParams; result: null };
+  /** Updates the fields of a status line item. */
+  "ui.statusline.updateItem": { params: StatuslineUpdateParams; result: null };
+  /** Renders a registered view into a widget tree. */
+  "views.render": { params: ViewsRenderParams; result: null };
+  /** Returns the text documents open in the workspace. */
+  "workspace.textDocuments": { params: Record<string, never>; result: Array<DocumentInfoReply> };
 }
 
 // Wire names of every host call.

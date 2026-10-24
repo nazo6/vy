@@ -6,7 +6,8 @@ Type definitions for the module `init.ts` imports:
 import { commands, config, editor, keymap } from "vy-api";
 ```
 
-The API is available globally as `vy` at runtime, or can be imported from `vy-api`:
+The API is available globally as `vy` at runtime, or can be imported from
+`vy-api`:
 
 ```typescript
 vy.config.set({ "ui.fontSize": 14 });
@@ -26,11 +27,11 @@ as a file. Point the TypeScript compiler at this package when you write an
 }
 ```
 
-`index.d.ts` is generated from the method table in `crates/vy-api-schema`; do
-not edit it. The declarations that need JavaScript state in the shim (command
-handlers, the edit builder, `Document`, slot handles, pickers, views, and the
-widget builders) live in `overrides.d.ts` and are composed into the generated
-file. Types shared with the Rust protocol live in
+`index.d.ts` is generated from the `#[vy_api_namespace]` declarations in
+`crates/vy-app`; do not edit it. The declarations that need JavaScript state in
+the shim (command handlers, the edit builder, `Document`, slot handles, pickers,
+views, and the widget builders) live in `overrides.d.ts` and are composed into
+the generated file. Types shared with the Rust protocol live in
 [`packages/vy-api-types`](../vy-api-types/README.md). Both are refreshed by
 `cargo test --workspace export_bindings`.
 
