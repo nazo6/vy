@@ -1,6 +1,6 @@
 # ADR 0012: 共有するホスト API の型と宣言は `vy-host-api` に置く
 
-- 状態: 採用（`fs` と `workspace` から実装中）
+- 状態: 採用（共有APIとクライアント専用APIを分離済み）
 - 日付: 2026-10-24
 
 ## 文脈
@@ -50,14 +50,15 @@ Rust の両方でずれが生まれます。
 これにより、クライアントのハンドラを書いても、ワイヤー名・params / reply 型・
 JSDoc の正は `vy-host-api` の1か所に残ります。
 
-### 3. クライアント専用 API は `vy-app` に残す
+### 3. クライアント専用 API は `vy-client-api` に置く
 
 `ui`、`views`、`panes`、`keymap`、`commands`、`editor` のクライアント状態、
 `config.set`、`workspace.state`、`backend.connect` はクライアント専用です。
-これらは `vy-app/src/api/namespaces` に残します。
+これらの型と宣言は `vy-client-api` に置き、ハンドラだけを `vy-app` に残します。
 
-将来、型生成を GPUI 非依存にする段階で、クライアント専用の宣言だけを
-`vy-client-api` に移します。ハンドラは `vy-app` に残します。
+`vy-client-api` は GPUI に依存しません。`ThemeColor`、`WidgetNode`、`PickerItem`、
+`Mode`、`StatuslineAlignment` のような API 境界を越える値型もここに置き、
+`vy-app` の対応するモジュールから再エクスポートします。
 
 ### 4. 型生成の入口
 
@@ -76,15 +77,20 @@ JSDoc の正は `vy-host-api` の1か所に残ります。
 
 ## 今回の範囲
 
-最初の変更では `fs` と `workspace` を切り出しました。
+API 宣言の切り出しを完了しました。
 
-- `vy-host-api` に `fs` / `workspace` の型と宣言を追加
+- `vy-host-api` に共有API（`fs`、`workspace`、`process`、`document`、
+  `config.get` / `config.inspect`、`log`、`context`）を追加
+- `vy-client-api` にクライアント専用API（`ui`、`ui.statusline`、`ui.gutter`、
+  `ui.hover`、`ui.picker`、`views`、`keymap`、`commands`、`editor`、
+  `notifications`、`config.set`）を追加
+- API 境界を越える値型（`ThemeColor`、`WidgetNode`、`PickerItem`、`Mode`、
+  `StatuslineAlignment`）を `vy-client-api` に移し、`vy-app` から再エクスポート
 - `DocumentInfoReply` を `vy-host-api` に移し、`vy-js` から再エクスポート
-- `vy-app` の `fs` / `workspace` は共有宣言を参照
+- `vy-app` の各 namespace はハンドラだけを持つ
 - 生成される TypeScript の型名とワイヤー名は変えない
 
-`process`、`document`、`config.get`、`log`、`context`、`cancellation` は
-同じ形で順次移します。
+`vy-api-codegen` と `backend.d.ts` は次の段階です。
 
 ## 帰結
 
@@ -116,6 +122,6 @@ JSDoc の正は `vy-host-api` の1か所に残ります。
 
 ## 関連する未決定事項
 
-- `vy-client-api` をいつ切るか。
 - `vy-api-codegen` の置き場所と、`CommandId.ts` の生成をどう分けるか。
 - 共有宣言とハンドラの型の一致をどこまで静的に検査するか。
+- `vy-api-macros` を declarative なハンドラ表に置き換えるか。
