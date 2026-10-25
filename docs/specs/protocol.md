@@ -160,11 +160,11 @@ Notification {
 で応答し、接続を閉じます。クライアントは `server_capabilities`
 にない機能を呼びません。現在の主な capability は次のとおりです。
 
-| capability        | 意味                                             |
-| :---------------- | :----------------------------------------------- |
-| `stream`          | `Stream` で分割したデータを送れる                |
-| `session-restore` | `sync/request` と `layout/get` で再開できる      |
-| `plugin`          | `plugin/*` を受け付けられる（Phase 6）           |
+| capability        | 意味                                        |
+| :---------------- | :------------------------------------------ |
+| `stream`          | `Stream` で分割したデータを送れる           |
+| `session-restore` | `sync/request` と `layout/get` で再開できる |
+| `plugin`          | `plugin/*` を受け付けられる（Phase 6）      |
 
 `resume_session` は Phase 5 では使いません。接続が切れたら新しいセッションを作り、
 クライアントが `layout/get` と `sync/request` で状態を戻します。

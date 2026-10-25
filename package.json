@@ -1,19 +1,19 @@
 {
-    "name": "vy-workspace",
-    "private": true,
-    "packageManager": "pnpm@12.11.2",
-    "scripts": {
-        "check:types": "tsc --noEmit",
-        "format": "prettier --write . && tombi format",
-        "format:check": "prettier --check . && tombi format --check",
-        "generate:api": "cargo run -p vy-api-codegen -- client && tsc -p tsconfig.shim.json && node scripts/generate-shim.mjs",
-        "docs:api": "typedoc",
-        "docs:api:serve": "typedoc && python3 -m http.server 8000 --directory target/docs/vy-api"
-    },
-    "devDependencies": {
-        "prettier": "3.9.10",
-        "tombi": "1.9.5",
-        "typedoc": "0.28.20",
-        "typescript": "5.9.3"
-    }
+  "name": "vy-workspace",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "check:types": "tsc --noEmit",
+    "format": "prettier --write . && tombi format",
+    "format:check": "prettier --check . && tombi format --check",
+    "generate:api": "cargo run -p vy-api-codegen -- client && tsc -p tsconfig.shim.json && node scripts/generate-shim.mjs",
+    "docs:api": "typedoc",
+    "docs:api:serve": "typedoc && python3 -m http.server 8000 --directory target/docs/vy-api"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "tombi": "1.9.5",
+    "typedoc": "0.28.20",
+    "typescript": "5.9.3"
+  }
 }

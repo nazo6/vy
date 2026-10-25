@@ -1,14 +1,12 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
-        "strict": true,
-        "noEmit": true,
-        "skipLibCheck": true
-    },
-    "include": [
-        "packages/vy-api/**/*.ts"
-    ],
-    "exclude": ["packages/vy-api/shim.d.ts"]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["packages/vy-api/**/*.ts"],
+  "exclude": ["packages/vy-api/shim.d.ts"]
 }

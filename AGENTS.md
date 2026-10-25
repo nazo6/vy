@@ -24,12 +24,13 @@ Vy の開発方針です。作業を始める前に [`docs/README.md`](./docs/RE
 
 ## 検証
 
-変更したら、次の 3 つを通します。
+変更したら、次の 4 つを通します。
 
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
+pnpm format:check
 ```
 
 コードを変更したら、`rg -n '[ぁ-んァ-ヶ一-龠]' crates` で日本語のコメントや
@@ -37,6 +38,5 @@ cargo fmt --all --check
 
 Rust 以外のファイルは Prettier（TypeScript / JavaScript / JSON / YAML / Markdown）と
 tombi（TOML）で整形します。保存時の自動整形が有効ですが、手で直したときは
-`pnpm format` を実行してください。既存ファイルはまだ一括整形していないため、
-`pnpm format:check` は現時点で失敗します（[`docs/development.md`](./docs/development.md)
-の §8）。
+`pnpm format` を実行し、`pnpm format:check` で確認します
+（[`docs/development.md`](./docs/development.md) の §8）。

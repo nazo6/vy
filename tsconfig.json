@@ -1,21 +1,21 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
-        "moduleDetection": "force",
-        "strict": true,
-        "noEmit": true,
-        "skipLibCheck": true,
-        "paths": {
-            "vy-api": ["./packages/vy-api/index.d.ts"]
-        }
-    },
-    "include": [
-        "examples/**/*.ts",
-        "packages/vy-api/**/*.ts",
-        "crates/vy-js/src/shim.ts",
-        "type-tests/**/*.ts"
-    ],
-    "exclude": ["packages/vy-api/shim.d.ts"]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "vy-api": ["./packages/vy-api/index.d.ts"]
+    }
+  },
+  "include": [
+    "examples/**/*.ts",
+    "packages/vy-api/**/*.ts",
+    "crates/vy-js/src/shim.ts",
+    "type-tests/**/*.ts"
+  ],
+  "exclude": ["packages/vy-api/shim.d.ts"]
 }

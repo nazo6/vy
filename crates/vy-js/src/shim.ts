@@ -31,7 +31,10 @@ import type {
   ViewsApi,
   WorkspaceApi,
 } from "../../../packages/vy-api/api-base";
-import type { BuiltinCommandId, BuiltinCommandMap } from "../../../packages/vy-api/types";
+import type {
+  BuiltinCommandId,
+  BuiltinCommandMap,
+} from "../../../packages/vy-api/types";
 
 type HostCall = (method: string, paramsJson: string) => string;
 
@@ -64,7 +67,10 @@ declare global {
 // Calls the host and returns the value. Host errors become exceptions with a
 // stable `code`, as `docs/specs/api.md` §20 describes.
 function call(method: string, params?: unknown): unknown {
-  const raw = hostCall(method, JSON.stringify(params === undefined ? null : params));
+  const raw = hostCall(
+    method,
+    JSON.stringify(params === undefined ? null : params),
+  );
   const reply = JSON.parse(raw) as HostReply;
   if (reply.error) {
     const error = new Error(reply.error.message) as Error & { code: string };
@@ -78,7 +84,10 @@ function call(method: string, params?: unknown): unknown {
 
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
-function subscribe(topic: string, listener: (payload: unknown) => void): Disposable {
+function subscribe(
+  topic: string,
+  listener: (payload: unknown) => void,
+): Disposable {
   if (typeof listener !== "function") {
     throw new TypeError(`an event listener must be a function: ${topic}`);
   }
@@ -116,7 +125,10 @@ function methods<T>(path: string): T {
       if (!Object.prototype.hasOwnProperty.call(target, name)) {
         target[name] = name.startsWith("on")
           ? (listener: unknown) =>
-              subscribe(`${path}.${name}`, listener as (payload: unknown) => void)
+              subscribe(
+                `${path}.${name}`,
+                listener as (payload: unknown) => void,
+              )
           : async (params?: unknown) => call(`${path}.${name}`, params ?? {});
       }
       return target[name];
@@ -145,12 +157,7 @@ type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap
     : (args?: unknown) => unknown;
 
 type CommandArgKind =
-  | "text"
-  | "path"
-  | "document"
-  | "number"
-  | "choice"
-  | "any";
+  "text" | "path" | "document" | "number" | "choice" | "any";
 
 interface CommandArgRegistration {
   name: string;
@@ -163,7 +170,15 @@ interface CommandArgRegistration {
 interface CommandRegistration {
   id: string;
   title?: string;
-  category?: "file" | "edit" | "selection" | "view" | "pane" | "app" | "settings" | "plugin";
+  category?:
+    | "file"
+    | "edit"
+    | "selection"
+    | "view"
+    | "pane"
+    | "app"
+    | "settings"
+    | "plugin";
   exNames?: string[];
   args?: CommandArgRegistration[];
 }
@@ -200,7 +215,9 @@ type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap
       : { id: K; args: Vy.CommandMap[K] }
     : { id: K; args?: unknown };
 
-function execute<const K extends string>(params: ExecuteParams<K>): Promise<unknown> {
+function execute<const K extends string>(
+  params: ExecuteParams<K>,
+): Promise<unknown> {
   return Promise.resolve(call("commands.execute", params));
 }
 
@@ -216,9 +233,14 @@ export const editor = methods<EditorApi>("editor");
 export const fs = methods<FsApi>("fs");
 
 const keymapBase = methods<KeymapApi>("keymap");
-function bind<K extends string & (BuiltinCommandId | keyof Vy.CommandMap)>(
-  params: { keys: string; command: K; when?: string | null; args?: unknown },
-): Promise<void>;
+function bind<
+  K extends string & (BuiltinCommandId | keyof Vy.CommandMap),
+>(params: {
+  keys: string;
+  command: K;
+  when?: string | null;
+  args?: unknown;
+}): Promise<void>;
 function bind(params: {
   keys: string;
   command: string;

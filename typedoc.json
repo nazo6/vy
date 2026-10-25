@@ -1,25 +1,23 @@
 {
-    "$schema": "https://typedoc.org/schema.json",
-    "entryPoints": [
-        "packages/vy-api/docs.d.ts"
-    ],
-    "entryPointStrategy": "resolve",
-    "tsconfig": "tsconfig.docs.json",
-    "out": "target/docs/vy-api",
-    "name": "vy-api",
-    "readme": "packages/vy-api/README.md",
-    "includeVersion": true,
-    "excludePrivate": true,
-    "excludeInternal": true,
-    "categorizeByGroup": true,
-    "searchInComments": true,
-    "cleanOutputDir": true,
-    "validation": {
-        "notExported": false,
-        "invalidLink": true,
-        "notDocumented": false
-    },
-    "navigationLinks": {
-        "GitHub": "https://github.com/nazo6/vy"
-    }
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["packages/vy-api/docs.d.ts"],
+  "entryPointStrategy": "resolve",
+  "tsconfig": "tsconfig.docs.json",
+  "out": "target/docs/vy-api",
+  "name": "vy-api",
+  "readme": "packages/vy-api/README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "searchInComments": true,
+  "cleanOutputDir": true,
+  "validation": {
+    "notExported": false,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "navigationLinks": {
+    "GitHub": "https://github.com/nazo6/vy"
+  }
 }

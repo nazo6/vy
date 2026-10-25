@@ -1,15 +1,15 @@
 {
-    "name": "vy-api",
-    "version": "0.1.0",
-    "private": true,
-    "description": "Type definitions for the vy-api module served to init.ts",
-    "types": "index.d.ts",
-    "files": [
-        "index.d.ts",
-        "api-base.d.ts",
-        "shim.d.ts",
-        "docs.d.ts",
-        "types",
-        "README.md"
-    ]
+  "name": "vy-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Type definitions for the vy-api module served to init.ts",
+  "types": "index.d.ts",
+  "files": [
+    "index.d.ts",
+    "api-base.d.ts",
+    "shim.d.ts",
+    "docs.d.ts",
+    "types",
+    "README.md"
+  ]
 }

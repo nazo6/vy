@@ -41,6 +41,7 @@ ADR 0007 の「見直しの条件」に挙げられていた「型生成に成�
 境界に現れる型は `#[derive(specta::Type)]` を導出します。
 
 `registry.rs` にあった `Json(Value)` などのカスタム型マッピングは、specta のアトリビュートで表現します：
+
 ```rust
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[specta(type = unknown)]
@@ -83,4 +84,3 @@ pub struct Json(pub serde_json::Value);
 - [0009](./0009-api-types-live-with-handlers.md): API の型はハンドラの隣に置き、生成を集約する。
 - [0014](./0014-api-codegen-cli.md): API バインディングの生成を CLI に分離する。
 - [0015](./0015-api-output-layout.md): API の生成物は `packages/vy-api` にまとめる。
-

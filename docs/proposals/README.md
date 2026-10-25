@@ -11,12 +11,12 @@ updated_at: 2026-10-25
 
 ## 提案・メモ一覧
 
-| 番号 | タイトル | ステータス | 概要 |
-| :--- | :--- | :--- | :--- |
-| [`0001`](./0001-phase-6-remote-plugins.md) | Phase 6: リモートプラグイン | open | `backend.ts` のコア側実行、通信チャネル、型分離 |
-| [`0002`](./0002-phase-7-language-features.md) | Phase 7: 言語機能・エディタ実用化 | open | Tree-sitter、非同期 LSP、補完プロバイダ、検索 |
-| [`0003`](./0003-phase-8-webview-and-notebook.md) | Phase 8: Webview・Notebook | open | gpui-kit/webview 組み込み、Markdown プレビュー、セル描画 |
-| [`0004`](./0004-editor-ux-and-keymap.md) | エディタ操作・キーマップ・UI拡張 | open | 未実装キーバインド、Ex コマンド、ステータスライン、CRLF |
+| 番号                                             | タイトル                          | ステータス | 概要                                                     |
+| :----------------------------------------------- | :-------------------------------- | :--------- | :------------------------------------------------------- |
+| [`0001`](./0001-phase-6-remote-plugins.md)       | Phase 6: リモートプラグイン       | open       | `backend.ts` のコア側実行、通信チャネル、型分離          |
+| [`0002`](./0002-phase-7-language-features.md)    | Phase 7: 言語機能・エディタ実用化 | open       | Tree-sitter、非同期 LSP、補完プロバイダ、検索            |
+| [`0003`](./0003-phase-8-webview-and-notebook.md) | Phase 8: Webview・Notebook        | open       | gpui-kit/webview 組み込み、Markdown プレビュー、セル描画 |
+| [`0004`](./0004-editor-ux-and-keymap.md)         | エディタ操作・キーマップ・UI拡張  | open       | 未実装キーバインド、Ex コマンド、ステータスライン、CRLF  |
 
 ## 運用ルール
 

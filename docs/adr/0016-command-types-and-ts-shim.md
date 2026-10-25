@@ -59,7 +59,9 @@ type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap
     ? { id: K; args: CommandMap[K] }
     : { id: K; args?: unknown };
 
-function execute<const K extends string>(params: ExecuteParams<K>): Promise<unknown>;
+function execute<const K extends string>(
+  params: ExecuteParams<K>,
+): Promise<unknown>;
 ```
 
 `registerCommand` も同じ形で handler の引数を検査します。組み込み ID を

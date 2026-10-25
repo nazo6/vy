@@ -366,11 +366,9 @@ worker.postMessage({ query: "main", maxResults: 100 });
 export function activate(ctx: BackendContext) {
   ctx.subscriptions.push(
     vy.backend.registerHandler("search", async (message, req) => {
-      for await (
-        const chunk of vy.workspace.grep(message.query, {
-          signal: req.signal,
-        })
-      ) {
+      for await (const chunk of vy.workspace.grep(message.query, {
+        signal: req.signal,
+      })) {
         req.postMessage(chunk);
       }
     }),

@@ -7,9 +7,7 @@
     "vy": ">=0.1.0"
   },
   "main": "frontend.ts",
-  "permissions": [
-    "fs:read:${workspace}/**"
-  ],
+  "permissions": ["fs:read:${workspace}/**"],
   "activationEvents": [
     "onStartup",
     "onCommand:example.tree.toggle",

@@ -3,9 +3,7 @@ import type { DirEntry, WidgetNode, WorkspaceInfoReply } from "vy-api";
 declare global {
   namespace Vy {
     interface CommandMap {
-      "example.tree.toggle_dir":
-        | string
-        | { raw?: string; uri?: string };
+      "example.tree.toggle_dir": string | { raw?: string; uri?: string };
     }
   }
 }
@@ -99,7 +97,13 @@ function renderView(): WidgetNode {
   const body: WidgetNode[] =
     items.length > 0
       ? items
-      : [{ type: "text", text: "  (Empty folder or loading...)", color: "muted" }];
+      : [
+          {
+            type: "text",
+            text: "  (Empty folder or loading...)",
+            color: "muted",
+          },
+        ];
 
   return {
     type: "container",

@@ -70,6 +70,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
 pnpm check:types
+pnpm format:check
 ```
 
 Rust 以外のファイルの整形は §8 に従います。
@@ -200,9 +201,9 @@ updated_at: 2026-10-25
   （`.prettierignore`）。生成側の出力形式が正で、`pnpm generate:api` の再現性を
   崩さないためです。生成物は生成元（Rust の trait、`crates/vy-js/src/shim.ts`）を
   直します。
-- 既存のファイルはまだ一括整形していません。`pnpm format:check`
-  は現時点で失敗します。整形するときは単独の変更で `pnpm format`
-  を実行し、その後に `format:check` を §5 の検証項目へ加えます。
+- 既存のファイルは `pnpm format` で整形済みです。非 Rust
+  ファイルを編集したら、保存時の整形に任せるか `pnpm format`
+  を実行し、`pnpm format:check` で確認します。
 
 ### エディタ
 

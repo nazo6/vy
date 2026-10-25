@@ -11,15 +11,14 @@ Vy のシステム設計・仕様に関する「現在の唯一の正解（SSOT�
 
 ## 仕様書一覧
 
-| 文書 | 概要 |
-| :--- | :--- |
-| [`architecture.md`](./architecture.md) | 全体アーキテクチャ、GPUIクライアントとコアの物理分離、状態の所在 |
-| [`protocol.md`](./protocol.md) | クライアント・コア間の Pure Rust MessagePack RPC 通信仕様 |
-| [`api.md`](./api.md) | プラグイン・設定に公開する API 一覧、ケイパビリティ、型境界 |
-| [`plugin-system.md`](./plugin-system.md) | QuickJS 実行基盤、設定の 4 層解決、プラグインバンドルとマニフェスト |
-| [`ui.md`](./ui.md) | ネイティブウィジェット木、描画モデル、キー入力とフォーカス管理 |
-| [`panes.md`](./panes.md) | ウィンドウ分割、ペインとビューの木構造レイアウト、操作の意味論 |
-| [`commands.md`](./commands.md) | コマンドパレット、Ex コマンドライン、キーバインドのデータモデルと設定 |
-| [`keymap.md`](./keymap.md) | Helix 方式のモーダル編集キーマップ一覧と実装状況 |
-| [`layout.md`](./layout.md) | ユーザー設定、キャッシュ、プロジェクト、パッケージの配置パス |
-
+| 文書                                     | 概要                                                                  |
+| :--------------------------------------- | :-------------------------------------------------------------------- |
+| [`architecture.md`](./architecture.md)   | 全体アーキテクチャ、GPUIクライアントとコアの物理分離、状態の所在      |
+| [`protocol.md`](./protocol.md)           | クライアント・コア間の Pure Rust MessagePack RPC 通信仕様             |
+| [`api.md`](./api.md)                     | プラグイン・設定に公開する API 一覧、ケイパビリティ、型境界           |
+| [`plugin-system.md`](./plugin-system.md) | QuickJS 実行基盤、設定の 4 層解決、プラグインバンドルとマニフェスト   |
+| [`ui.md`](./ui.md)                       | ネイティブウィジェット木、描画モデル、キー入力とフォーカス管理        |
+| [`panes.md`](./panes.md)                 | ウィンドウ分割、ペインとビューの木構造レイアウト、操作の意味論        |
+| [`commands.md`](./commands.md)           | コマンドパレット、Ex コマンドライン、キーバインドのデータモデルと設定 |
+| [`keymap.md`](./keymap.md)               | Helix 方式のモーダル編集キーマップ一覧と実装状況                      |
+| [`layout.md`](./layout.md)               | ユーザー設定、キャッシュ、プロジェクト、パッケージの配置パス          |

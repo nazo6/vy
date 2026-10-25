@@ -16,20 +16,24 @@ tags: ["tree-sitter", "lsp", "completion", "diagnostics"]
 ## 1. 検討項目・作業スコープ
 
 ### ① シンタックスハイライト (Tree-sitter)
+
 - `tree-sitter` のコア統合と増分パース
 - ハイライトクエリ（Helix / Neovim 互換クエリ）の適用とテーマ連携
 
 ### ② 非同期 LSP クライアント
+
 - エディタ本体での非同期 LSP プロセス管理（stdio / socket）
 - ドキュメント同期プロトコル（didOpen, didChange, didSave, didClose）
 - 診断（Diagnostics）の集約と、ガター・ホバー・ステータスラインへの表示連携
 - 定義ジャンプ（Go to Definition）、参照検索（Find References）、フォーマッタ連携
 
 ### ③ コード補完
+
 - 補完プロバイダ API（`registerCompletionProvider`）
 - ポップアップ補完 UI とローカルファジー絞り込み
 
 ### ④ 検索・ジャンプ機能
+
 - `/`、`?` による正規表現検索とハイライト
 - `n` / `N` による検索結果の前進・後退
 - `:noh`（検索ハイライトの消去コマンド）
@@ -40,4 +44,3 @@ tags: ["tree-sitter", "lsp", "completion", "diagnostics"]
 - **Tree-sitter パーサーの管理**: 主要言語のパーサーを最初からバイナリに組み込むか、必要に応じて動的にダウンロードするか。クエリの上書きをどこまで許容するか。
 - **補完プロバイダの実行場所**: 入力遅延を最小化するためフロントエンド側で動かすか、言語サーバーに近いリモート側で動かすか（`api.md` より）。
 - **プラグイン配布方式**: 専用レジストリを用意するか、Git リポジトリや URL 指定のみでシンプルに運用するか。
-

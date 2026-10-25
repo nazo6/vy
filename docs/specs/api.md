@@ -260,17 +260,17 @@ version と一致したときだけ確定します。
 
 ## 10. コマンドとキーバインド
 
-| API                                      | 実行場所 | ケイパビリティ | 優先度     |
-| :--------------------------------------- | :------- | :------------- | :--------- |
-| `commands.registerCommand(id, handler)`  | local    | なし           | P0         |
-| `commands.register(descriptor, handler)` | local    | なし           | P0         |
-| `commands.execute({ id, args? })`        | both     | なし           | P0         |
-| `commands.getCommands()`                 | local    | なし           | P1         |
-| `keymap.bind({ keys, command, when?, args? })` | local    | なし           | P0         |
-| `keymap.unbind({ keys })`                | local    | なし           | P0         |
-| `keymap.setContext({ key, value })`      | local    | なし           | P0         |
-| `keymap.registerMode(definition)`        | local    | なし           | P2         |
-| `keymap.sequenceTimeout`                 | local    | なし           | P2         |
+| API                                            | 実行場所 | ケイパビリティ | 優先度 |
+| :--------------------------------------------- | :------- | :------------- | :----- |
+| `commands.registerCommand(id, handler)`        | local    | なし           | P0     |
+| `commands.register(descriptor, handler)`       | local    | なし           | P0     |
+| `commands.execute({ id, args? })`              | both     | なし           | P0     |
+| `commands.getCommands()`                       | local    | なし           | P1     |
+| `keymap.bind({ keys, command, when?, args? })` | local    | なし           | P0     |
+| `keymap.unbind({ keys })`                      | local    | なし           | P0     |
+| `keymap.setContext({ key, value })`            | local    | なし           | P0     |
+| `keymap.registerMode(definition)`              | local    | なし           | P2     |
+| `keymap.sequenceTimeout`                       | local    | なし           | P2     |
 
 コマンド ID は `<pluginId>.<name>` の形にします。組み込みのコマンドは `vy.`
 で始めます。各セグメントには英小文字、数字、`-`、`_` を使えます。

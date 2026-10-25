@@ -10,4 +10,3 @@ An example external plugin for Vy.
 ## Commands
 
 - `example.greeter.hello`: "Greeter: Say Hello"
-

@@ -67,11 +67,11 @@ To type the arguments of your own commands, augment `Vy.CommandMap`:
 
 ```typescript
 declare global {
-    namespace Vy {
-        interface CommandMap {
-            "user.greet": { name: string };
-        }
+  namespace Vy {
+    interface CommandMap {
+      "user.greet": { name: string };
     }
+  }
 }
 export {};
 ```
