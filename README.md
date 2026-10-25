@@ -97,7 +97,7 @@ cargo run -p vy-app -- README.md
 | Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                                           |
 | Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる                     |
 | Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                                   |
-| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` 閉じる）                  |
+| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` / `:q!` 閉じる、`:wrap` 折り返し切替） |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                                     |
 | Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ            |
 
@@ -117,13 +117,15 @@ cargo run -p vy-app -- README.md
   "ui.fontSize": 14,
   "ui.lineHeight": 20,
   "ui.lineNumbers": "absolute",
+  "ui.theme": "dark",
+  "editor.wrap": false,
   "editor.transactionIdleMs": 500,
   "editor.sequenceTimeoutMs": 1000
 }
 ```
 
 `ui.lineNumbers` は `absolute`、`relative`、`off`
-のいずれかです。ファイルを保存すると再読み込みします。`~/.config/vy` の場所は
+のいずれかです。`ui.theme` は `dark` または `light` です。`editor.wrap` はビューポート幅での行折り返しの有無（`:wrap` コマンドで切り替え可能）です。ファイルを保存すると再読み込みします。`~/.config/vy` の場所は
 `VY_CONFIG_HOME` で変更できます。
 
 ### init.ts（Phase 2）

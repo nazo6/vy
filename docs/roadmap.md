@@ -244,10 +244,10 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       キーイベントで文字を積むため、日本語の入力と検索ができません
       （`crates/vy-app/src/view/commands.rs`、`crates/vy-app/src/view/input.rs`、
       [`keymap.md`](./keymap.md)）。
-- [ ] `session.json` を実装する。文書ではウィンドウの大きさ、スクロール位置、
+- [ ] （保留・スキップ）`session.json` を実装する。文書ではウィンドウの大きさ、スクロール位置、
       フォーカスの履歴をクライアントが保存すると決めていますが、書くコードが
       ありません。ウィンドウは 1000x700 で固定です（[`panes.md`](./panes.md)、
-      [`layout.md`](./layout.md)、`crates/vy-app/src/main.rs`）。
+      [`layout.md`](./layout.md)、`crates/vy-app/src/main.rs`）。今回の改善では保留とします。
 
 ### P1: 表示と操作の質
 
@@ -275,18 +275,18 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 
 ### P2: 性能と保守
 
-- [ ] フレームごとの `Config` と `Theme` の clone をやめ、共有参照か `Arc` にする
+- [x] フレームごとの `Config` と `Theme` の clone をやめ、共有参照か `Arc` にする
       （`crates/vy-app/src/ui/pane.rs` の `prepare_editor_paint`、
       `crates/vy-app/src/view/render.rs`）。
-- [ ] 折り返し時の `chunk_line` と行長の計算を、可視行だけ、差分、キャッシュにする。
+- [x] 折り返し時の `chunk_line` と行長の計算を、可視行だけ、差分、キャッシュにする。
       長い 1 行のファイルでは毎フレーム O(行長) になります
       （`crates/vy-app/src/ui/pane.rs`、`crates/vy-app/src/view/mod.rs`）。
-- [ ] 文字幅の測定結果をフォント設定ごとにキャッシュする。`font_character_width` は
+- [x] 文字幅の測定結果をフォント設定ごとにキャッシュする。`font_character_width` は
       毎フレーム呼ばれます（`crates/vy-app/src/ui/pane.rs`）。
-- [ ] アクセシビリティ: 読み上げ、キーボードだけでのフォーカス移動、フォーカス順
+- [x] アクセシビリティ: 読み上げ、キーボードだけでのフォーカス移動、フォーカス順
       （[`ui.md`](./ui.md) の未決定事項）。`Esc` のフォーカス層も決めます
       （[`keymap.md`](./keymap.md)）。
-- [ ] ドキュメントを実装に追いつかせる: [`panes.md`](./panes.md) の実装状況は
+- [x] ドキュメントを実装に追いつかせる: [`panes.md`](./panes.md) の実装状況は
       `editor` ビューだけのまま、[`keymap.md`](./keymap.md) は Phase 2 のまま、
       `editor.wrap` と `:wrap` は README に載っていません。
 
@@ -303,8 +303,8 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 - 未実装の編集キー（`Delete`、`Ctrl-w`、`Ctrl-r`、`Ctrl-e` / `Ctrl-y` など）:
   [`keymap.md`](./keymap.md) の「編集・移動・検索（未実装）」
 
-次に着手するなら、未保存の確認、表示セル幅、パレットと Ex の IME、`session.json`、
-ホバーと横スクロールの状態の順です。前の 3 つは正しさに直結し、後ろの 2 つは
+次に着手するなら、未保存の確認、表示セル幅、パレットと Ex の IME、
+ホバーと横スクロールの状態の順です（`session.json` は保留）。前の 3 つは正しさに直結し、後ろの 2 つは
 表示のずれをまとめて直します。
 
 ---

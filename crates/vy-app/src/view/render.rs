@@ -424,7 +424,6 @@ impl EditorView {
         let editor_canvas = canvas(
             move |bounds, _window, cx| {
                 let view = view_entity.read(cx);
-                let theme = cx.theme().clone();
                 let pane = view.panes.get(&pane_id);
                 let document = pane
                     .and_then(|pane| pane.document_id)
@@ -432,8 +431,8 @@ impl EditorView {
 
                 pane.zip(document).map(|(pane, document)| {
                     ui::pane::prepare_editor_paint(
-                        &view.config,
-                        &theme,
+                        view.config_arc.clone(),
+                        view.theme_arc.clone(),
                         pane,
                         document,
                         &view.gutter,

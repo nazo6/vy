@@ -140,6 +140,8 @@ pub struct EditorView {
     pub(super) stream_owners: HashMap<u32, Option<String>>,
     pub(super) cursor_visible: bool,
     pub(super) status_generation: usize,
+    pub(crate) config_arc: std::sync::Arc<Config>,
+    pub(crate) theme_arc: std::sync::Arc<Theme>,
 }
 
 impl EditorView {
@@ -152,7 +154,9 @@ impl EditorView {
         } else {
             Theme::dark()
         };
-        cx.set_global(theme);
+        cx.set_global(theme.clone());
+        let config_arc = std::sync::Arc::new(config.clone());
+        let theme_arc = std::sync::Arc::new(theme);
         let settings_stamp = paths.settings_stamp(workspace.as_deref());
         for warning in &warnings {
             eprintln!("vy: settings: {warning}");
@@ -259,6 +263,8 @@ impl EditorView {
             stream_owners: HashMap::new(),
             cursor_visible: true,
             status_generation: 0,
+            config_arc,
+            theme_arc,
         };
 
         if let Some(warning) = warnings.last() {
@@ -467,9 +473,7 @@ impl EditorView {
                         } else {
                             Theme::dark()
                         };
-                        if cx.global::<Theme>() != &theme {
-                            cx.set_global(theme);
-                        }
+                        this.update_theme(theme, cx);
                         cx.notify();
                     }
                 });
@@ -479,6 +483,15 @@ impl EditorView {
             }
         })
         .detach();
+    }
+
+    /// Updates the theme, storing an `Arc` for frame rendering and notifying GPUI.
+    pub(super) fn update_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        if cx.global::<Theme>() != &theme {
+            self.theme_arc = std::sync::Arc::new(theme.clone());
+            cx.set_global(theme);
+            cx.notify();
+        }
     }
 
     /// Starts the cursor blinking loop.
@@ -537,6 +550,7 @@ impl EditorView {
         let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
         self.set_transaction_idle(idle);
         self.keymap.set_sequence_timeout(timeout);
+        self.config_arc = std::sync::Arc::new(self.config.clone());
 
         let changed = self.config.changed_keys(&previous);
         if let Some(key) = changed.last().cloned() {

@@ -492,15 +492,14 @@ impl EditorView {
             let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
             self.set_transaction_idle(idle);
             self.keymap.set_sequence_timeout(timeout);
+            self.config_arc = std::sync::Arc::new(self.config.clone());
 
             let theme = if self.config.theme() == "light" {
                 Theme::light()
             } else {
                 Theme::dark()
             };
-            if cx.global::<Theme>() != &theme {
-                cx.set_global(theme);
-            }
+            self.update_theme(theme, cx);
         }
 
         self.store_active_view();

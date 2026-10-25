@@ -168,6 +168,10 @@ pub fn selection_on_line(selection: Range, line: u32, length: u32) -> Option<(u3
     Some((from.min(length), to))
 }
 
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Arc, LazyLock, Mutex};
+
 /// A slice of a logical line wrapped to fit within the viewport width.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineChunk {
@@ -177,19 +181,52 @@ pub struct LineChunk {
     pub utf16_range: std::ops::Range<usize>,
 }
 
-/// Splits `text` into chunks of at most `max_cols` visual display cells without breaking characters or surrogate pairs.
-pub fn chunk_line(text: &str, max_cols: usize) -> Vec<LineChunk> {
-    chunk_line_with_tab_stop(text, max_cols, DEFAULT_TAB_STOP)
+/// A collection of visual chunks for a line and its total UTF-16 code unit count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineChunks {
+    pub chunks: Vec<LineChunk>,
+    pub utf16_length: u32,
 }
 
-/// Splits `text` into chunks of at most `max_cols` visual display cells using `tab_stop`.
-pub fn chunk_line_with_tab_stop(text: &str, max_cols: usize, tab_stop: usize) -> Vec<LineChunk> {
+type ChunkCache = HashMap<(u64, usize, usize), Arc<LineChunks>>;
+
+static CHUNK_CACHE: LazyLock<Mutex<ChunkCache>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Returns cached visual chunks and UTF-16 length for `text`.
+pub fn cached_chunk_line(text: &str, max_cols: usize, tab_stop: usize) -> Arc<LineChunks> {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    let text_hash = hasher.finish();
+    let key = (text_hash, max_cols, tab_stop);
+
+    if let Ok(cache) = CHUNK_CACHE.lock()
+        && let Some(entry) = cache.get(&key)
+    {
+        return Arc::clone(entry);
+    }
+
+    let entry = Arc::new(compute_line_chunks(text, max_cols, tab_stop));
+
+    if let Ok(mut cache) = CHUNK_CACHE.lock() {
+        if cache.len() >= 1024 {
+            cache.clear();
+        }
+        cache.insert(key, Arc::clone(&entry));
+    }
+
+    entry
+}
+
+fn compute_line_chunks(text: &str, max_cols: usize, tab_stop: usize) -> LineChunks {
     let max_cols = max_cols.max(1);
     if text.is_empty() {
-        return vec![LineChunk {
-            byte_range: 0..0,
-            utf16_range: 0..0,
-        }];
+        return LineChunks {
+            chunks: vec![LineChunk {
+                byte_range: 0..0,
+                utf16_range: 0..0,
+            }],
+            utf16_length: 0,
+        };
     }
 
     let mut chunks = Vec::new();
@@ -224,7 +261,20 @@ pub fn chunk_line_with_tab_stop(text: &str, max_cols: usize, tab_stop: usize) ->
         });
     }
 
-    chunks
+    LineChunks {
+        chunks,
+        utf16_length: current_utf16 as u32,
+    }
+}
+
+/// Splits `text` into chunks of at most `max_cols` visual display cells without breaking characters or surrogate pairs.
+pub fn chunk_line(text: &str, max_cols: usize) -> Vec<LineChunk> {
+    chunk_line_with_tab_stop(text, max_cols, DEFAULT_TAB_STOP)
+}
+
+/// Splits `text` into chunks of at most `max_cols` visual display cells using `tab_stop`.
+pub fn chunk_line_with_tab_stop(text: &str, max_cols: usize, tab_stop: usize) -> Vec<LineChunk> {
+    cached_chunk_line(text, max_cols, tab_stop).chunks.clone()
 }
 
 /// Returns the cursor's character offset within `chunk` if it lies on this visual chunk.
@@ -504,5 +554,13 @@ mod tests {
         assert_eq!(scroll_cursor_bottom(50, 20, 100), 31);
         assert_eq!(scroll_cursor_bottom(5, 20, 100), 0);
         assert_eq!(scroll_cursor_bottom(95, 20, 100), 76);
+    }
+
+    #[test]
+    fn caches_line_chunks_stably() {
+        let first = cached_chunk_line("line with words to wrap", 10, DEFAULT_TAB_STOP);
+        let second = cached_chunk_line("line with words to wrap", 10, DEFAULT_TAB_STOP);
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+        assert_eq!(first.utf16_length, 23);
     }
 }

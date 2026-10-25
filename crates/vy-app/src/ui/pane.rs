@@ -1,5 +1,8 @@
 //! Editor pane and line rendering.
 
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
+
 use gpui::{
     App, BorderStyle, Bounds, ContentMask, Pixels, SharedString, TextAlign, TextRun,
     UnderlineStyle, Window, fill, outline, point, px, size,
@@ -8,10 +11,15 @@ use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
 use vy_app::slots::GutterRegistry;
 use vy_app::state::{DocumentState, PaneState};
-use vy_app::text_layout::{chunk_line, cursor_in_chunk, selection_in_chunk, utf16_to_byte};
+use vy_app::text_layout::{
+    DEFAULT_TAB_STOP, cached_chunk_line, cursor_in_chunk, selection_in_chunk, utf16_to_byte,
+};
 
 use crate::theme::Theme;
 use crate::ui::color::color;
+
+static CHAR_WIDTH_CACHE: LazyLock<Mutex<HashMap<(String, u32), f32>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Width of one character at default font size (14pt). For standard monospace fonts,
 /// character width is approximately 0.6 of font size (14 * 0.6 = 8.4px).
@@ -34,24 +42,37 @@ pub fn character_width(config: &Config) -> f32 {
     CHARACTER_WIDTH * config.font_size() / 14.0
 }
 
-/// Measures the width of a single monospace character using the font system.
+/// Measures the width of a single monospace character using the font system with caching.
 pub fn font_character_width(config: &Config, window: &mut Window) -> f32 {
+    let family = config.font_family();
+    let size = config.font_size();
+    let key = (family.clone(), size.to_bits());
+
+    if let Ok(cache) = CHAR_WIDTH_CACHE.lock()
+        && let Some(&w) = cache.get(&key)
+    {
+        return w;
+    }
+
     let run = TextRun {
         len: 1,
-        font: gpui::font(config.font_family()),
+        font: gpui::font(family),
         color: gpui::rgba(0x00000000).into(),
         background_color: None,
         underline: None,
         strikethrough: None,
     };
-    let shaped = window.text_system().shape_line(
-        SharedString::from("0"),
-        px(config.font_size()),
-        &[run],
-        None,
-    );
+    let shaped = window
+        .text_system()
+        .shape_line(SharedString::from("0"), px(size), &[run], None);
     let w = f32::from(shaped.width);
-    if w > 0.0 { w } else { character_width(config) }
+    let width = if w > 0.0 { w } else { character_width(config) };
+
+    if let Ok(mut cache) = CHAR_WIDTH_CACHE.lock() {
+        cache.insert(key, width);
+    }
+
+    width
 }
 
 /// Width of the line number gutter using a measured character width.
@@ -95,8 +116,8 @@ pub struct VisualRow {
 }
 
 pub struct EditorPaintData {
-    pub config: Config,
-    pub theme: Theme,
+    pub config: Arc<Config>,
+    pub theme: Arc<Theme>,
     pub line_count: usize,
     pub view: vy_app::editor::ViewState,
     pub preedit: String,
@@ -108,15 +129,15 @@ pub struct EditorPaintData {
 }
 
 pub fn prepare_editor_paint(
-    config: &Config,
-    theme: &Theme,
+    config: Arc<Config>,
+    theme: Arc<Theme>,
     pane: &PaneState,
     document: &DocumentState,
     gutter_registry: &GutterRegistry,
     bounds: Bounds<Pixels>,
     cursor_visible: bool,
 ) -> EditorPaintData {
-    let visual_rows = collect_visual_rows(config, pane, document, bounds);
+    let visual_rows = collect_visual_rows(&config, pane, document, bounds);
     let mut gutter_marks = Vec::new();
     for row in &visual_rows {
         if row.chunk_index == 0 {
@@ -127,14 +148,15 @@ pub fn prepare_editor_paint(
         }
     }
 
+    let wrap = pane.is_wrap(&config);
     EditorPaintData {
-        config: config.clone(),
-        theme: theme.clone(),
+        config,
+        theme,
         line_count: document.editor.line_count(),
         view: pane.view,
         preedit: pane.preedit.clone(),
         scroll_left: pane.scroll_left,
-        wrap: pane.is_wrap(config),
+        wrap,
         visual_rows,
         gutter_marks,
         cursor_visible,
@@ -161,7 +183,7 @@ fn collect_visual_rows(
                 break;
             }
             let text = document.editor.line(line_idx).unwrap_or_default();
-            let len = text.chars().map(|c| c.len_utf16() as u32).sum();
+            let len = text.encode_utf16().count() as u32;
             visual_rows.push(VisualRow {
                 line_number: line_idx,
                 chunk_index: 0,
@@ -180,9 +202,10 @@ fn collect_visual_rows(
 
         while line_idx < line_count && row_idx < pane.viewport_rows {
             let text = document.editor.line(line_idx).unwrap_or_default();
-            let chunks = chunk_line(&text, cols);
+            let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+            let chunks = &line_chunks.chunks;
             let total_chunks = chunks.len();
-            let line_len = text.chars().map(|c| c.len_utf16() as u32).sum();
+            let line_len = line_chunks.utf16_length;
 
             while chunk_idx < total_chunks && row_idx < pane.viewport_rows {
                 let row_y = bounds.top() + px(row_idx as f32 * lh);
