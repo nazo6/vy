@@ -204,8 +204,8 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                     }
 
                     #[allow(non_snake_case)]
-                    fn #payload_collect(collector: &mut ::vy_api_schema::TypeCollector) {
-                        ::vy_api_schema::collect::<#payload>(collector);
+                    fn #payload_collect(types: &mut ::vy_api_schema::specta::Types) {
+                        ::vy_api_schema::register::<#payload>(types);
                     }
 
                     static #declaration: ::vy_api_schema::EventDecl =
@@ -215,8 +215,8 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                             namespace: #event_namespace,
                             payload: ::vy_api_schema::TypeRef {
                                 name: #payload_fn as fn() -> String,
-                                collect: #payload_collect
-                                    as fn(&mut ::vy_api_schema::TypeCollector),
+                                register: #payload_collect
+                                    as fn(&mut ::vy_api_schema::specta::Types),
                             },
                             doc: #doc,
                         };
@@ -300,15 +300,15 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                         ::vy_api_schema::ts_name::<#params>()
                     }
 
-                    fn #params_collect(collector: &mut ::vy_api_schema::TypeCollector) {
-                        ::vy_api_schema::collect::<#params>(collector);
+                    fn #params_collect(types: &mut ::vy_api_schema::specta::Types) {
+                        ::vy_api_schema::register::<#params>(types);
                     }
                 },
                 quote! {
                     Some(::vy_api_schema::TypeRef {
                         name: #params_ts as fn() -> String,
-                        collect: #params_collect
-                            as fn(&mut ::vy_api_schema::TypeCollector),
+                        register: #params_collect
+                            as fn(&mut ::vy_api_schema::specta::Types),
                     })
                 },
             ),
@@ -322,8 +322,8 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                 ::vy_api_schema::ts_name::<#value>()
             }
 
-            fn #result_collect(collector: &mut ::vy_api_schema::TypeCollector) {
-                ::vy_api_schema::collect::<#value>(collector);
+            fn #result_collect(types: &mut ::vy_api_schema::specta::Types) {
+                ::vy_api_schema::register::<#value>(types);
             }
 
             pub static #declaration: ::vy_api_schema::MethodDecl =
@@ -332,8 +332,8 @@ fn expand_trait(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                     params: #params_field,
                     result: ::vy_api_schema::TypeRef {
                         name: #result_ts as fn() -> String,
-                        collect: #result_collect
-                            as fn(&mut ::vy_api_schema::TypeCollector),
+                        register: #result_collect
+                            as fn(&mut ::vy_api_schema::specta::Types),
                     },
                     doc: #doc,
                     manual: #manual,

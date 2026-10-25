@@ -1,10 +1,9 @@
 //! Editor mode and keymap value types shared with the plugin API.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// Editor mode. It is part of the keymap context and of the client's state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Normal,

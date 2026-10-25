@@ -1,11 +1,10 @@
 //! `ui.hover` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 /// `ui.hover.show` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct HoverShowParams {
     pub line: usize,
     pub character: usize,

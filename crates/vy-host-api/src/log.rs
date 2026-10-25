@@ -2,12 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::{CallError, Reply};
 
 /// Severity of a log line or notification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Info,
@@ -26,13 +25,12 @@ impl LogLevel {
 }
 
 /// `log.write` parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct LogWriteParams {
     pub channel: String,
     pub level: LogLevel,
     pub message: String,
     #[serde(default)]
-    #[ts(type = "unknown")]
     pub data: Value,
 }
 

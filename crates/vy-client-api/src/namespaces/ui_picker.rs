@@ -1,7 +1,6 @@
 //! `ui.picker` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 use crate::PickerItem;
@@ -10,19 +9,18 @@ use crate::PickerItem;
 ///
 /// When `items` is omitted the picker lists commands. `placeholder` is shown
 /// in the filter input.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct PickerShowParams {
     #[serde(default)]
-    #[ts(optional)]
     pub items: Option<Vec<PickerItem>>,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub placeholder: Option<String>,
 }
 
 /// `ui.picker.show` reply.
 ///
 /// The reply is `null` when the picker is dismissed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PickerShowReply {
     pub selected_id: String,

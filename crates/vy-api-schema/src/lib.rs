@@ -10,7 +10,6 @@
 pub mod codegen;
 mod registry;
 
-pub use registry::{
-    EventDecl, Json, MethodDecl, NamespaceDecl, TypeCollector, TypeRef, collect, ts_name,
-};
+pub use registry::{EventDecl, Json, MethodDecl, NamespaceDecl, TypeRef, register, ts_name};
+pub use specta;
 pub use vy_api_macros::{vy_api_event, vy_api_method, vy_api_trait};

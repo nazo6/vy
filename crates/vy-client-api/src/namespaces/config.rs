@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 pub use vy_host_api::config::{
@@ -13,14 +12,13 @@ pub use vy_host_api::config::{
 };
 
 /// `config.set` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigSetParams {
-    #[ts(type = "Record<string, unknown>")]
     pub values: serde_json::Map<String, Value>,
 }
 
 /// `config.set` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigSetReply {
     pub changed: Vec<String>,
 }

@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "Inflector"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
+
+[[package]]
 name = "accesskit"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5598,6 +5604,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta"
+version = "2.0.0-rc.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81633014710ece1c7e8ac99e1bc9ad8d4339a2ccbae89ca2aa1095d4262c86b8"
+dependencies = [
+ "rustc_version",
+ "serde_json",
+ "specta-macros",
+]
+
+[[package]]
+name = "specta-macros"
+version = "2.0.0-rc.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fe882a75f48f76ac091ca2c5aaad7abd4dfdedf649c08e865bb0d62b5a2cb92"
+dependencies = [
+ "Inflector",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "specta-serde"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a75ee5142f81ca1e0046b16c09d0f5a36c75884802da3f0281f78bfe221e559"
+dependencies = [
+ "specta",
+ "specta-macros",
+]
+
+[[package]]
+name = "specta-typescript"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a113bb506b00463cfb54c5819e55ec081bc7d52ef463d7726181e9073cd473a"
+dependencies = [
+ "specta",
+]
+
+[[package]]
+name = "specta-util"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df073177e00bb59cf7e8147ac147c451f51a21a4858100d6d74baf0e6fe3bc2"
+dependencies = [
+ "specta",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6176,28 +6233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ts-rs"
-version = "12.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
-dependencies = [
- "thiserror 2.0.21",
- "ts-rs-macros",
-]
-
-[[package]]
-name = "ts-rs-macros"
-version = "12.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
- "termcolor",
-]
-
-[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6459,7 +6494,10 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "ts-rs",
+ "specta",
+ "specta-serde",
+ "specta-typescript",
+ "specta-util",
  "vy-api-macros",
 ]
 
@@ -6506,8 +6544,8 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "specta",
  "strum",
- "ts-rs",
  "vy-api-schema",
  "vy-core",
  "vy-host-api",
@@ -6520,8 +6558,8 @@ version = "0.1.0"
 dependencies = [
  "ropey 1.6.1",
  "serde",
+ "specta",
  "thiserror 2.0.21",
- "ts-rs",
 ]
 
 [[package]]
@@ -6530,7 +6568,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "ts-rs",
+ "specta",
  "vy-api-schema",
  "vy-core",
  "vy-proto",
@@ -6553,7 +6591,6 @@ dependencies = [
  "rquickjs",
  "serde",
  "serde_json",
- "ts-rs",
  "vy-core",
  "vy-host-api",
 ]
@@ -6565,8 +6602,8 @@ dependencies = [
  "rmp-serde",
  "rmpv",
  "serde",
+ "specta",
  "thiserror 2.0.21",
- "ts-rs",
  "vy-core",
 ]
 

@@ -1,7 +1,6 @@
 //! `ui.gutter` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 use crate::ThemeColor;
@@ -9,17 +8,17 @@ use crate::ThemeColor;
 /// `ui.gutter.createItem` parameters.
 ///
 /// `line` is zero-based. The item is drawn in the gutter of that line.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct GutterCreateParams {
     pub id: String,
     pub line: usize,
     pub text: String,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub color: Option<ThemeColor>,
 }
 
 /// `ui.gutter.disposeItem` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct GutterDisposeParams {
     pub id: String,
 }

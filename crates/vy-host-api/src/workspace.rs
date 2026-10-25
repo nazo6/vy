@@ -1,13 +1,12 @@
 //! Shared `workspace` method and event declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_core::Uri;
 
 use crate::{CallError, DocumentInfoReply, Reply};
 
 /// `workspace.info` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceInfoReply {
     pub root_uri: Option<Uri>,
@@ -17,7 +16,7 @@ pub struct WorkspaceInfoReply {
 }
 
 /// Payload of `workspace.onDidChangeWorkspaceFolders`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct WorkspaceFoldersChange {
     pub folders: Vec<String>,
 }

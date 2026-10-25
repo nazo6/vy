@@ -233,7 +233,7 @@ mod tests {
         );
         assert_eq!(
             (find("editor.documents").result.name)(),
-            "Array<DocumentInfoReply>"
+            "DocumentInfoReply[]"
         );
         assert_eq!(
             find("editor.setMode")

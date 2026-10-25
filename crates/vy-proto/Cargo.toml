@@ -9,6 +9,6 @@ license.workspace = true
 rmp-serde.workspace = true
 rmpv.workspace = true
 serde.workspace = true
+specta.workspace = true
 thiserror.workspace = true
-ts-rs.workspace = true
 vy-core.workspace = true

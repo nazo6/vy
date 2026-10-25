@@ -1,52 +1,48 @@
 //! Shared `process` method and event declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_proto::{ProcessExecParams, ProcessOutput};
 
 use crate::{CallError, Reply};
 
 /// `process.spawn` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessSpawnParams {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
-    #[ts(optional)]
     pub cwd: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
     pub env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// `process.spawn` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessSpawnReply {
     pub pid: u32,
 }
 
 /// `process.kill` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessKillParams {
     pub pid: u32,
     #[serde(default)]
-    #[ts(optional)]
     pub signal: Option<String>,
 }
 
 /// `process.kill` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessKillReply {
     pub success: bool,
 }
 
 /// `process.writeStdin` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessStdinParams {
     pub pid: u32,
@@ -54,21 +50,21 @@ pub struct ProcessStdinParams {
 }
 
 /// `process.writeStdin` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessStdinReply {
     pub success: bool,
 }
 
 /// Payload of `process.onStdout` and `process.onStderr`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ProcessData {
     pub pid: u32,
     pub data: String,
 }
 
 /// Payload of `process.onExit`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessExit {
     pub pid: u32,

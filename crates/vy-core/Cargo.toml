@@ -8,5 +8,5 @@ license.workspace = true
 [dependencies]
 ropey.workspace = true
 serde.workspace = true
+specta.workspace = true
 thiserror.workspace = true
-ts-rs.workspace = true

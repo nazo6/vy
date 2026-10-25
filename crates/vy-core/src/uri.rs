@@ -2,10 +2,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use ts_rs::TS;
 
 /// A value that points at a document. `file:` is a real file; `vy:` has no backing file.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 pub struct Uri(String);
 
 impl Uri {

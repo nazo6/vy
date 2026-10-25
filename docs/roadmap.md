@@ -72,9 +72,9 @@ Phase 8 で扱います。
   - `settings.json` の 4 層（既定値、ユーザー、プロジェクト、メモリ）と
     `init.ts` の評価・再評価を実装した
 - [x] プラグイン API のシムを作り、型を Rust の型から生成する
-  - シムは `crates/vy-js/src/shim.ts` から生成した `generated/shim.js`。プロトコル境界の型は ts-rs で
+  - シムは `crates/vy-js/src/shim.ts` から生成した `generated/shim.js`。プロトコル境界の型は Specta で
     `packages/vy-api/types` に生成し、名前空間の API は `#[vy_api_trait]`
-    の宣言から生成する
+    の宣言から生成する（[ADR 0023](./adr/0023-specta-api-types.md)）
 - [x] プラグイン API をグローバル `vy` に移行する（[ADR 0019](./adr/0019-global-vy-api.md)）
 - [x] `init.ts` の相対 TypeScript import を実装する
 - [x] ソース形態の TS プラグインと相対 import を実装する（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）
@@ -343,7 +343,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
 | モジュール解決         | ソース形態は相対 import のみ。外部依存はバンドルし、実行時に `node_modules` を解決しない | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
 | `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./plugin-system.md)                                           |
-| 型定義の生成           | プロトコル境界の型は ts-rs で生成し、名前空間 API の型は手書き                      | [`api.md`](./api.md)                                                               |
+| 型定義の生成           | プロトコル境界の型は Specta で `bindings.ts` に生成（[ADR 0023](./adr/0023-specta-api-types.md)） | [`api.md`](./api.md)                                                               |
 | Ex コマンド            | パレットと同じ実行層を使い、`:` はオーバーレイ。Ex 名は明示的な別名で解決する       | [`ex-commands.md`](./ex-commands.md)                                               |
 | リモート接続           | SSH の標準入出力を使い、接続先に導入済みの `vy-server` を起動する                   | [ADR 0010](./adr/0010-remote-connection.md)                                        |
 | 再接続                 | サーバーを起動し直し、レイアウトと未保存の本文をクライアントから再同期する          | [ADR 0010](./adr/0010-remote-connection.md)                                        |
