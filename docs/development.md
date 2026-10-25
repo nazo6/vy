@@ -72,6 +72,8 @@ cargo fmt --all --check
 pnpm check:types
 ```
 
+Rust 以外のファイルの整形は §8 に従います。
+
 - コアの変更は、ヘッドレスのテストで確かめます。
 - プロトコルの変更は、`vy-proto` の往復テストと `vy-server`
   の結合テストを足します。
@@ -170,3 +172,42 @@ updated_at: 2026-10-25
 ---
 ```
 
+## 8. フォーマット
+
+整形の担当をファイル種別ごとに固定し、エディタと手元のコマンドで同じ結果になる
+ようにします。設定はリポジトリ直下の `.prettierrc.json`、`tombi.toml`、
+`.editorconfig`、`.vscode/settings.json` にあります。
+
+| 対象                                         | ツール    | 設定                        |
+| :------------------------------------------- | :-------- | :-------------------------- |
+| Rust                                         | `rustfmt` | 既定（`rustfmt.toml` なし） |
+| TypeScript、JavaScript、JSON、YAML、Markdown | Prettier  | `.prettierrc.json`          |
+| TOML（`Cargo.toml`）                         | tombi     | `tombi.toml`                |
+
+- インデントは 2 スペース、改行は LF、文字列はダブルクォート、文末はセミコロン
+  です。Rust は `rustfmt` の既定（4 スペース）のままです。
+- Markdown は `proseWrap: "preserve"` です。書いた行の折り返しを保ち、表の桁揃え
+  だけを Prettier が行います。段落を 1 行にまとめず、読みやすい位置で手で折り返
+  します。
+- tombi のキー自動ソートは無効にしています。`Cargo.toml` はコメントで依存をグル
+  ープ分けしており、ソートするとグループを跨いで移動するためです。
+- `pnpm format` は Prettier と tombi をまとめて実行します。`pnpm format:check`
+  は書き換えずに確認します。
+- シェルスクリプトと Python は対象外です。整形が必要になったら `shfmt` と
+  `ruff format` を追加し、この節に追記します。
+- `packages/vy-api` の生成物（`types/`、`api-base.d.ts`、`index.d.ts`、
+  `shim.d.ts`）と `crates/vy-js/src/generated` は Prettier の対象外です
+  （`.prettierignore`）。生成側の出力形式が正で、`pnpm generate:api` の再現性を
+  崩さないためです。生成物は生成元（Rust の trait、`crates/vy-js/src/shim.ts`）を
+  直します。
+- 既存のファイルはまだ一括整形していません。`pnpm format:check`
+  は現時点で失敗します。整形するときは単独の変更で `pnpm format`
+  を実行し、その後に `format:check` を §5 の検証項目へ加えます。
+
+### エディタ
+
+- VS Code は `.vscode/settings.json` で保存時の整形を有効にしています。Rust は
+  rust-analyzer、TOML は Tombi、それ以外は Prettier が担当します。
+- 推奨拡張は `.vscode/extensions.json` にあります（Prettier、rust-analyzer、
+  Tombi）。
+- VS Code 以外のエディタは `.editorconfig` の改行コードとインデントに従います。

@@ -1,0 +1,15 @@
+# Build outputs
+/target
+/node_modules
+examples/plugins/*/dist
+
+# Package manager lockfiles are owned by pnpm
+pnpm-lock.yaml
+
+# Generated from Rust declarations or by tsc. Their emitters define the layout,
+# and `pnpm generate:api` must reproduce them byte for byte.
+packages/vy-api/types
+packages/vy-api/api-base.d.ts
+packages/vy-api/index.d.ts
+packages/vy-api/shim.d.ts
+crates/vy-js/src/generated

@@ -34,3 +34,9 @@ cargo fmt --all --check
 
 コードを変更したら、`rg -n '[ぁ-んァ-ヶ一-龠]' crates` で日本語のコメントや
 メッセージが残っていないか確認します（テストデータは除きます）。
+
+Rust 以外のファイルは Prettier（TypeScript / JavaScript / JSON / YAML / Markdown）と
+tombi（TOML）で整形します。保存時の自動整形が有効ですが、手で直したときは
+`pnpm format` を実行してください。既存ファイルはまだ一括整形していないため、
+`pnpm format:check` は現時点で失敗します（[`docs/development.md`](./docs/development.md)
+の §8）。

@@ -1,0 +1,10 @@
+# Formatting rules for TOML files (Cargo manifests), applied by tombi.
+#
+# tombi sorts keys by default using the order recorded in the Schema Store
+# JSON Schema. Cargo manifests group their dependencies with comments, and that
+# sorting moves entries across the groups, so sorting is turned off here.
+# Everything else uses tombi's defaults: 2 spaces, LF, double quotes.
+
+[schema.format.rules]
+table-keys-order.enabled = false
+array-values-order.enabled = false
