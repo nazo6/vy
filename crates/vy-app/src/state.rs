@@ -1,8 +1,11 @@
 //! Client-side document and pane state models.
 
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use vy_core::PaneId;
 
+use crate::config::{Config, SettingSource};
 use crate::editor::{Editor, ViewState};
 use crate::widget::WidgetNode;
 
@@ -61,8 +64,8 @@ pub struct PaneState {
     pub viewport_rows: usize,
     /// Columns that fit horizontally in this pane. Updated on every render.
     pub viewport_cols: usize,
-    /// Pane-specific wrap mode override. None falls back to config.
-    pub wrap: Option<bool>,
+    /// Window-scoped setting overrides for this pane.
+    pub settings: BTreeMap<String, Value>,
     /// Kind of view displayed in this pane (e.g. "editor", "ui", "list", etc.).
     pub view_type: String,
     /// Root of the custom widget tree if this is a "ui" view.
@@ -82,15 +85,37 @@ impl PaneState {
             scroll_sub_line: 0,
             viewport_rows: VISIBLE_LINES,
             viewport_cols: 80,
-            wrap: None,
+            settings: BTreeMap::new(),
             view_type: "editor".to_string(),
             widget_tree: None,
         }
     }
 
+    /// Resolves a setting for this pane: the window override, then the
+    /// user/project/memory layers, then the built-in default.
+    pub fn effective_setting(&self, key: &str, config: &Config) -> (Option<Value>, SettingSource) {
+        if let Some(value) = self.settings.get(key) {
+            return (Some(value.clone()), SettingSource::Window);
+        }
+        config.effective_with_source(key)
+    }
+
+    /// Sets a window-scoped override for this pane.
+    pub fn set_window_setting(&mut self, key: impl Into<String>, value: Value) {
+        self.settings.insert(key.into(), value);
+    }
+
+    /// Removes a window-scoped override. Returns whether one existed.
+    pub fn reset_window_setting(&mut self, key: &str) -> bool {
+        self.settings.remove(key).is_some()
+    }
+
     /// Whether line wrapping is active for this pane.
-    pub fn is_wrap(&self, config: &crate::config::Config) -> bool {
-        self.wrap.unwrap_or_else(|| config.wrap())
+    pub fn is_wrap(&self, config: &Config) -> bool {
+        self.effective_setting("editor.wrap", config)
+            .0
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
     }
 }
 
@@ -106,14 +131,27 @@ mod tests {
 
         assert!(!pane.is_wrap(&config));
 
-        pane.wrap = Some(true);
+        pane.set_window_setting("editor.wrap", Value::Bool(true));
         assert!(pane.is_wrap(&config));
+        assert_eq!(
+            pane.effective_setting("editor.wrap", &config).1,
+            SettingSource::Window
+        );
 
-        pane.wrap = Some(false);
+        pane.set_window_setting("editor.wrap", Value::Bool(false));
         assert!(!pane.is_wrap(&config));
 
-        pane.wrap = None;
-        config.set("editor.wrap", serde_json::Value::Bool(true));
+        assert!(pane.reset_window_setting("editor.wrap"));
+        assert_eq!(
+            pane.effective_setting("editor.wrap", &config).1,
+            SettingSource::Default
+        );
+
+        config.set("editor.wrap", Value::Bool(true));
         assert!(pane.is_wrap(&config));
+        assert_eq!(
+            pane.effective_setting("editor.wrap", &config).1,
+            SettingSource::Memory
+        );
     }
 }

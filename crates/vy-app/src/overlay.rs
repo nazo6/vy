@@ -6,11 +6,15 @@
 
 use serde_json::{Map, Value};
 
-use crate::commands::{Arg, ArgSpec};
+use crate::commands::{ArgList, CommandArg};
 use crate::ex::ExState;
 use crate::palette::PaletteState;
 
 /// The modal overlay currently owning input and focus.
+///
+/// Exactly one overlay exists at a time, so the size difference between
+/// variants is not worth boxing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Overlay {
     /// Command, document, or plugin picker.
@@ -21,6 +25,12 @@ pub enum Overlay {
     Prompt(PromptState),
     /// Capability approval for an external plugin.
     Approval(ApprovalState),
+    /// Settings list opened by `:set` or `vy.ui.open_settings`.
+    Settings(SettingsState),
+    /// Choice picker for an enumerated setting.
+    SettingChoice(SettingChoiceState),
+    /// Text or number input for one setting.
+    SettingPrompt(SettingPromptState),
 }
 
 impl Overlay {
@@ -31,6 +41,9 @@ impl Overlay {
             Self::Ex(ex) => &ex.input,
             Self::Prompt(prompt) => &prompt.input,
             Self::Approval(approval) => &approval.input,
+            Self::Settings(settings) => &settings.input,
+            Self::SettingChoice(choice) => &choice.input,
+            Self::SettingPrompt(prompt) => &prompt.input,
         }
     }
 
@@ -40,6 +53,9 @@ impl Overlay {
             Self::Ex(ex) => &mut ex.input,
             Self::Prompt(prompt) => &mut prompt.input,
             Self::Approval(approval) => &mut approval.input,
+            Self::Settings(settings) => &mut settings.input,
+            Self::SettingChoice(choice) => &mut choice.input,
+            Self::SettingPrompt(prompt) => &mut prompt.input,
         }
     }
 
@@ -91,7 +107,9 @@ impl Overlay {
             Self::Palette(palette) => Some(palette.selected),
             Self::Prompt(prompt) => Some(prompt.selected),
             Self::Approval(approval) => Some(approval.selected),
-            Self::Ex(_) => None,
+            Self::Settings(settings) => Some(settings.selected),
+            Self::SettingChoice(choice) => Some(choice.selected),
+            Self::Ex(_) | Self::SettingPrompt(_) => None,
         }
     }
 
@@ -100,7 +118,9 @@ impl Overlay {
             Self::Palette(palette) => Some(&mut palette.selected),
             Self::Prompt(prompt) => Some(&mut prompt.selected),
             Self::Approval(approval) => Some(&mut approval.selected),
-            Self::Ex(_) => None,
+            Self::Settings(settings) => Some(&mut settings.selected),
+            Self::SettingChoice(choice) => Some(&mut choice.selected),
+            Self::Ex(_) | Self::SettingPrompt(_) => None,
         }
     }
 
@@ -117,6 +137,9 @@ impl Overlay {
             Self::Palette(palette) => palette.prefix(),
             Self::Prompt(prompt) => prompt.prefix(),
             Self::Approval(approval) => format!("Approve {}? > ", approval.plugin_name),
+            Self::Settings(_) => "settings > ".to_string(),
+            Self::SettingChoice(choice) => format!("{} > ", choice.key),
+            Self::SettingPrompt(prompt) => format!("{} > ", prompt.key),
             Self::Ex(_) => ":".to_string(),
         }
     }
@@ -134,6 +157,15 @@ impl Overlay {
                 approval.input.push_char(character);
                 approval.selected = 0;
             }
+            Self::Settings(settings) => {
+                settings.input.push_char(character);
+                settings.selected = 0;
+            }
+            Self::SettingChoice(choice) => {
+                choice.input.push_char(character);
+                choice.selected = 0;
+            }
+            Self::SettingPrompt(prompt) => prompt.input.push_char(character),
         }
     }
 
@@ -150,6 +182,15 @@ impl Overlay {
                 approval.input.push_str(text);
                 approval.selected = 0;
             }
+            Self::Settings(settings) => {
+                settings.input.push_str(text);
+                settings.selected = 0;
+            }
+            Self::SettingChoice(choice) => {
+                choice.input.push_str(text);
+                choice.selected = 0;
+            }
+            Self::SettingPrompt(prompt) => prompt.input.push_str(text),
         }
     }
 
@@ -166,6 +207,15 @@ impl Overlay {
                 approval.input.pop_char();
                 approval.selected = 0;
             }
+            Self::Settings(settings) => {
+                settings.input.pop_char();
+                settings.selected = 0;
+            }
+            Self::SettingChoice(choice) => {
+                choice.input.pop_char();
+                choice.selected = 0;
+            }
+            Self::SettingPrompt(prompt) => prompt.input.pop_char(),
         }
     }
 
@@ -193,6 +243,15 @@ impl Overlay {
                 approval.input.clear();
                 approval.selected = 0;
             }
+            Self::Settings(settings) => {
+                settings.input.clear();
+                settings.selected = 0;
+            }
+            Self::SettingChoice(choice) => {
+                choice.input.clear();
+                choice.selected = 0;
+            }
+            Self::SettingPrompt(prompt) => prompt.input.clear(),
         }
     }
 }
@@ -259,12 +318,37 @@ impl TextInput {
     }
 }
 
+/// One completion candidate: the text to put into the input and the label to show.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionCandidate {
+    pub value: String,
+    pub label: String,
+}
+
+impl CompletionCandidate {
+    pub fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            label: label.into(),
+        }
+    }
+
+    /// A candidate whose value and label are the same.
+    pub fn plain(value: impl Into<String>) -> Self {
+        let value = value.into();
+        Self {
+            label: value.clone(),
+            value,
+        }
+    }
+}
+
 /// Completion candidates for a single-line input.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Completion {
     /// Input text the candidates were built for.
     prefix: String,
-    candidates: Vec<String>,
+    candidates: Vec<CompletionCandidate>,
     selected: usize,
 }
 
@@ -277,7 +361,7 @@ impl Completion {
         self.candidates.is_empty()
     }
 
-    pub fn candidates(&self) -> &[String] {
+    pub fn candidates(&self) -> &[CompletionCandidate] {
         &self.candidates
     }
 
@@ -290,7 +374,9 @@ impl Completion {
     }
 
     pub fn selected(&self) -> Option<&str> {
-        self.candidates.get(self.selected).map(String::as_str)
+        self.candidates
+            .get(self.selected)
+            .map(|candidate| candidate.value.as_str())
     }
 
     pub fn reset(&mut self) {
@@ -300,7 +386,7 @@ impl Completion {
     }
 
     /// Replaces the candidates with `candidates`, built from `prefix`.
-    pub fn set(&mut self, prefix: impl Into<String>, candidates: Vec<String>) {
+    pub fn set(&mut self, prefix: impl Into<String>, candidates: Vec<CompletionCandidate>) {
         self.prefix = prefix.into();
         self.selected = 0;
         self.candidates = candidates;
@@ -331,7 +417,7 @@ impl Completion {
 pub struct PromptState {
     pub command_id: String,
     pub title: String,
-    pub spec: ArgSpec,
+    pub spec: ArgList,
     pub values: Map<String, Value>,
     /// Index into the required arguments of `spec`.
     pub index: usize,
@@ -345,7 +431,7 @@ impl PromptState {
     pub fn new(
         command_id: impl Into<String>,
         title: impl Into<String>,
-        spec: ArgSpec,
+        spec: ArgList,
         back: PaletteState,
     ) -> Self {
         Self {
@@ -361,11 +447,11 @@ impl PromptState {
     }
 
     /// Required arguments still to be collected.
-    pub fn required(&self) -> Vec<&'static Arg> {
+    pub fn required(&self) -> Vec<&CommandArg> {
         self.spec.args().iter().filter(|arg| arg.required).collect()
     }
 
-    pub fn current_arg(&self) -> Option<&'static Arg> {
+    pub fn current_arg(&self) -> Option<&CommandArg> {
         self.required().get(self.index).copied()
     }
 
@@ -407,6 +493,59 @@ impl ApprovalState {
     }
 }
 
+/// The settings list opened by `:set` or `vy.ui.open_settings`.
+#[derive(Debug, Default)]
+pub struct SettingsState {
+    pub input: TextInput,
+    pub selected: usize,
+}
+
+impl SettingsState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// Choice picker for an enumerated setting.
+#[derive(Debug)]
+pub struct SettingChoiceState {
+    pub key: String,
+    pub input: TextInput,
+    pub selected: usize,
+    /// Settings list restored when the choice is cancelled.
+    pub back: SettingsState,
+}
+
+impl SettingChoiceState {
+    pub fn new(key: impl Into<String>, back: SettingsState) -> Self {
+        Self {
+            key: key.into(),
+            input: TextInput::default(),
+            selected: 0,
+            back,
+        }
+    }
+}
+
+/// Text or number input for one setting.
+#[derive(Debug)]
+pub struct SettingPromptState {
+    pub key: String,
+    pub input: TextInput,
+    /// Settings list restored when the prompt is cancelled.
+    pub back: SettingsState,
+}
+
+impl SettingPromptState {
+    pub fn new(key: impl Into<String>, back: SettingsState) -> Self {
+        Self {
+            key: key.into(),
+            input: TextInput::default(),
+            back,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,7 +569,13 @@ mod tests {
     #[test]
     fn completion_cycles_and_wraps() {
         let mut completion = Completion::new();
-        completion.set("wr", vec!["wrap".into(), "write".into()]);
+        completion.set(
+            "wr",
+            vec![
+                CompletionCandidate::plain("wrap"),
+                CompletionCandidate::plain("write"),
+            ],
+        );
 
         assert!(completion.is_active_for("wr"));
         assert_eq!(completion.selected(), Some("wrap"));
@@ -450,20 +595,31 @@ mod tests {
     }
 
     #[test]
+    fn completion_keeps_labels_apart_from_values() {
+        let mut completion = Completion::new();
+        completion.set("set wr", vec![CompletionCandidate::new("set wrap", "wrap")]);
+        assert_eq!(completion.selected(), Some("set wrap"));
+        assert_eq!(completion.candidates()[0].label, "wrap");
+    }
+
+    #[test]
     fn prompt_walks_required_arguments() {
-        const ARGS: &[Arg] = &[
-            Arg::required("view", crate::commands::ArgKind::Text),
-            Arg::choice("direction", &["left", "right"], false),
+        const ARGS: &[crate::commands::Arg] = &[
+            crate::commands::Arg::required("view", crate::commands::ArgKind::Text),
+            crate::commands::Arg::choice("direction", &["left", "right"], false),
         ];
         let prompt = PromptState::new(
             "vy.view.open",
             "View Open",
-            ArgSpec::Positionals(ARGS),
+            ArgList::from_spec(crate::commands::ArgSpec::Positionals(ARGS)),
             PaletteState::new(),
         );
 
         assert_eq!(prompt.required().len(), 1);
-        assert_eq!(prompt.current_arg().map(|arg| arg.name), Some("view"));
+        assert_eq!(
+            prompt.current_arg().map(|arg| arg.name.as_str()),
+            Some("view")
+        );
         assert_eq!(prompt.prefix(), "View Open · view > ");
     }
 }

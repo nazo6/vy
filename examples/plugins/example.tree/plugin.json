@@ -21,15 +21,19 @@
     "commands": [
       {
         "id": "example.tree.toggle",
-        "title": "File Explorer: Toggle"
+        "title": "File Explorer: Toggle",
+        "category": "View",
+        "exNames": ["tree"]
       },
       {
         "id": "example.tree.open",
-        "title": "File Explorer: Open"
+        "title": "File Explorer: Open",
+        "category": "View"
       },
       {
         "id": "example.tree.refresh",
-        "title": "File Explorer: Refresh"
+        "title": "File Explorer: Refresh",
+        "category": "View"
       }
     ]
   }

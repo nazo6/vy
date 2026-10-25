@@ -60,6 +60,11 @@ export interface BuiltinCommandMap {
   "vy.pane.split_up": unknown;
   "vy.reconnect_server": unknown;
   "vy.script.eval": unknown;
+  "vy.setting.ex_set": unknown;
+  "vy.setting.ex_set_global": unknown;
+  "vy.setting.reset": unknown;
+  "vy.setting.set": unknown;
+  "vy.setting.toggle": unknown;
   "vy.text_object.angle": unknown;
   "vy.text_object.backtick": unknown;
   "vy.text_object.brace": unknown;
@@ -71,6 +76,7 @@ export interface BuiltinCommandMap {
   "vy.text_object.word": unknown;
   "vy.ui.command_palette": unknown;
   "vy.ui.ex_command_line": unknown;
+  "vy.ui.open_settings": unknown;
   "vy.view.center_cursor": unknown;
   "vy.view.close": unknown;
   "vy.view.open": unknown;

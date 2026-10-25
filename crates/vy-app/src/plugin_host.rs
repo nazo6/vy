@@ -17,7 +17,9 @@ use vy_core::Uri;
 use vy_js::{HostRequest, RemoteEnv, ScriptEnv, ScriptEvent, ScriptHost, WorkspaceEnv};
 use vy_proto::{ErrorCode, RpcCall};
 
-use crate::commands::{CommandRegistry, DocumentCommand, Owner, PaneCommand, UiCommand};
+use crate::commands::{
+    CommandRegistry, DocumentCommand, Owner, PaneCommand, SettingCommand, UiCommand,
+};
 use crate::config::Config;
 use crate::editor::{Action, Editor, Transaction};
 use crate::keymap::Keymap;
@@ -283,6 +285,10 @@ pub enum HostAction {
     },
     Ui {
         command: UiCommand,
+        args: Option<Value>,
+    },
+    Setting {
+        command: SettingCommand,
         args: Option<Value>,
     },
     RenderWidgetTree {

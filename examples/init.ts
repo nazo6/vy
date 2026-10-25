@@ -1,4 +1,4 @@
-// Example ~/.config/vy/init.ts for Phase 2.
+// Example ~/.config/vy/init.ts.
 //
 // Copy it to `~/.config/vy/init.ts`. Only the APIs in `packages/vy-api` exist:
 // commands, keymap, config, editor, document, workspace, context,
@@ -15,24 +15,32 @@ vy.config.set({
   },
 });
 
-vy.commands.registerCommand("user.uppercase-document", async () => {
-  const active = await vy.editor.activeDocument();
-  if (!active) {
-    return;
-  }
+vy.commands.register(
+  {
+    id: "user.uppercase-document",
+    title: "Uppercase Document",
+    category: "edit",
+    exNames: ["upper"],
+  },
+  async () => {
+    const active = await vy.editor.activeDocument();
+    if (!active) {
+      return;
+    }
 
-  const text = await vy.document.getText({ documentId: active.id });
-  await vy.editor.edit({
-    edits: [
-      {
-        range: {
-          start: { line: 0, character: 0 },
-          end: active.end,
+    const text = await vy.document.getText({ documentId: active.id });
+    await vy.editor.edit({
+      edits: [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: active.end,
+          },
+          text: text.toUpperCase(),
         },
-        text: text.toUpperCase(),
-      },
-    ],
-  });
+      ],
+    });
 
-  await vy.notifications.show({ message: "Uppercased the document" });
-});
+    await vy.notifications.show({ message: "Uppercased the document" });
+  },
+);

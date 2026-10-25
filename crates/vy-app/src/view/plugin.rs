@@ -219,10 +219,20 @@ impl EditorView {
 
     /// Pre-registers contributed commands from all trusted plugins into the command registry.
     pub(super) fn register_contributed_commands(&mut self) {
-        for (cmd_id, title, plugin_id) in self.plugin_manager.contributed_commands() {
-            let _ = self
-                .commands
-                .register_contributed(cmd_id, title, &plugin_id);
+        for command in self.plugin_manager.contributed_commands() {
+            let category = command
+                .category
+                .as_deref()
+                .and_then(vy_app::commands::CommandCategory::parse);
+            if let Err(error) = self.commands.register_contributed(
+                command.id,
+                command.title,
+                &command.plugin_id,
+                category,
+                command.ex_names,
+            ) {
+                eprintln!("vy: plugins: {}: {error}", command.plugin_id);
+            }
         }
     }
 
@@ -527,6 +537,12 @@ impl EditorView {
                     .map(|a| Invocation::script(command.id(), a))
                     .unwrap_or_else(|| Invocation::palette(command.id()));
                 self.run_ui_command(command, &invocation);
+            }
+            HostAction::Setting { command, args } => {
+                let invocation = args
+                    .map(|a| Invocation::script(command.id(), a))
+                    .unwrap_or_else(|| Invocation::palette(command.id()));
+                self.run_setting_command(command, &invocation);
             }
             HostAction::RenderWidgetTree { view_id, tree } => {
                 self.activate_plugins_for_view(&view_id);

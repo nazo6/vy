@@ -7,7 +7,9 @@ export type ActiveDocumentChange = {
 };
 
 /**  The kind of one positional argument. */
-export type ArgKind = "text" | "path" | "document" | "number" | "choice";
+export type ArgKind = "text" | "path" | "document" | "number" | "choice" | 
+/**  Any JSON value, passed through unchanged. Ex input becomes a string. */
+"any";
 
 /**  Visual weight of a button. */
 export type ButtonVariant = "primary" | "danger";
@@ -42,9 +44,17 @@ export type CommandsExecuteParams = {
 	args?: Value,
 };
 
-/**  `commands.registerCommand` parameters. */
+/**
+ *  `commands.registerCommand` / `commands.register` parameters.
+ * 
+ *  Metadata is optional so `registerCommand(id, handler)` can stay a thin sugar.
+ */
 export type CommandsRegisterParams = {
 	id: string,
+	title?: string | null,
+	category?: CommandCategory | null,
+	exNames?: string[] | null,
+	args?: CommandArgInfo[] | null,
 };
 
 /**  Payload of `config.onDidChange`. */

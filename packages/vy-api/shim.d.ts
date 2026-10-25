@@ -11,7 +11,25 @@ declare global {
     }
 }
 type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap ? never : K extends keyof Vy.CommandMap ? (args: Vy.CommandMap[K]) => unknown : (args?: unknown) => unknown;
+type CommandArgKind = "text" | "path" | "document" | "number" | "choice" | "any";
+interface CommandArgRegistration {
+    name: string;
+    kind: CommandArgKind;
+    choices?: string[];
+    required?: boolean;
+    rest?: boolean;
+}
+interface CommandRegistration {
+    id: string;
+    title?: string;
+    category?: "file" | "edit" | "selection" | "view" | "pane" | "app" | "settings" | "plugin";
+    exNames?: string[];
+    args?: CommandArgRegistration[];
+}
 declare function registerCommand<const K extends string>(id: K, handler: RegisterHandler<K>): Disposable;
+declare function register<const K extends string>(options: CommandRegistration & {
+    id: K;
+}, handler: RegisterHandler<K>): Disposable;
 type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap ? {
     id: K;
     args?: BuiltinCommandMap[K];
@@ -27,6 +45,7 @@ type ExecuteParams<K extends string> = K extends keyof BuiltinCommandMap ? {
 };
 declare function execute<const K extends string>(params: ExecuteParams<K>): Promise<unknown>;
 export declare const commands: CommandsApi & {
+    register: typeof register;
     registerCommand: typeof registerCommand;
     execute: typeof execute;
 };

@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use serde_json::Value as JsonValue;
 
 pub use vy_client_api::command::{
-    Arg, ArgKind, ArgSpec, BuiltinCommand, CommandCategory, CommandMeta, DocumentCommand,
-    PaletteVisibility, PaneCommand, RangeSpec, UiCommand, ViewCommand,
+    Arg, ArgKind, ArgList, ArgSpec, BuiltinCommand, CommandArg, CommandCategory, CommandMeta,
+    DocumentCommand, PaletteVisibility, PaneCommand, RangeSpec, SettingCommand, UiCommand,
+    ViewCommand, display_title,
 };
 
 /// Who registered a command. Registrations from `init.ts` are dropped on reload.
@@ -32,7 +33,7 @@ pub struct KeymapArgs {
 /// Arguments passed to a command, independent of the entry point.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CommandArgs {
-    /// Values produced by the command's [`ArgSpec`], or the script's own JSON.
+    /// Values produced by the command's [`ArgList`], or the script's own JSON.
     pub values: JsonValue,
     /// Count typed before a key sequence.
     pub count: Option<u32>,
@@ -117,7 +118,7 @@ pub struct CommandDescriptor {
     pub category: CommandCategory,
     pub palette: PaletteVisibility,
     pub ex_names: Vec<String>,
-    pub args: ArgSpec,
+    pub args: ArgList,
     pub range: RangeSpec,
     pub bang: bool,
 }
@@ -140,7 +141,7 @@ impl CommandDescriptor {
                 .iter()
                 .map(|name| (*name).to_string())
                 .collect(),
-            args: meta.args,
+            args: ArgList::from_spec(meta.args),
             range: meta.range,
             bang: meta.bang,
         }
@@ -414,48 +415,48 @@ pub enum ArgumentError {
     #[error("this command does not take arguments")]
     NoArguments,
     #[error("missing argument: {0}")]
-    Missing(&'static str),
+    Missing(String),
     #[error("too many arguments: {0}")]
     Unexpected(String),
     #[error("invalid value for {name}: {value}")]
-    Invalid { name: &'static str, value: String },
+    Invalid { name: String, value: String },
     #[error("unterminated quote")]
     UnterminatedQuote,
 }
 
 /// Parses the raw text after an Ex command name into an argument object.
-pub fn parse_ex_args(spec: ArgSpec, raw: &str) -> Result<JsonValue, ArgumentError> {
+pub fn parse_ex_args(args: &ArgList, raw: &str) -> Result<JsonValue, ArgumentError> {
     let raw = raw.trim();
-    if spec.is_none() {
+    if args.is_empty() {
         if raw.is_empty() {
             return Ok(JsonValue::Object(serde_json::Map::new()));
         }
         return Err(ArgumentError::NoArguments);
     }
 
-    let args = spec.args();
-    if args.len() == 1 && args[0].rest {
-        if raw.is_empty() {
-            return Err(ArgumentError::Missing(args[0].name));
+    let declared = args.args();
+    if declared.len() == 1 && declared[0].rest {
+        if raw.is_empty() && declared[0].required {
+            return Err(ArgumentError::Missing(declared[0].name.clone()));
         }
         let mut values = serde_json::Map::new();
         values.insert(
-            args[0].name.to_string(),
-            parse_arg_value(&args[0], raw.to_string())?,
+            declared[0].name.clone(),
+            parse_arg_value(&declared[0], raw.to_string())?,
         );
         return Ok(JsonValue::Object(values));
     }
 
     let mut tokens = split_argument_tokens(raw)?.into_iter();
     let mut values = serde_json::Map::new();
-    for arg in args {
+    for arg in declared {
         let Some(token) = tokens.next() else {
             if arg.required {
-                return Err(ArgumentError::Missing(arg.name));
+                return Err(ArgumentError::Missing(arg.name.clone()));
             }
             continue;
         };
-        values.insert(arg.name.to_string(), parse_arg_value(arg, token)?);
+        values.insert(arg.name.clone(), parse_arg_value(arg, token)?);
     }
     if let Some(extra) = tokens.next() {
         return Err(ArgumentError::Unexpected(extra));
@@ -464,8 +465,8 @@ pub fn parse_ex_args(spec: ArgSpec, raw: &str) -> Result<JsonValue, ArgumentErro
 }
 
 /// Validates a JSON argument object against a command's argument declaration.
-pub fn validate_json_args(spec: ArgSpec, value: &JsonValue) -> Result<JsonValue, ArgumentError> {
-    if spec.is_none() {
+pub fn validate_json_args(args: &ArgList, value: &JsonValue) -> Result<JsonValue, ArgumentError> {
+    if args.is_empty() {
         return match value {
             JsonValue::Null => Ok(JsonValue::Object(serde_json::Map::new())),
             JsonValue::Object(object)
@@ -477,66 +478,77 @@ pub fn validate_json_args(spec: ArgSpec, value: &JsonValue) -> Result<JsonValue,
         };
     }
 
+    let declared = args.args();
     let Some(object) = value.as_object() else {
         if value.is_null() {
-            if let Some(required) = spec.args().iter().find(|arg| arg.required) {
-                return Err(ArgumentError::Missing(required.name));
+            if let Some(required) = declared.iter().find(|arg| arg.required) {
+                return Err(ArgumentError::Missing(required.name.clone()));
             }
             return Ok(JsonValue::Object(serde_json::Map::new()));
         }
         return Err(ArgumentError::Invalid {
-            name: spec.args().first().map(|arg| arg.name).unwrap_or("args"),
+            name: declared
+                .first()
+                .map(|arg| arg.name.clone())
+                .unwrap_or_else(|| "args".to_string()),
             value: value.to_string(),
         });
     };
 
-    let args = spec.args();
     let mut values = serde_json::Map::new();
-    for arg in args {
-        let Some(value) = object.get(arg.name) else {
+    for arg in declared {
+        let Some(value) = object.get(arg.name.as_str()) else {
             if arg.required {
-                return Err(ArgumentError::Missing(arg.name));
+                return Err(ArgumentError::Missing(arg.name.clone()));
             }
             continue;
         };
+        if arg.kind == ArgKind::Any {
+            values.insert(arg.name.clone(), value.clone());
+            continue;
+        }
         let text = match value {
             JsonValue::String(text) => text.clone(),
             JsonValue::Number(number) => number.to_string(),
             other => {
                 return Err(ArgumentError::Invalid {
-                    name: arg.name,
+                    name: arg.name.clone(),
                     value: other.to_string(),
                 });
             }
         };
-        values.insert(arg.name.to_string(), parse_arg_value(arg, text)?);
+        values.insert(arg.name.clone(), parse_arg_value(arg, text)?);
     }
     if let Some(key) = object.keys().find(|key| {
-        *key != "count" && *key != "register" && !args.iter().any(|arg| arg.name == *key)
+        *key != "count"
+            && *key != "register"
+            && !declared.iter().any(|arg| arg.name.as_str() == key.as_str())
     }) {
         return Err(ArgumentError::Unexpected(key.clone()));
     }
     Ok(JsonValue::Object(values))
 }
 
-fn parse_arg_value(arg: &Arg, value: String) -> Result<JsonValue, ArgumentError> {
+fn parse_arg_value(arg: &CommandArg, value: String) -> Result<JsonValue, ArgumentError> {
     match arg.kind {
-        ArgKind::Text | ArgKind::Path | ArgKind::Document => Ok(JsonValue::String(value)),
+        ArgKind::Text | ArgKind::Path | ArgKind::Document | ArgKind::Any => {
+            Ok(JsonValue::String(value))
+        }
         ArgKind::Number => {
             value
                 .parse::<i64>()
                 .map(JsonValue::from)
                 .map_err(|_| ArgumentError::Invalid {
-                    name: arg.name,
+                    name: arg.name.clone(),
                     value,
                 })
         }
         ArgKind::Choice => {
-            if arg.choices.contains(&value.as_str()) {
+            if arg.choices.iter().any(|choice| choice == &value) {
                 Ok(JsonValue::String(value))
             } else {
                 Err(ArgumentError::Invalid {
-                    name: arg.name,
+                    name: arg.name.clone(),
                     value,
                 })
             }
@@ -587,8 +599,8 @@ fn split_argument_tokens(raw: &str) -> Result<Vec<String>, ArgumentError> {
 }
 
 /// A human-readable argument list such as `<uri> [direction]`.
-pub fn usage(spec: ArgSpec) -> String {
-    spec.args()
+pub fn usage(args: &ArgList) -> String {
+    args.args()
         .iter()
         .map(|arg| {
             if arg.required {
@@ -602,8 +614,8 @@ pub fn usage(spec: ArgSpec) -> String {
 }
 
 /// Formats an argument error with the command's usage.
-pub fn argument_error(name: &str, spec: ArgSpec, error: &ArgumentError) -> String {
-    let usage = usage(spec);
+pub fn argument_error(name: &str, args: &ArgList, error: &ArgumentError) -> String {
+    let usage = usage(args);
     if usage.is_empty() {
         format!("{error}")
     } else {
@@ -663,25 +675,6 @@ pub fn ex_name_candidates(typed: &str, commands: &[CommandDescriptor]) -> Vec<St
     candidates
 }
 
-/// Turns a command id into a short label for the command palette.
-pub fn display_title(id: &str) -> String {
-    let tail = id.strip_prefix("vy.").unwrap_or(id);
-    let mut title = String::new();
-
-    for word in tail.split(['.', '_']).filter(|word| !word.is_empty()) {
-        if !title.is_empty() {
-            title.push(' ');
-        }
-        let mut characters = word.chars();
-        if let Some(first) = characters.next() {
-            title.extend(first.to_uppercase());
-            title.push_str(characters.as_str());
-        }
-    }
-
-    title
-}
-
 /// A validated command identifier: `publisher.name` with lowercase segments.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommandId(String);
@@ -731,13 +724,26 @@ pub enum CommandError {
     Reserved(String),
     #[error("command {0} is already registered")]
     Duplicate(String),
+    #[error("invalid Ex name `{0}`: use lowercase letters, digits, and `-`")]
+    InvalidExName(String),
+    #[error("Ex name `{0}` is already in use")]
+    DuplicateExName(String),
+}
+
+/// A command registered by `init.ts` or a plugin.
+#[derive(Debug, Clone)]
+struct ScriptCommand {
+    owner: Owner,
+    title: Option<String>,
+    category: CommandCategory,
+    ex_names: Vec<String>,
+    args: ArgList,
 }
 
 /// Script commands registered at runtime.
 #[derive(Debug, Default)]
 pub struct CommandRegistry {
-    scripts: HashMap<String, Owner>,
-    titles: HashMap<String, String>,
+    scripts: HashMap<String, ScriptCommand>,
 }
 
 impl CommandRegistry {
@@ -745,26 +751,63 @@ impl CommandRegistry {
         Self::default()
     }
 
-    /// Registers a command from a script. Built-in ids and foreign duplicates are rejected.
-    /// Re-registration by the same plugin owner (implementing a contributed command) is allowed.
+    /// Registers a command from a script without metadata.
     pub fn register(&mut self, id: impl Into<String>, owner: Owner) -> Result<(), CommandError> {
+        self.register_described(id, owner, None, None, Vec::new(), ArgList::none())
+    }
+
+    /// Registers a command from a script, replacing the metadata that was provided.
+    pub fn register_described(
+        &mut self,
+        id: impl Into<String>,
+        owner: Owner,
+        title: Option<String>,
+        category: Option<CommandCategory>,
+        ex_names: Vec<String>,
+        args: ArgList,
+    ) -> Result<(), CommandError> {
         let id = CommandId::parse(id)?;
         if BuiltinCommand::parse(id.as_str()).is_some() {
             return Err(CommandError::Reserved(id.as_str().to_string()));
         }
-        if let Some(existing_owner) = self.scripts.get(id.as_str()) {
-            match (existing_owner, &owner) {
-                (Owner::Plugin(_), Owner::Init) => {
-                    // Allowed: script runtime implementing a contributed command
-                    return Ok(());
-                }
-                (Owner::Plugin(p1), Owner::Plugin(p2)) if p1 == p2 => {
-                    // Allowed: plugin implementing its own contributed command
-                }
-                _ => return Err(CommandError::Duplicate(id.as_str().to_string())),
+        let id = id.as_str().to_string();
+
+        if let Some(existing) = self.scripts.get(&id) {
+            let same_plugin = matches!(
+                (&existing.owner, &owner),
+                (Owner::Plugin(left), Owner::Plugin(right)) if left == right
+            );
+            let allowed =
+                matches!((&existing.owner, &owner), (Owner::Plugin(_), Owner::Init)) || same_plugin;
+            if !allowed {
+                return Err(CommandError::Duplicate(id));
             }
         }
-        self.scripts.insert(id.as_str().to_string(), owner);
+
+        let ex_names = self.validate_ex_names(&id, ex_names)?;
+
+        let script = self.scripts.entry(id).or_insert_with(|| ScriptCommand {
+            owner: owner.clone(),
+            title: None,
+            category: CommandCategory::Plugin,
+            ex_names: Vec::new(),
+            args: ArgList::none(),
+        });
+        if script.owner == Owner::Init && matches!(owner, Owner::Plugin(_)) {
+            script.owner = owner;
+        }
+        if title.is_some() {
+            script.title = title;
+        }
+        if let Some(category) = category {
+            script.category = category;
+        }
+        if !ex_names.is_empty() {
+            script.ex_names = ex_names;
+        }
+        if !args.is_empty() {
+            script.args = args;
+        }
         Ok(())
     }
 
@@ -774,37 +817,60 @@ impl CommandRegistry {
         id: impl Into<String>,
         title: impl Into<String>,
         plugin_id: &str,
+        category: Option<CommandCategory>,
+        ex_names: Vec<String>,
     ) -> Result<(), CommandError> {
-        let id = CommandId::parse(id)?;
-        if BuiltinCommand::parse(id.as_str()).is_some() {
-            return Err(CommandError::Reserved(id.as_str().to_string()));
+        let title = title.into();
+        self.register_described(
+            id,
+            Owner::Plugin(plugin_id.to_string()),
+            (!title.is_empty()).then_some(title),
+            category,
+            ex_names,
+            ArgList::none(),
+        )
+    }
+
+    /// Validates Ex names and returns them deduplicated.
+    fn validate_ex_names(
+        &self,
+        command_id: &str,
+        ex_names: Vec<String>,
+    ) -> Result<Vec<String>, CommandError> {
+        let mut names = Vec::new();
+        for name in ex_names {
+            if name.is_empty()
+                || !name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                return Err(CommandError::InvalidExName(name));
+            }
+            if builtin_ex_names().any(|builtin| builtin == name) {
+                return Err(CommandError::DuplicateExName(name));
+            }
+            if self
+                .scripts
+                .iter()
+                .any(|(id, script)| id != command_id && script.ex_names.contains(&name))
+            {
+                return Err(CommandError::DuplicateExName(name));
+            }
+            if !names.contains(&name) {
+                names.push(name);
+            }
         }
-        let id_str = id.as_str().to_string();
-        let title_str = title.into();
-        self.scripts
-            .insert(id_str.clone(), Owner::Plugin(plugin_id.to_string()));
-        if !title_str.is_empty() {
-            self.titles.insert(id_str, title_str);
-        }
-        Ok(())
+        Ok(names)
     }
 
     /// Drops every command registered by an owner. Used when `init.ts` reloads.
     pub fn unregister_owner(&mut self, owner: &Owner) {
-        let removed: Vec<String> = self
-            .scripts
-            .iter()
-            .filter(|(_, reg)| *reg == owner)
-            .map(|(k, _)| k.clone())
-            .collect();
-        for id in removed {
-            self.scripts.remove(&id);
-            self.titles.remove(&id);
-        }
+        self.scripts.retain(|_, script| &script.owner != owner);
     }
 
     pub fn owner_of(&self, id: &str) -> Option<&Owner> {
-        self.scripts.get(id)
+        self.scripts.get(id).map(|script| &script.owner)
     }
 
     pub fn is_registered(&self, id: &str) -> bool {
@@ -862,26 +928,67 @@ impl CommandRegistry {
                 command.meta(),
             ));
         }
-        for id in self.script_commands() {
-            let source = self
-                .owner_of(&id)
-                .map(CommandSource::from)
-                .unwrap_or(CommandSource::Init);
-            let title = self
-                .titles
-                .get(&id)
-                .cloned()
-                .unwrap_or_else(|| display_title(&id));
+        for command in SettingCommand::all() {
             descriptors.push(CommandDescriptor::from_meta(
-                id,
-                title,
-                source,
-                CommandMeta::listed(CommandCategory::Plugin, &[]),
+                command.id(),
+                command.title(),
+                CommandSource::Builtin,
+                command.meta(),
             ));
+        }
+        for id in self.script_commands() {
+            let Some(script) = self.scripts.get(&id) else {
+                continue;
+            };
+            descriptors.push(CommandDescriptor {
+                title: script.title.clone().unwrap_or_else(|| display_title(&id)),
+                id,
+                source: CommandSource::from(&script.owner),
+                category: script.category,
+                palette: PaletteVisibility::Listed,
+                ex_names: script.ex_names.clone(),
+                args: script.args.clone(),
+                range: RangeSpec::None,
+                bang: false,
+            });
         }
 
         descriptors
     }
+}
+
+/// Every Ex name declared by the built-in commands.
+fn builtin_ex_names() -> impl Iterator<Item = &'static str> {
+    BuiltinCommand::all()
+        .iter()
+        .map(|command| command.meta().ex_names)
+        .chain(
+            PaneCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .chain(
+            DocumentCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .chain(
+            UiCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .chain(
+            ViewCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .chain(
+            SettingCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .flatten()
+        .copied()
 }
 
 #[cfg(test)]
@@ -1123,16 +1230,31 @@ mod tests {
         assert_eq!(resolve("view-toggle"), Ok("vy.view.toggle"));
         assert_eq!(resolve("undo"), Ok("vy.history.undo"));
         assert_eq!(resolve("redo"), Ok("vy.history.redo"));
+        assert_eq!(resolve("set"), Ok("vy.setting.ex_set"));
+        assert_eq!(resolve("setglobal"), Ok("vy.setting.ex_set_global"));
         assert_eq!(
             resolve("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
         );
-        // Transitional until `:set wrap` replaces it in Phase 5.
-        assert_eq!(resolve("wrap"), Ok("vy.view.toggle_wrap"));
+        // Settings are named after `:set`, not as Ex commands.
+        assert_eq!(
+            resolve("wrap"),
+            Err(ExResolveError::Unknown("wrap".to_string()))
+        );
 
         match resolve("s") {
             Err(ExResolveError::Ambiguous { candidates, .. }) => {
-                assert_eq!(candidates, vec!["sp", "split-left", "split-up"]);
+                assert_eq!(
+                    candidates,
+                    vec![
+                        "set",
+                        "setglobal",
+                        "settings",
+                        "sp",
+                        "split-left",
+                        "split-up"
+                    ]
+                );
             }
             other => panic!("expected an ambiguous Ex command, got {other:?}"),
         }
@@ -1151,7 +1273,11 @@ mod tests {
 
         assert_eq!(
             ex_name_candidates("wr", &commands),
-            vec!["wrap".to_string(), "write".to_string()]
+            vec!["write".to_string()]
+        );
+        assert_eq!(
+            ex_name_candidates("setg", &commands),
+            vec!["setglobal".to_string()]
         );
         assert_eq!(
             ex_name_candidates("split-", &commands),
@@ -1188,11 +1314,15 @@ mod tests {
         );
         assert_eq!(
             find("vy.view.toggle_wrap").palette,
-            PaletteVisibility::Listed
+            PaletteVisibility::Hidden
         );
         assert_eq!(
             find("vy.ui.command_palette").palette,
             PaletteVisibility::Hidden
+        );
+        assert_eq!(
+            find("vy.ui.open_settings").palette,
+            PaletteVisibility::Listed
         );
         assert_eq!(find("vy.editor.open").palette, PaletteVisibility::Listed);
         assert_eq!(find("vy.view.open").palette, PaletteVisibility::Listed);
@@ -1236,7 +1366,7 @@ mod tests {
         assert_eq!(open.args.args()[0].kind, ArgKind::Path);
         assert!(open.args.args()[0].rest);
 
-        assert!(find("vy.document.save").args.is_none());
+        assert!(find("vy.document.save").args.is_empty());
 
         let view = find("vy.view.open");
         assert_eq!(view.args.args().len(), 2);
@@ -1257,42 +1387,65 @@ mod tests {
             Arg::required("second", ArgKind::Text),
         ]);
 
+        let view = ArgList::from_spec(VIEW);
+        let open = ArgList::from_spec(OPEN);
+        let two = ArgList::from_spec(TWO);
+        let none = ArgList::none();
+
         assert_eq!(
-            parse_ex_args(VIEW, "tree left"),
+            parse_ex_args(&view, "tree left"),
             Ok(serde_json::json!({ "view": "tree", "direction": "left" }))
         );
         assert_eq!(
-            parse_ex_args(VIEW, "tree"),
+            parse_ex_args(&view, "tree"),
             Ok(serde_json::json!({ "view": "tree" }))
         );
-        assert_eq!(parse_ex_args(VIEW, ""), Err(ArgumentError::Missing("view")));
         assert_eq!(
-            parse_ex_args(VIEW, "tree sideways"),
+            parse_ex_args(&view, ""),
+            Err(ArgumentError::Missing("view".into()))
+        );
+        assert_eq!(
+            parse_ex_args(&view, "tree sideways"),
             Err(ArgumentError::Invalid {
-                name: "direction",
+                name: "direction".into(),
                 value: "sideways".into(),
             })
         );
         assert_eq!(
-            parse_ex_args(VIEW, "tree left extra"),
+            parse_ex_args(&view, "tree left extra"),
             Err(ArgumentError::Unexpected("extra".into()))
         );
         assert_eq!(
-            parse_ex_args(OPEN, "src/a file.rs"),
+            parse_ex_args(&open, "src/a file.rs"),
             Ok(serde_json::json!({ "uri": "src/a file.rs" }))
         );
         assert_eq!(
-            parse_ex_args(TWO, r#""a b" c"#),
+            parse_ex_args(&two, r#""a b" c"#),
             Ok(serde_json::json!({ "first": "a b", "second": "c" }))
         );
         assert_eq!(
-            parse_ex_args(TWO, "\"unterminated"),
+            parse_ex_args(&two, "\"unterminated"),
             Err(ArgumentError::UnterminatedQuote)
         );
-        assert_eq!(parse_ex_args(ArgSpec::None, ""), Ok(serde_json::json!({})));
+        assert_eq!(parse_ex_args(&none, ""), Ok(serde_json::json!({})));
         assert_eq!(
-            parse_ex_args(ArgSpec::None, "extra"),
+            parse_ex_args(&none, "extra"),
             Err(ArgumentError::NoArguments)
+        );
+    }
+
+    #[test]
+    fn parses_an_optional_rest_argument() {
+        const SET: ArgSpec = ArgSpec::Positionals(&[Arg::optional_rest("option", ArgKind::Text)]);
+        let set = ArgList::from_spec(SET);
+
+        assert_eq!(
+            parse_ex_args(&set, ""),
+            Ok(serde_json::json!({ "option": "" }))
+        );
+        assert_eq!(
+            parse_ex_args(&set, "wrap"),
+            Ok(serde_json::json!({ "option": "wrap" }))
         );
     }
 
@@ -1302,42 +1455,46 @@ mod tests {
         const OPTIONAL: ArgSpec =
             ArgSpec::Positionals(&[Arg::optional("document", ArgKind::Document)]);
 
+        let open = ArgList::from_spec(OPEN);
+        let optional = ArgList::from_spec(OPTIONAL);
+        let none = ArgList::none();
+
         assert_eq!(
-            validate_json_args(OPEN, &serde_json::json!({ "uri": "src/main.rs" })),
+            validate_json_args(&open, &serde_json::json!({ "uri": "src/main.rs" })),
             Ok(serde_json::json!({ "uri": "src/main.rs" }))
         );
         assert_eq!(
-            validate_json_args(OPEN, &serde_json::json!({ "path": "src/main.rs" })),
-            Err(ArgumentError::Missing("uri"))
+            validate_json_args(&open, &serde_json::json!({ "path": "src/main.rs" })),
+            Err(ArgumentError::Missing("uri".into()))
         );
         assert_eq!(
             validate_json_args(
-                OPEN,
+                &open,
                 &serde_json::json!({ "uri": "src/main.rs", "extra": 1 })
             ),
             Err(ArgumentError::Unexpected("extra".into()))
         );
         assert_eq!(
-            validate_json_args(OPEN, &serde_json::json!({})),
-            Err(ArgumentError::Missing("uri"))
+            validate_json_args(&open, &serde_json::json!({})),
+            Err(ArgumentError::Missing("uri".into()))
         );
         assert_eq!(
-            validate_json_args(OPEN, &serde_json::Value::Null),
-            Err(ArgumentError::Missing("uri"))
+            validate_json_args(&open, &serde_json::Value::Null),
+            Err(ArgumentError::Missing("uri".into()))
         );
         assert_eq!(
-            validate_json_args(OPTIONAL, &serde_json::Value::Null),
+            validate_json_args(&optional, &serde_json::Value::Null),
             Ok(serde_json::json!({}))
         );
         assert_eq!(
-            validate_json_args(ArgSpec::None, &serde_json::json!({ "count": 2 })),
+            validate_json_args(&none, &serde_json::json!({ "count": 2 })),
             Ok(serde_json::json!({}))
         );
         assert_eq!(
-            validate_json_args(ArgSpec::None, &serde_json::json!({ "extra": 1 })),
+            validate_json_args(&none, &serde_json::json!({ "extra": 1 })),
             Err(ArgumentError::NoArguments)
         );
-        assert_eq!(usage(OPEN), "<uri>");
+        assert_eq!(usage(&open), "<uri>");
     }
 
     #[test]
@@ -1390,6 +1547,8 @@ mod tests {
                 "example.tree.toggle",
                 "File Explorer: Toggle",
                 "example.tree",
+                None,
+                Vec::new(),
             )
             .expect("contribute");
         assert!(registry.is_registered("example.tree.toggle"));
@@ -1401,6 +1560,55 @@ mod tests {
                 .is_ok()
         );
         assert!(registry.is_registered("example.tree.toggle"));
+    }
+
+    #[test]
+    fn registers_script_command_metadata_and_ex_names() {
+        let mut registry = CommandRegistry::new();
+        const ARGS: ArgSpec = ArgSpec::Positionals(&[Arg::rest("text", ArgKind::Text)]);
+        registry
+            .register_described(
+                "user.shout",
+                Owner::Init,
+                Some("Shout".into()),
+                Some(CommandCategory::Edit),
+                vec!["shout".into()],
+                ArgList::from_spec(ARGS),
+            )
+            .expect("register");
+
+        let command = registry
+            .descriptors()
+            .into_iter()
+            .find(|command| command.id == "user.shout")
+            .expect("descriptor");
+        assert_eq!(command.title, "Shout");
+        assert_eq!(command.category, CommandCategory::Edit);
+        assert_eq!(command.ex_names, vec!["shout".to_string()]);
+        assert_eq!(command.args.args().len(), 1);
+        assert_eq!(command.args.args()[0].name, "text");
+    }
+
+    #[test]
+    fn rejects_reserved_and_invalid_ex_names() {
+        let mut registry = CommandRegistry::new();
+        let register = |registry: &mut CommandRegistry, id: &str, names: Vec<String>| {
+            registry.register_described(id, Owner::Init, None, None, names, ArgList::none())
+        };
+
+        assert_eq!(
+            register(&mut registry, "user.one", vec!["e".into()]),
+            Err(CommandError::DuplicateExName("e".into()))
+        );
+        assert_eq!(
+            register(&mut registry, "user.one", vec!["Bad".into()]),
+            Err(CommandError::InvalidExName("Bad".into()))
+        );
+        assert!(register(&mut registry, "user.one", vec!["hello".into()]).is_ok());
+        assert_eq!(
+            register(&mut registry, "user.two", vec!["hello".into()]),
+            Err(CommandError::DuplicateExName("hello".into()))
+        );
     }
 
     #[test]

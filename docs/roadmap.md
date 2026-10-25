@@ -287,8 +287,9 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       （[`ui.md`](./ui.md) の未決定事項）。`Esc` のフォーカス層も決めます
       （[`keymap.md`](./keymap.md)）。
 - [x] ドキュメントを実装に追いつかせる: [`panes.md`](./panes.md) の実装状況は
-      `editor` ビューだけのまま、[`keymap.md`](./keymap.md) は Phase 2 のまま、
-      `editor.wrap` と `:wrap` は README に載っていません。
+      `editor` ビューだけのまま、[`keymap.md`](./keymap.md) は Phase 2 のまま。
+      `editor.wrap`、`:set wrap`、Settings パレットは README と
+      [`commands.md`](./commands.md) に載せた。
 
 ### 機能追加として別に扱うもの
 

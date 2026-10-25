@@ -12,7 +12,9 @@
     "commands": [
       {
         "id": "example.source.hello",
-        "title": "Source: Hello"
+        "title": "Source: Hello",
+        "category": "Plugin",
+        "exNames": ["hello"]
       }
     ]
   }

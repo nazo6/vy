@@ -2,15 +2,18 @@
 
 use gpui::ScrollStrategy;
 use vy_app::commands::{
-    ArgKind, BuiltinCommand, CommandSource, DocumentCommand, ExAddress, ExRange, Invocation,
-    InvocationSource, LineRange, Owner, PaletteVisibility, PaneCommand, RangeSpec, UiCommand,
-    ViewCommand, argument_error, ex_name_candidates, parse_ex_args, parse_ex_line, resolve_ex_name,
-    validate_json_args,
+    ArgKind, BuiltinCommand, CommandDescriptor, CommandSource, DocumentCommand, ExAddress, ExRange,
+    Invocation, InvocationSource, LineRange, Owner, PaletteVisibility, PaneCommand, RangeSpec,
+    SettingCommand, UiCommand, ViewCommand, argument_error, ex_name_candidates, parse_ex_args,
+    parse_ex_line, resolve_ex_name, validate_json_args,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
-use vy_app::overlay::{ApprovalState, Overlay, PromptState};
+use vy_app::overlay::{
+    ApprovalState, CompletionCandidate, Overlay, PromptState, SettingChoiceState,
+    SettingPromptState, SettingsState,
+};
 use vy_app::palette::{
     PaletteMode, PaletteState, PickerItem, RECENT_GROUP, approval_picker_items,
     filtered_picker_indices, move_palette_selection, palette_row_index, push_recent_command,
@@ -21,6 +24,7 @@ use vy_app::text_layout::{
     half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
 };
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
+use vy_client_api::settings::{self, SettingKind, SettingScope};
 use vy_proto::{
     DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
     PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement,
@@ -238,7 +242,7 @@ impl EditorView {
                     .unwrap_or(false);
                 let next = !current;
                 if let Some(pane) = self.active_pane_state_mut() {
-                    pane.wrap = Some(next);
+                    pane.set_window_setting("editor.wrap", serde_json::Value::Bool(next));
                     if next {
                         pane.scroll_left = 0;
                     } else {
@@ -332,7 +336,43 @@ impl EditorView {
                 &approval.plugin_name,
                 &approval.missing,
             ),
+            Some(Overlay::Settings(_)) => self.setting_items(),
+            Some(Overlay::SettingChoice(choice)) => setting_choice_items(choice),
             _ => Vec::new(),
+        }
+    }
+
+    /// One row per setting with its current value, scope, and source.
+    fn setting_items(&self) -> Vec<PickerItem> {
+        let mut items: Vec<PickerItem> = settings::SETTINGS
+            .iter()
+            .map(|decl| {
+                let (value, source) = self.active_setting(decl.key);
+                let text = value
+                    .as_ref()
+                    .map(setting_text)
+                    .unwrap_or_else(|| "(unset)".to_string());
+                PickerItem {
+                    id: decl.key.to_string(),
+                    title: decl.key.to_string(),
+                    description: Some(text),
+                    detail: Some(format!("{} · {}", decl.scope.label(), source.label())),
+                    group: None,
+                }
+            })
+            .collect();
+        vy_app::palette::sort_picker_items(&mut items);
+        items
+    }
+
+    /// Resolves a setting for the active pane, falling back to the config layers.
+    fn active_setting(
+        &self,
+        key: &str,
+    ) -> (Option<serde_json::Value>, vy_app::config::SettingSource) {
+        match self.active_pane_state() {
+            Some(pane) => pane.effective_setting(key, &self.config),
+            None => self.config.effective_with_source(key),
         }
     }
 
@@ -346,7 +386,7 @@ impl EditorView {
         }
         arg.choices
             .iter()
-            .map(|choice| PickerItem::new(*choice, *choice))
+            .map(|choice| PickerItem::new(choice.clone(), choice.clone()))
             .collect()
     }
 
@@ -489,6 +529,15 @@ impl EditorView {
         self.status = "ex command".into();
     }
 
+    /// Opens the settings list (`:set` without arguments, or `vy.ui.open_settings`).
+    pub(super) fn open_settings(&mut self) {
+        self.clear_preedit();
+        self.overlay = Some(Overlay::Settings(SettingsState::new()));
+        self.palette_scroll_handle
+            .scroll_to_item(0, ScrollStrategy::Top);
+        self.status = "settings".into();
+    }
+
     /// Starts collecting the required arguments of a palette command.
     fn begin_palette_command(&mut self, id: String, palette: PaletteState) {
         let Some(descriptor) = self
@@ -516,8 +565,8 @@ impl EditorView {
             .args()
             .iter()
             .find(|arg| arg.required)
-            .map(|arg| arg.name)
-            .unwrap_or("");
+            .map(|arg| arg.name.clone())
+            .unwrap_or_default();
         self.overlay = Some(Overlay::Prompt(PromptState::new(
             id,
             title.clone(),
@@ -537,14 +586,16 @@ impl EditorView {
         let Some(arg) = prompt.current_arg() else {
             return;
         };
+        let arg_name = arg.name.clone();
+        let arg_kind = arg.kind;
         let command_id = prompt.command_id.clone();
         let title = prompt.title.clone();
-        let spec = prompt.spec;
-        let value = if arg.kind == ArgKind::Choice {
+        let spec = prompt.spec.clone();
+        let value = if arg_kind == ArgKind::Choice {
             match self.overlay_selected_id() {
                 Some(value) => value,
                 None => {
-                    self.status = format!("missing argument: {}", arg.name).into();
+                    self.status = format!("missing argument: {arg_name}").into();
                     return;
                 }
             }
@@ -552,7 +603,7 @@ impl EditorView {
             prompt.input.value().trim().to_string()
         };
         if value.is_empty() {
-            self.status = format!("missing argument: {}", arg.name).into();
+            self.status = format!("missing argument: {arg_name}").into();
             return;
         }
 
@@ -561,10 +612,10 @@ impl EditorView {
         };
         prompt
             .values
-            .insert(arg.name.to_string(), serde_json::Value::String(value));
+            .insert(arg_name, serde_json::Value::String(value));
         let next_index = prompt.index + 1;
         if next_index < prompt.required().len() {
-            let next_name = prompt.required()[next_index].name;
+            let next_name = prompt.required()[next_index].name.clone();
             prompt.index = next_index;
             prompt.input.clear();
             prompt.selected = 0;
@@ -575,13 +626,13 @@ impl EditorView {
         }
 
         let values = serde_json::Value::Object(prompt.values.clone());
-        match validate_json_args(spec, &values) {
+        match validate_json_args(&spec, &values) {
             Ok(values) => {
                 self.overlay = None;
                 self.enqueue_command(Invocation::palette_with_args(command_id, values));
             }
             Err(error) => {
-                self.status = argument_error(&command_id, spec, &error).into();
+                self.status = argument_error(&command_id, &spec, &error).into();
             }
         }
     }
@@ -638,7 +689,7 @@ impl EditorView {
         }
     }
 
-    /// Cycles Ex command-name completion for the first word of the input.
+    /// Cycles Ex completion: command names, then names and values after `:set`.
     fn complete_ex_name(&mut self, backwards: bool) {
         if self.overlay_input_value().trim().is_empty() {
             return;
@@ -648,15 +699,10 @@ impl EditorView {
             return;
         };
         let typed = ex.input.value().to_string();
-        // Arguments are not completed yet; leave the word alone.
-        if typed.contains(char::is_whitespace) {
-            ex.completion.reset();
-            return;
-        }
         if ex.completion.is_active_for(&typed) {
             ex.completion.cycle(if backwards { -1 } else { 1 });
         } else {
-            let candidates = ex_name_candidates(&typed, &descriptors);
+            let candidates = ex_completion_candidates(&typed, &descriptors);
             if candidates.is_empty() {
                 ex.completion.reset();
                 return;
@@ -692,10 +738,10 @@ impl EditorView {
             self.status = format!("Ex command `{}` does not accept `!`", parsed.name).into();
             return;
         }
-        let values = match parse_ex_args(command.args, &parsed.args) {
+        let values = match parse_ex_args(&command.args, &parsed.args) {
             Ok(values) => values,
             Err(error) => {
-                self.status = argument_error(&parsed.name, command.args, &error).into();
+                self.status = argument_error(&parsed.name, &command.args, &error).into();
                 return;
             }
         };
@@ -787,6 +833,9 @@ impl EditorView {
             Some(Overlay::Ex(_)) => self.handle_ex_key(key),
             Some(Overlay::Prompt(_)) => self.handle_prompt_key(key),
             Some(Overlay::Approval(_)) => self.handle_approval_key(key),
+            Some(Overlay::Settings(_)) => self.handle_settings_key(key),
+            Some(Overlay::SettingChoice(_)) => self.handle_setting_choice_key(key),
+            Some(Overlay::SettingPrompt(_)) => self.handle_setting_prompt_key(key),
             None => {}
         }
     }
@@ -934,6 +983,299 @@ impl EditorView {
         }
     }
 
+    fn handle_settings_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => self.overlay = None,
+            Key::Enter => {
+                let Some(key) = self.overlay_selected_id() else {
+                    return;
+                };
+                self.begin_setting_change(&key);
+            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            _ => {}
+        }
+    }
+
+    /// Opens a picker or prompt for the selected setting, or toggles a bool.
+    fn begin_setting_change(&mut self, key: &str) {
+        let Ok(decl) = settings::resolve(key) else {
+            return;
+        };
+        match decl.kind {
+            SettingKind::Bool => self.toggle_setting(key),
+            SettingKind::Choice(_) => {
+                let Some(Overlay::Settings(settings)) = self.overlay.take() else {
+                    return;
+                };
+                let mut choice = SettingChoiceState::new(decl.key, settings);
+                if let (Some(current), SettingKind::Choice(values)) =
+                    (self.active_setting(decl.key).0, decl.kind)
+                    && let Some(index) = values
+                        .iter()
+                        .position(|value| Some(*value) == current.as_str())
+                {
+                    choice.selected = index;
+                }
+                self.overlay = Some(Overlay::SettingChoice(choice));
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            SettingKind::Number | SettingKind::Text => {
+                let Some(Overlay::Settings(settings)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::SettingPrompt(SettingPromptState::new(
+                    key, settings,
+                )));
+                let current = self
+                    .active_setting(key)
+                    .0
+                    .map(|value| setting_text(&value))
+                    .unwrap_or_default();
+                self.status = format!("{key}: {current} >").into();
+            }
+        }
+    }
+
+    fn handle_setting_choice_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::Settings(choice.back));
+            }
+            Key::Enter => {
+                let Some(value) = self.overlay_selected_id() else {
+                    return;
+                };
+                let Some(Overlay::SettingChoice(choice)) = self.overlay.as_ref() else {
+                    return;
+                };
+                let key = choice.key.clone();
+                self.apply_setting(&key, serde_json::Value::String(value), None);
+                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::Settings(choice.back));
+            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_setting_prompt_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::Settings(prompt.back));
+            }
+            Key::Enter => {
+                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.as_ref() else {
+                    return;
+                };
+                let key = prompt.key.clone();
+                let Ok(decl) = settings::resolve(&key) else {
+                    return;
+                };
+                let Some(value) = decl.kind.parse(prompt.input.value()) else {
+                    self.status =
+                        format!("invalid value for {key}: {}", prompt.input.value()).into();
+                    return;
+                };
+                self.apply_setting(&key, value, None);
+                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::Settings(prompt.back));
+            }
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Runs `vy.setting.*` and the Ex `:set` / `:setglobal` commands.
+    pub(super) fn run_setting_command(&mut self, command: SettingCommand, invocation: &Invocation) {
+        match command {
+            SettingCommand::Set => {
+                let Some(key) = invocation.args.string("key").map(str::to_string) else {
+                    self.status = "setting.set requires a key".into();
+                    return;
+                };
+                let Some(value) = invocation.args.value("value").cloned() else {
+                    self.status = "setting.set requires a value".into();
+                    return;
+                };
+                let scope = invocation
+                    .args
+                    .string("scope")
+                    .and_then(SettingScope::parse);
+                self.apply_setting(&key, value, scope);
+            }
+            SettingCommand::Toggle => {
+                let Some(key) = invocation.args.string("key") else {
+                    self.status = "setting.toggle requires a key".into();
+                    return;
+                };
+                self.toggle_setting(key);
+            }
+            SettingCommand::Reset => {
+                let Some(key) = invocation.args.string("key") else {
+                    self.status = "setting.reset requires a key".into();
+                    return;
+                };
+                self.reset_setting(key);
+            }
+            SettingCommand::ExSet | SettingCommand::ExSetGlobal => {
+                let option = invocation.args.string("option").unwrap_or("").to_string();
+                self.apply_ex_set(&option, command == SettingCommand::ExSetGlobal);
+            }
+        }
+    }
+
+    /// Applies one setting value to the window or the memory layer.
+    fn apply_setting(&mut self, key: &str, value: serde_json::Value, scope: Option<SettingScope>) {
+        let Ok(decl) = settings::resolve(key) else {
+            self.status = format!("unknown setting: {key}").into();
+            return;
+        };
+        if !decl.kind.accepts(&value) {
+            self.status =
+                format!("invalid value for {}: {}", decl.key, setting_text(&value)).into();
+            return;
+        }
+        let target = scope.unwrap_or(decl.scope);
+        if target == SettingScope::Window && decl.scope != SettingScope::Window {
+            self.status = format!("{} is a global setting", decl.key).into();
+            return;
+        }
+
+        match target {
+            SettingScope::Window => {
+                let Some(pane) = self.active_pane_state_mut() else {
+                    self.status = "no active pane".into();
+                    return;
+                };
+                pane.set_window_setting(decl.key, value.clone());
+            }
+            SettingScope::Global => {
+                let changed = self.config.set(decl.key, value.clone());
+                if changed {
+                    self.mark_config_changed(decl.key);
+                }
+            }
+        }
+        self.status = format!("{}={} ({})", decl.key, setting_text(&value), target.label()).into();
+    }
+
+    fn toggle_setting(&mut self, key: &str) {
+        let Ok(decl) = settings::resolve(key) else {
+            self.status = format!("unknown setting: {key}").into();
+            return;
+        };
+        if decl.kind != SettingKind::Bool {
+            self.status = format!("{} is not a boolean setting", decl.key).into();
+            return;
+        }
+        let current = self
+            .active_setting(decl.key)
+            .0
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        self.apply_setting(decl.key, serde_json::Value::Bool(!current), None);
+    }
+
+    fn reset_setting(&mut self, key: &str) {
+        let Ok(decl) = settings::resolve(key) else {
+            self.status = format!("unknown setting: {key}").into();
+            return;
+        };
+        let reset = match decl.scope {
+            SettingScope::Window => self
+                .active_pane_state_mut()
+                .is_some_and(|pane| pane.reset_window_setting(decl.key)),
+            SettingScope::Global => self.config.remove_memory(decl.key),
+        };
+        if reset {
+            self.mark_config_changed(decl.key);
+        }
+        let (value, source) = self.active_setting(decl.key);
+        let text = value
+            .as_ref()
+            .map(setting_text)
+            .unwrap_or_else(|| "(unset)".to_string());
+        self.status = format!("{}={} ({})", decl.key, text, source.label()).into();
+    }
+
+    /// Applies the argument of `:set` / `:setglobal`.
+    fn apply_ex_set(&mut self, option: &str, global: bool) {
+        match settings::parse_set_option(option) {
+            Ok(settings::SettingEdit::OpenSettings) => self.open_settings(),
+            Ok(settings::SettingEdit::Inspect(decl)) => {
+                let (value, source) = self.active_setting(decl.key);
+                let text = value
+                    .as_ref()
+                    .map(setting_text)
+                    .unwrap_or_else(|| "(unset)".to_string());
+                self.status = format!("{}={} ({})", decl.key, text, source.label()).into();
+            }
+            Ok(settings::SettingEdit::Apply(decl, value)) => {
+                let scope = if global {
+                    SettingScope::Global
+                } else {
+                    decl.scope
+                };
+                self.apply_setting(decl.key, value, Some(scope));
+            }
+            Err(error) => self.status = error.into(),
+        }
+    }
+
+    /// Marks settings that were changed at runtime so the next render reloads
+    /// the cached config and theme, and notifies scripts.
+    fn mark_config_changed(&mut self, key: &str) {
+        self.settings_dirty = true;
+        self.emit_config_change_to_scripts(vec![key.to_string()]);
+    }
+
     /// Queues a command and starts it when the previous command is done.
     pub(super) fn enqueue_command(&mut self, invocation: Invocation) {
         if invocation.source == InvocationSource::Palette {
@@ -984,13 +1326,14 @@ impl EditorView {
         if invocation.source != InvocationSource::Script {
             let descriptors = self.commands.descriptors();
             if let Some(descriptor) = descriptors.iter().find(|command| command.id == id)
-                && !matches!(
-                    descriptor.source,
-                    CommandSource::Init | CommandSource::Plugin(_)
-                )
-                && let Err(error) = validate_json_args(descriptor.args, &invocation.args.values)
+                && (!descriptor.args.is_empty()
+                    || !matches!(
+                        descriptor.source,
+                        CommandSource::Init | CommandSource::Plugin(_)
+                    ))
+                && let Err(error) = validate_json_args(&descriptor.args, &invocation.args.values)
             {
-                self.status = argument_error(&id, descriptor.args, &error).into();
+                self.status = argument_error(&id, &descriptor.args, &error).into();
                 return false;
             }
         }
@@ -1009,6 +1352,10 @@ impl EditorView {
         }
         if let Some(command) = ViewCommand::parse(&id) {
             self.run_view_command(command, &invocation);
+            return false;
+        }
+        if let Some(command) = SettingCommand::parse(&id) {
+            self.run_setting_command(command, &invocation);
             return false;
         }
         if let Some(command) = BuiltinCommand::parse(&id) {
@@ -1044,6 +1391,7 @@ impl EditorView {
         match command {
             UiCommand::CommandPalette => self.open_palette(),
             UiCommand::ExCommandLine => self.open_ex(),
+            UiCommand::OpenSettings => self.open_settings(),
             UiCommand::ReconnectServer => {
                 self.reconnect_requested = true;
                 self.status = "reconnecting".into();
@@ -1109,10 +1457,10 @@ impl EditorView {
             {
                 Invocation::script(id, serde_json::json!({ "raw": raw }))
             }
-            Some(raw) => match parse_ex_args(descriptor.args, raw) {
+            Some(raw) => match parse_ex_args(&descriptor.args, raw) {
                 Ok(values) => Invocation::ex(id, values),
                 Err(error) => {
-                    self.status = argument_error(id, descriptor.args, &error).into();
+                    self.status = argument_error(id, &descriptor.args, &error).into();
                     return;
                 }
             },
@@ -1184,5 +1532,150 @@ impl EditorView {
         } else {
             self.open_view_pane(view_id, direction);
         }
+    }
+}
+
+/// Choice rows for an enumerated setting.
+fn setting_choice_items(choice: &SettingChoiceState) -> Vec<PickerItem> {
+    let Some(decl) = settings::find(&choice.key) else {
+        return Vec::new();
+    };
+    let SettingKind::Choice(values) = decl.kind else {
+        return Vec::new();
+    };
+    values
+        .iter()
+        .map(|value| PickerItem::new(*value, *value))
+        .collect()
+}
+
+/// Renders a setting value for a status line or a settings row.
+fn setting_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Number(number) => match number.as_f64() {
+            Some(float) => format!("{float}"),
+            None => number.to_string(),
+        },
+        other => other.to_string(),
+    }
+}
+
+/// Completion candidates for the current Ex input.
+fn ex_completion_candidates(
+    typed: &str,
+    descriptors: &[CommandDescriptor],
+) -> Vec<CompletionCandidate> {
+    if !typed.contains(char::is_whitespace) {
+        return ex_name_candidates(typed, descriptors)
+            .into_iter()
+            .map(CompletionCandidate::plain)
+            .collect();
+    }
+    ex_setting_candidates(typed)
+}
+
+/// Completes setting names and choice values after `:set` / `:setglobal`.
+fn ex_setting_candidates(typed: &str) -> Vec<CompletionCandidate> {
+    let Some(space) = typed.find(char::is_whitespace) else {
+        return Vec::new();
+    };
+    let (name, after) = typed.split_at(space);
+    if name != "set" && name != "setglobal" {
+        return Vec::new();
+    }
+
+    let token_start = after.len() - after.trim_start().len();
+    let lead = &after[..token_start];
+    let token = &after[token_start..];
+    if token.contains(char::is_whitespace) {
+        return Vec::new();
+    }
+    let base = format!("{name}{lead}");
+
+    if let Some((option, value_prefix)) = token.split_once('=') {
+        let Ok(decl) = settings::resolve(option) else {
+            return Vec::new();
+        };
+        let SettingKind::Choice(values) = decl.kind else {
+            return Vec::new();
+        };
+        return values
+            .iter()
+            .filter(|value| value.starts_with(value_prefix) && **value != value_prefix)
+            .map(|value| CompletionCandidate::new(format!("{base}{option}={value}"), *value))
+            .collect();
+    }
+
+    let mut candidates = Vec::new();
+    for decl in settings::SETTINGS {
+        if token.contains('.') {
+            if decl.key.starts_with(token) && decl.key != token {
+                candidates.push(CompletionCandidate::new(
+                    format!("{base}{}", decl.key),
+                    decl.key,
+                ));
+            }
+            continue;
+        }
+        if decl.name().starts_with(token) && decl.name() != token {
+            candidates.push(CompletionCandidate::new(
+                format!("{base}{}", decl.name()),
+                decl.name(),
+            ));
+        }
+        if decl.kind == SettingKind::Bool {
+            let negated = format!("no{}", decl.name());
+            if negated.starts_with(token) && negated != token {
+                candidates.push(CompletionCandidate::new(
+                    format!("{base}{negated}"),
+                    negated,
+                ));
+            }
+        }
+    }
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates.dedup_by(|left, right| left.value == right.value);
+    candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completes_setting_names_and_values() {
+        assert_eq!(
+            ex_setting_candidates("set wr"),
+            vec![CompletionCandidate::new("set wrap", "wrap")]
+        );
+        assert_eq!(
+            ex_setting_candidates("set now"),
+            vec![CompletionCandidate::new("set nowrap", "nowrap")]
+        );
+        assert_eq!(
+            ex_setting_candidates("set theme=l"),
+            vec![CompletionCandidate::new("set theme=light", "light")]
+        );
+        assert!(ex_setting_candidates("set wrap").is_empty());
+        assert!(ex_setting_candidates("split wr").is_empty());
+        assert!(
+            ex_setting_candidates("setglobal wr")
+                .contains(&CompletionCandidate::new("setglobal wrap", "wrap"))
+        );
+    }
+
+    #[test]
+    fn completes_command_names_before_arguments() {
+        let descriptors = vy_app::commands::CommandRegistry::new().descriptors();
+
+        assert_eq!(
+            ex_completion_candidates("wr", &descriptors),
+            vec![CompletionCandidate::plain("write")]
+        );
+        assert_eq!(
+            ex_completion_candidates("set wr", &descriptors),
+            vec![CompletionCandidate::new("set wrap", "wrap")]
+        );
     }
 }

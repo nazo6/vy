@@ -313,7 +313,7 @@ mod tests {
             category: crate::commands::CommandCategory::Edit,
             palette: crate::commands::PaletteVisibility::Listed,
             ex_names: Vec::new(),
-            args: crate::commands::ArgSpec::None,
+            args: crate::commands::ArgList::none(),
             range: crate::commands::RangeSpec::None,
             bang: false,
         }

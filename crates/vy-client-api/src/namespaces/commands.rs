@@ -6,10 +6,21 @@ use vy_host_api::{CallError, Reply};
 
 use crate::command::{ArgKind, CommandCategory, PaletteVisibility, RangeSpec};
 
-/// `commands.registerCommand` parameters.
+/// `commands.registerCommand` / `commands.register` parameters.
+///
+/// Metadata is optional so `registerCommand(id, handler)` can stay a thin sugar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct CommandsRegisterParams {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<CommandCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ex_names: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<CommandArgInfo>>,
 }
 
 /// `commands.execute` parameters.

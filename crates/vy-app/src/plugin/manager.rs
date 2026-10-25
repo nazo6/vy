@@ -20,6 +20,16 @@ pub struct PluginApprovalRequest {
     pub missing_capabilities: Vec<String>,
 }
 
+/// A command contributed by a trusted plugin's manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributedCommandInfo {
+    pub id: String,
+    pub title: String,
+    pub plugin_id: String,
+    pub category: Option<String>,
+    pub ex_names: Vec<String>,
+}
+
 /// The runtime lifecycle status of a known plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginState {
@@ -210,23 +220,23 @@ impl PluginManager {
     }
 
     /// Returns all contributed commands from all trusted plugins.
-    ///
-    /// Each entry is `(command_id, command_title, plugin_id)`.
-    pub fn contributed_commands(&self) -> Vec<(String, String, String)> {
+    pub fn contributed_commands(&self) -> Vec<ContributedCommandInfo> {
         let mut commands = Vec::new();
         for state in self.plugins.values() {
             if state.is_trusted() {
                 let plugin = state.plugin();
                 for cmd in &plugin.manifest.contributes.commands {
-                    commands.push((
-                        cmd.id.clone(),
-                        cmd.title.clone(),
-                        plugin.manifest.id.clone(),
-                    ));
+                    commands.push(ContributedCommandInfo {
+                        id: cmd.id.clone(),
+                        title: cmd.title.clone(),
+                        plugin_id: plugin.manifest.id.clone(),
+                        category: cmd.category.clone(),
+                        ex_names: cmd.ex_names.clone(),
+                    });
                 }
             }
         }
-        commands.sort_by(|a, b| a.0.cmp(&b.0));
+        commands.sort_by(|a, b| a.id.cmp(&b.id));
         commands
     }
 
@@ -525,8 +535,8 @@ mod tests {
         // Contributed commands are visible before activation
         let cmds = manager.contributed_commands();
         assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0].0, "p.cmd.run");
-        assert_eq!(cmds[0].1, "Run Command");
+        assert_eq!(cmds[0].id, "p.cmd.run");
+        assert_eq!(cmds[0].title, "Run Command");
 
         // 1. Startup triggers only p.startup
         let act = manager.plugins_for_startup();

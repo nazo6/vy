@@ -147,9 +147,13 @@ mod tests {
     #[test]
     fn typing_discards_completion_candidates() {
         let mut state = ExState::new();
-        state
-            .completion
-            .set("wr", vec!["wrap".into(), "write".into()]);
+        state.completion.set(
+            "wr",
+            vec![
+                crate::overlay::CompletionCandidate::plain("wrap"),
+                crate::overlay::CompletionCandidate::plain("write"),
+            ],
+        );
         assert!(!state.completion.is_empty());
 
         state.push_char('i');

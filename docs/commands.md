@@ -92,10 +92,14 @@ ArgSpec := none | positional(Arg[])
 
 Arg
   name: string
-  kind: text | path | document | choice(values) | number
+  kind: text | path | document | choice(values) | number | any
   required: bool
   rest: bool        // true なら残りの文字列全体を1つの値にする
 ```
+
+`ArgSpec` は組み込みコマンドの宣言です。実行時は所有権を持つ `ArgList` に変換し、
+プラグインが登録した引数も同じ形で扱います。`any` は JSON の値をそのまま渡し、
+Ex から入力したときは文字列になります。
 
 引数の集め方は入口ごとに変えますが、変換後の形は同じです。
 
@@ -156,6 +160,8 @@ Invocation
 - ペインのフォーカス移動と、ビューのスクロール。キーで反復する操作です。
 - 入口そのもの（`vy.ui.command_palette`、`vy.ui.ex_command_line`）。
 - 開発向けの `vy.script.eval`。Ex の `:ts` から使えます。
+- 内部の糖衣（`vy.view.toggle_wrap`）。パレットには出さず、キーマップから
+  使います。
 - `vy.setting.set` / `toggle` / `reset`。Settings
   パレットの行が内部的に呼びます。
 
@@ -163,9 +169,8 @@ Invocation
 Phase 2 でパレットが選択後に引数を聞くようになったため、これらも listed に
 なっています。1行の入力欄を使い、`choice` の引数は候補のピッカーになります。
 
-`vy.view.toggle_wrap` は最終的には hidden・Ex 名なしにしますが、`:set wrap` が
-入る Phase 5 までは、暫定的に listed と `:wrap` を残します。折り返しを変える
-手段を途中で失わないためです。
+`vy.view.toggle_wrap` は hidden・Ex 名なしの糖衣です。折り返しは `:set wrap` で
+変えます。
 
 ### 4.2 表示
 
@@ -289,17 +294,16 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | `:view-toggle`    | `vy.view.toggle`                                     | 実装済み                     | ビューの表示を切り替える    |
 | `:undo` / `:redo` | `vy.history.undo` / `vy.history.redo`                | 実装済み                     | アンドゥとリドゥ            |
 | `:reconnect`      | `vy.reconnect_server`                                | 実装済み                     | サーバーへ再接続            |
-| `:wrap`           | `vy.view.toggle_wrap`                                | 移行中（Phase 5 で削除）     | 折り返しの切り替え          |
-| `:set`            | `vy.setting.set`（引数なしは `vy.ui.open_settings`） | 追加予定                     | 設定を変える。次節          |
-| `:settings`       | `vy.ui.open_settings`                                | 追加予定                     | Settings パレットを開く     |
+| `:set`            | `vy.setting.ex_set`（引数なしは Settings パレット）  | 実装済み                     | 設定を変える。次節          |
+| `:setglobal`      | `vy.setting.ex_set_global`                           | 実装済み                     | メモリ層の既定値を変える    |
+| `:settings`       | `vy.ui.open_settings`                                | 実装済み                     | Settings パレットを開く     |
 | `:ts`             | `vy.script.eval`                                     | 実装済み                     | TypeScript を評価（hidden） |
 | `:wq`             | `vy.document.write_quit`                             | 未実装                       | 保存と終了を1コマンドにする |
 | `:bn` / `:bp`     | `vy.document.next` / `previous`                      | 未実装                       | 文書一覧ができてから        |
 | `:noh`            | `vy.search.clear_highlight`                          | 未実装                       | 検索のハイライトを消す      |
 
-`:wrap` は Phase 5 で `:set wrap` に統合して削除します。それまでは、設定を
-変える手段を失わないための移行期間として残します。`vy.view.toggle_wrap` も
-同じ間は listed です。
+`:wrap` は `:set wrap` に統合したため、Ex 名としては存在しません。
+`vy.view.toggle_wrap` はキーマップ用の糖衣として残しています。
 
 `!` 付きの強制終了（`:q!`）、シェル実行（`:!`）、`:terminal` は初期版では
 扱いません。`:!` は `process:exec` の承認が必要になるため、Ex の権限経路が
@@ -311,8 +315,9 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
   を候補にし、`Tab` は次、`Shift-Tab` は前の候補へ巡回します。候補は入力行の上
   に一覧で出し、選択中の候補を強調します。
 - 候補が 1 つなら `Tab` でその名前になります。入力し直すと候補は作り直します。
-- 設定キーも補完します（`:set wr` → `wrap`）。`:set` を追加する Phase 5 で
-  実装します。
+- 設定名も補完します。`:set wr` は `wrap` に、`:set now` は `nowrap` に、
+  `:set theme=l` は `light` になります。設定キーは最後のセグメント（`wrap`）でも
+  完全なキー（`editor.wrap`）でも指定できます。
 - 引数の補完は `ArgSpec` で宣言します。`choice` は候補、`document` は開いている
   文書、`path` は将来ファイル一覧をコアへ問い合わせます。
 - 履歴はセッション内だけ保持します。`Up` / `Down` で移動し、空行と重複は
@@ -399,6 +404,7 @@ Settings パレットは同じコマンドを作ります。
 | `ui.fontSize`              | global   | number                                   | `14`                               |
 | `ui.lineHeight`            | global   | number                                   | `20`                               |
 | `ui.lineNumbers`           | global   | choice (`absolute` / `relative` / `off`) | `absolute`                         |
+| `ui.theme`                 | global   | choice (`dark` / `light`)                | `dark`                             |
 | `editor.transactionIdleMs` | global   | number                                   | `500`                              |
 | `editor.sequenceTimeoutMs` | global   | number                                   | `1000`                             |
 | `editor.wrap`              | window   | bool                                     | `false`                            |
@@ -425,6 +431,8 @@ Settings パレットは同じコマンドを作ります。
 - `window` スコープの設定は、`:set` で現在のウィンドウを上書きします。
 - `global` スコープの設定は、`:set` でメモリ層を変えます。現在のセッションだけ
   有効です。
+- `vy.setting.reset` は、`window` スコープならウィンドウの上書きを、`global`
+  スコープならメモリ層の値を消します。下の層の値に戻ります。
 - `:setlocal` は用意しません。`window` スコープでは `:set` がその役割を果たし、
   `global` スコープにはローカルの意味がないためです。
 - 実行中に `settings.json` は書き換えません。恒久的な変更は `settings.json` と
@@ -456,7 +464,7 @@ vy.commands.register(
     {
         id: "example.tree.toggle",
         title: "Toggle File Tree",
-        category: "Plugin",
+        category: "plugin",
         exNames: ["tree"],
         args: [],
     },
@@ -466,11 +474,14 @@ vy.commands.register(
 );
 ```
 
-- 既存の `registerCommand(id, handler)` は、`title`
-  を省略した糖衣として残します。
+- 既存の `registerCommand(id, handler)` は、メタデータを省略した糖衣として
+  残します。
 - `exNames` は省略できます。登録できるのは信頼済みのプラグインだけです。
 - `args` は `ArgSpec` と同じ形で、`commands.execute` と Ex の引数を検証します。
+  `kind` は `text` / `path` / `document` / `number` / `choice` / `any` です。
+  `choice` の `choices` と `rest` は任意で、省略時は `false` です。
 - 同じコマンド ID や Ex 名を登録したプラグインは無効化し、警告を出します。
+  Ex 名は小文字英字で始まり、小文字英字・数字・`-` だけを使えます。
 
 ### 8.2 マニフェスト
 
@@ -482,7 +493,7 @@ vy.commands.register(
         {
             "id": "example.tree.toggle",
             "title": "Toggle File Tree",
-            "category": "Plugin",
+            "category": "plugin",
             "exNames": ["tree"]
         }
     ]
@@ -527,7 +538,7 @@ Ex 専用の RPC は追加しません。文書とレイアウトの変更は既
 | Phase 2 | `ArgSpec` に基づく型付き引数、パレットの引数プロンプト、range と `!` の検証   | 完了 |
 | Phase 3 | パレットのカテゴリ、順位、最近使ったコマンド                                               | 完了 |
 | Phase 4 | オーバーレイと入力行の統合、Ex の補完                                                      | 完了 |
-| Phase 5 | 設定のスコープと `:set`、Settings パレット、プラグイン API、コード生成                     | 未着手 |
+| Phase 5 | 設定のスコープと `:set`、Settings パレット、プラグイン API、コード生成                     | 完了 |
 
 ## 11. 実装状況
 
@@ -546,19 +557,20 @@ Ex 専用の RPC は追加しません。文書とレイアウトの変更は既
 | 引数の宣言（`ArgSpec`）                                               | 実装済み          |
 | 引数の検証と、パレットの引数プロンプト                                | 実装済み          |
 | range の解析と拒否                                                    | 実装済み          |
-| 設定のスコープ、`:set`、Settings パレット                             | 未実装（Phase 5） |
+| 設定のスコープ、`:set`、Settings パレット                             | 実装済み          |
+| ウィンドウ単位の設定上書きと値の出所の表示                            | 実装済み          |
 | Ex・パレット・引数プロンプトの共通の入力部品（IME の前編集を含む）   | 実装済み          |
 | モーダル状態の統一（`Overlay`、フォーカスハンドルは1つ）             | 実装済み          |
 | Ex のコマンド名補完（`Tab` / `Shift-Tab`、候補一覧）                  | 実装済み          |
-| Ex の設定キー補完                                                     | 未実装（Phase 5） |
-| プラグインの Ex 名とカテゴリ                                          | 未実装（Phase 5） |
+| Ex の設定名・列挙値の補完                                             | 実装済み          |
+| プラグインの Ex 名とカテゴリ                                          | 実装済み          |
+| プラグインの引数宣言（`commands.register` の `args`）                 | 実装済み          |
+| コマンドメタデータの TypeScript 生成（`CommandMetadata.ts`）          | 実装済み          |
 | `commands.getCommands` のメタデータ（`ViewCommand` の欠落修正を含む） | 実装済み          |
 
 ## 12. 未決定事項
 
 - 最後のペインで `:q` を押したとき、アプリを終了するかエラーにするか。
-- `init.ts` と外部プラグインが Ex 名を登録できるようにするか。登録する場合の API
-  と衝突規則（本決定では「信頼済みなら登録可、重複は無効化」とした）。
 - `|` による連結、`"` によるコメント、`/pattern/` を使った範囲指定を入れるか。
 - 範囲の既定値を「現在行」「選択範囲」「文書全体」のどれにするか。
 - Select モードで `:` を押したときに `'<,'>` を自動で補うか。

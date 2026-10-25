@@ -88,7 +88,7 @@ fn render_completion(theme: &Theme, ex: &ExState) -> Div {
             .line_height(px(COMPLETION_ROW_HEIGHT))
             .px_2()
             .text_sm()
-            .child(candidates[index].clone());
+            .child(candidates[index].label.clone());
         list = list.child(if index == selected {
             row.bg(theme.list.active_background)
                 .text_color(theme.list.active_foreground)

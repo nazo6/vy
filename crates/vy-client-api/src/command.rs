@@ -36,6 +36,21 @@ impl CommandCategory {
             Self::Plugin => "Plugin",
         }
     }
+
+    /// Parses the lowercase name accepted by plugin manifests and registrations.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "file" => Some(Self::File),
+            "edit" => Some(Self::Edit),
+            "selection" => Some(Self::Selection),
+            "view" => Some(Self::View),
+            "pane" => Some(Self::Pane),
+            "app" => Some(Self::App),
+            "settings" => Some(Self::Settings),
+            "plugin" => Some(Self::Plugin),
+            _ => None,
+        }
+    }
 }
 
 /// Whether the command appears in the command palette list.
@@ -65,6 +80,8 @@ pub enum ArgKind {
     Document,
     Number,
     Choice,
+    /// Any JSON value, passed through unchanged. Ex input becomes a string.
+    Any,
 }
 
 /// One positional argument declared by a command.
@@ -110,6 +127,17 @@ impl Arg {
         }
     }
 
+    /// A rest argument that may be empty, as in `:set` with no option name.
+    pub const fn optional_rest(name: &'static str, kind: ArgKind) -> Self {
+        Self {
+            name,
+            kind,
+            choices: &[],
+            required: false,
+            rest: true,
+        }
+    }
+
     pub const fn choice(
         name: &'static str,
         choices: &'static [&'static str],
@@ -143,6 +171,61 @@ impl ArgSpec {
 
     pub const fn is_none(self) -> bool {
         matches!(self, Self::None)
+    }
+}
+
+/// An owned positional argument.
+///
+/// Built-in commands declare [`ArgSpec`]; descriptors and plugin registrations
+/// use this owned form so names and choices can come from scripts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandArg {
+    pub name: String,
+    pub kind: ArgKind,
+    pub choices: Vec<String>,
+    pub required: bool,
+    pub rest: bool,
+}
+
+impl From<&Arg> for CommandArg {
+    fn from(arg: &Arg) -> Self {
+        Self {
+            name: arg.name.to_string(),
+            kind: arg.kind,
+            choices: arg
+                .choices
+                .iter()
+                .map(|choice| (*choice).to_string())
+                .collect(),
+            required: arg.required,
+            rest: arg.rest,
+        }
+    }
+}
+
+/// The arguments a command accepts, owned so plugins can declare them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ArgList(Vec<CommandArg>);
+
+impl ArgList {
+    pub const fn none() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn new(args: Vec<CommandArg>) -> Self {
+        Self(args)
+    }
+
+    pub fn from_spec(spec: ArgSpec) -> Self {
+        Self(spec.args().iter().map(CommandArg::from).collect())
+    }
+
+    pub fn args(&self) -> &[CommandArg] {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -286,6 +369,7 @@ define_command_enum! {
     pub enum UiCommand {
         CommandPalette => ("vy.ui.command_palette", "Command Palette"),
         ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
+        OpenSettings => ("vy.ui.open_settings", "Open Settings"),
         ScriptEval => ("vy.script.eval", "Script Evaluate"),
         ReconnectServer => ("vy.reconnect_server", "Reconnect Server"),
         ViewOpen => ("vy.view.open", "Open View"),
@@ -298,6 +382,7 @@ impl UiCommand {
     pub fn meta(self) -> CommandMeta {
         match self {
             Self::CommandPalette | Self::ExCommandLine => CommandMeta::hidden(CommandCategory::App),
+            Self::OpenSettings => CommandMeta::listed(CommandCategory::Settings, &["settings"]),
             Self::ScriptEval => CommandMeta::hidden(CommandCategory::App)
                 .with_ex_names(&["ts"])
                 .with_args(ArgSpec::Positionals(CODE_ARGS)),
@@ -330,8 +415,8 @@ define_command_enum! {
 impl ViewCommand {
     pub fn meta(self) -> CommandMeta {
         match self {
-            // Transitional: `:set wrap` replaces this in Phase 5.
-            Self::ToggleWrap => CommandMeta::listed(CommandCategory::View, &["wrap"]),
+            // Sugar for a window override; `:set wrap` is the Ex entry.
+            Self::ToggleWrap => CommandMeta::hidden(CommandCategory::View),
             Self::ScrollHalfPageDown
             | Self::ScrollHalfPageUp
             | Self::CenterCursor
@@ -339,6 +424,43 @@ impl ViewCommand {
             | Self::ScrollCursorBottom
             | Self::ScrollLeft
             | Self::ScrollRight => CommandMeta::hidden(CommandCategory::View),
+        }
+    }
+}
+
+define_command_enum! {
+    /// A command that reads or changes settings.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SettingCommand {
+        Set => ("vy.setting.set", "Set Setting"),
+        Toggle => ("vy.setting.toggle", "Toggle Setting"),
+        Reset => ("vy.setting.reset", "Reset Setting"),
+        ExSet => ("vy.setting.ex_set", "Set (Ex)"),
+        ExSetGlobal => ("vy.setting.ex_set_global", "Set Global (Ex)"),
+    }
+}
+
+const SET_VALUE_ARGS: &[Arg] = &[
+    Arg::required("key", ArgKind::Text),
+    Arg::optional("value", ArgKind::Any),
+    Arg::choice("scope", &["window", "global"], false),
+];
+const SET_KEY_ARGS: &[Arg] = &[Arg::required("key", ArgKind::Text)];
+const EX_SET_ARGS: &[Arg] = &[Arg::optional_rest("option", ArgKind::Text)];
+
+impl SettingCommand {
+    pub fn meta(self) -> CommandMeta {
+        match self {
+            Self::Set => CommandMeta::hidden(CommandCategory::Settings)
+                .with_args(ArgSpec::Positionals(SET_VALUE_ARGS)),
+            Self::Toggle | Self::Reset => CommandMeta::hidden(CommandCategory::Settings)
+                .with_args(ArgSpec::Positionals(SET_KEY_ARGS)),
+            Self::ExSet => CommandMeta::hidden(CommandCategory::Settings)
+                .with_ex_names(&["set"])
+                .with_args(ArgSpec::Positionals(EX_SET_ARGS)),
+            Self::ExSetGlobal => CommandMeta::hidden(CommandCategory::Settings)
+                .with_ex_names(&["setglobal"])
+                .with_args(ArgSpec::Positionals(EX_SET_ARGS)),
         }
     }
 }
@@ -585,4 +707,23 @@ impl BuiltinCommand {
             | Self::TextObjectBacktick => CommandMeta::hidden(CommandCategory::Edit),
         }
     }
+}
+
+/// Turns a command id into a short label for the command palette.
+pub fn display_title(id: &str) -> String {
+    let tail = id.strip_prefix("vy.").unwrap_or(id);
+    let mut title = String::new();
+
+    for word in tail.split(['.', '_']).filter(|word| !word.is_empty()) {
+        if !title.is_empty() {
+            title.push(' ');
+        }
+        let mut characters = word.chars();
+        if let Some(first) = characters.next() {
+            title.extend(first.to_uppercase());
+            title.push_str(characters.as_str());
+        }
+    }
+
+    title
 }

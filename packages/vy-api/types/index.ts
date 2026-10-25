@@ -3,6 +3,7 @@
 
 export * from "./bindings";
 export * from "./BuiltinCommandMap";
+export * from "./CommandMetadata";
 export * from "./HostEvents";
 export * from "./HostMethods";
 export * from "./SettingsKey";

@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 use vy_api_schema::codegen::{self, Output};
 use vy_client_api::command::{
-    BuiltinCommand, DocumentCommand, PaneCommand, UiCommand, ViewCommand,
+    ArgKind, BuiltinCommand, CommandMeta, DocumentCommand, PaneCommand, RangeSpec, SettingCommand,
+    UiCommand, ViewCommand, display_title,
 };
 use vy_client_api::settings::SETTINGS;
 
@@ -63,6 +64,7 @@ fn generate_client(output: &Output) -> Result<(), Box<dyn Error>> {
     let events = vy_client_api::client_host_api_events();
     std::fs::create_dir_all(&output.types_dir)?;
     write_builtin_commands(&output.types_dir)?;
+    write_command_metadata(&output.types_dir)?;
     write_settings_keys(&output.types_dir)?;
     codegen::export_to(output, &methods, &namespaces, &events)?;
     Ok(())
@@ -148,6 +150,7 @@ fn write_builtin_commands(directory: &Path) -> io::Result<()> {
     ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
     ids.extend(UiCommand::all().iter().map(|command| command.id()));
     ids.extend(ViewCommand::all().iter().map(|command| command.id()));
+    ids.extend(SettingCommand::all().iter().map(|command| command.id()));
     ids.sort_unstable();
     ids.dedup();
 
@@ -162,6 +165,128 @@ fn write_builtin_commands(directory: &Path) -> io::Result<()> {
     output.push_str("export type BuiltinCommandId = keyof BuiltinCommandMap;\n");
 
     std::fs::write(directory.join("BuiltinCommandMap.ts"), output)
+}
+
+fn write_command_metadata(directory: &Path) -> io::Result<()> {
+    let mut output = header();
+    output.push_str("import type { ArgKind, CommandCategory } from \"./bindings\";\n\n");
+    output.push_str("/** One declared positional argument. */\n");
+    output.push_str("export interface CommandArgMetadata {\n  name: string;\n  kind: ArgKind;\n  choices: string[];\n  required: boolean;\n  rest: boolean;\n}\n\n");
+    output.push_str("/** Metadata of one command built into the client. */\n");
+    output.push_str("export interface CommandMetadata {\n  id: string;\n  title: string;\n  category: CommandCategory;\n  palette: \"listed\" | \"hidden\";\n  exNames: string[];\n  args: CommandArgMetadata[];\n  range: \"none\" | \"currentLine\" | \"selection\" | \"wholeDocument\";\n  bang: boolean;\n}\n\n");
+    output.push_str("/** Every command built into the client. */\n");
+    output.push_str("export const COMMAND_METADATA: CommandMetadata[] = [\n");
+
+    for (id, title, meta) in builtin_metadata() {
+        output.push_str("  {\n");
+        output.push_str(&format!("    id: \"{}\",\n", escape(id)));
+        output.push_str(&format!("    title: \"{}\",\n", escape(&title)));
+        output.push_str(&format!(
+            "    category: \"{}\",\n",
+            category_name(meta.category)
+        ));
+        output.push_str(&format!(
+            "    palette: \"{}\",\n",
+            match meta.palette {
+                vy_client_api::command::PaletteVisibility::Listed => "listed",
+                vy_client_api::command::PaletteVisibility::Hidden => "hidden",
+            }
+        ));
+        output.push_str(&format!(
+            "    exNames: [{}],\n",
+            meta.ex_names
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        output.push_str("    args: [");
+        for (index, arg) in meta.args.args().iter().enumerate() {
+            if index > 0 {
+                output.push_str(", ");
+            }
+            output.push_str(&format!(
+                "{{ name: \"{}\", kind: \"{}\", choices: [{}], required: {}, rest: {} }}",
+                escape(arg.name),
+                arg_kind_name(arg.kind),
+                arg.choices
+                    .iter()
+                    .map(|choice| format!("\"{choice}\""))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                arg.required,
+                arg.rest
+            ));
+        }
+        output.push_str("],\n");
+        output.push_str(&format!("    range: \"{}\",\n", range_name(meta.range)));
+        output.push_str(&format!("    bang: {},\n", meta.bang));
+        output.push_str("  },\n");
+    }
+
+    output.push_str("];\n");
+    std::fs::write(directory.join("CommandMetadata.ts"), output)
+}
+
+fn builtin_metadata() -> Vec<(&'static str, String, CommandMeta)> {
+    let mut commands = Vec::new();
+    for command in BuiltinCommand::all() {
+        commands.push((command.id(), display_title(command.id()), command.meta()));
+    }
+    for command in PaneCommand::all() {
+        commands.push((command.id(), display_title(command.id()), command.meta()));
+    }
+    for command in DocumentCommand::all() {
+        commands.push((command.id(), command.title().to_string(), command.meta()));
+    }
+    for command in UiCommand::all() {
+        commands.push((command.id(), command.title().to_string(), command.meta()));
+    }
+    for command in ViewCommand::all() {
+        commands.push((command.id(), display_title(command.id()), command.meta()));
+    }
+    for command in SettingCommand::all() {
+        commands.push((command.id(), command.title().to_string(), command.meta()));
+    }
+    commands.sort_by(|left, right| left.0.cmp(right.0));
+    commands
+}
+
+fn category_name(category: vy_client_api::command::CommandCategory) -> &'static str {
+    match category {
+        vy_client_api::command::CommandCategory::File => "file",
+        vy_client_api::command::CommandCategory::Edit => "edit",
+        vy_client_api::command::CommandCategory::Selection => "selection",
+        vy_client_api::command::CommandCategory::View => "view",
+        vy_client_api::command::CommandCategory::Pane => "pane",
+        vy_client_api::command::CommandCategory::App => "app",
+        vy_client_api::command::CommandCategory::Settings => "settings",
+        vy_client_api::command::CommandCategory::Plugin => "plugin",
+    }
+}
+
+fn arg_kind_name(kind: ArgKind) -> &'static str {
+    match kind {
+        ArgKind::Text => "text",
+        ArgKind::Path => "path",
+        ArgKind::Document => "document",
+        ArgKind::Number => "number",
+        ArgKind::Choice => "choice",
+        ArgKind::Any => "any",
+    }
+}
+
+fn range_name(range: RangeSpec) -> &'static str {
+    match range {
+        RangeSpec::None => "none",
+        RangeSpec::CurrentLine => "currentLine",
+        RangeSpec::Selection => "selection",
+        RangeSpec::WholeDocument => "wholeDocument",
+    }
+}
+
+fn escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn write_settings_keys(directory: &Path) -> io::Result<()> {
@@ -195,6 +320,7 @@ mod tests {
         ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
         ids.extend(UiCommand::all().iter().map(|command| command.id()));
         ids.extend(ViewCommand::all().iter().map(|command| command.id()));
+        ids.extend(SettingCommand::all().iter().map(|command| command.id()));
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         sorted.dedup();
@@ -207,11 +333,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create test directory");
         write_builtin_commands(&root).expect("write builtin commands");
+        write_command_metadata(&root).expect("write command metadata");
         write_settings_keys(&root).expect("write settings keys");
 
         let commands =
             std::fs::read_to_string(root.join("BuiltinCommandMap.ts")).expect("read commands");
         assert!(commands.contains("\"vy.motion.left\""));
+        assert!(commands.contains("\"vy.setting.ex_set\""));
+        let metadata = std::fs::read_to_string(root.join("CommandMetadata.ts"))
+            .expect("read command metadata");
+        assert!(metadata.contains("id: \"vy.ui.open_settings\""));
+        assert!(metadata.contains("id: \"vy.setting.ex_set\""));
         let settings = std::fs::read_to_string(root.join("SettingsKey.ts")).expect("read settings");
         assert!(settings.contains("\"ui.fontSize\": number;"));
         let _ = std::fs::remove_dir_all(&root);

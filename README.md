@@ -98,7 +98,7 @@ cargo run -p vy-app -- README.md
 | Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                                                        |
 | Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる                                  |
 | Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                                                |
-| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` / `:q!` 閉じる、`:wrap` 折り返し切替。`:set wrap` へ移行予定） |
+| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` / `:q!` 閉じる、`:set wrap` / `:set nowrap` 折り返し切替） |
 | Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                                                  |
 | Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ                         |
 
@@ -126,12 +126,13 @@ cargo run -p vy-app -- README.md
 ```
 
 `ui.lineNumbers` は `absolute`、`relative`、`off` のいずれかです。`ui.theme` は
-`dark` または `light` です。`editor.wrap`
-はビューポート幅での行折り返しの有無（`:wrap`
-コマンドで切り替え可能。`:set wrap` へ移行予定）です。ファイルを保存すると再読み込みします。`~/.config/vy`
-の場所は `VY_CONFIG_HOME` で変更できます。
+`dark` または `light` です。`editor.wrap` はビューポート幅での行折り返しの有無
+です。実行中は `:set wrap` / `:set nowrap`（現在のウィンドウ）や `:setglobal wrap`
+（セッションの既定値）、`:set` 単体で開く Settings パレットからも変えられます。
+ファイルを保存すると再読み込みします。`~/.config/vy` の場所は `VY_CONFIG_HOME`
+で変更できます。
 
-### init.ts（Phase 2）
+### init.ts
 
 `~/.config/vy/init.ts` を置くと、起動時に評価します。`settings.json`
 より優先され、値はメモリ上だけに反映します。保存し直すとランタイムを作り直して
@@ -143,15 +144,31 @@ import type {} from "vy-api";
 
 vy.config.set({ "ui.fontSize": 16, "ui.lineNumbers": "relative" });
 
-vy.commands.registerCommand("user.uppercase-document", async () => {
-  const document = await vy.editor.activeDocument();
-  if (!document) return;
-  const text = await document.getText();
-  await vy.editor.edit((builder) => {
-    builder.replace(document.fullRange(), text.toUpperCase());
-  });
-  await vy.notifications.show("Uppercased the document");
-});
+vy.commands.register(
+  {
+    id: "user.uppercase-document",
+    title: "Uppercase Document",
+    category: "edit",
+    exNames: ["upper"],
+  },
+  async () => {
+    const document = await vy.editor.activeDocument();
+    if (!document) return;
+    const text = await vy.document.getText({ documentId: document.id });
+    await vy.editor.edit({
+      edits: [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: document.end,
+          },
+          text: text.toUpperCase(),
+        },
+      ],
+    });
+    await vy.notifications.show({ message: "Uppercased the document" });
+  },
+);
 ```
 
 `vy.keymap.bind("space u", "user.uppercase-document", { when: "normalMode" })`

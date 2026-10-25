@@ -39,22 +39,30 @@ vy.keymap.bind({
   when: "normalMode",
 });
 
-vy.commands.registerCommand("user.uppercase-selection", async () => {
-  const active = await vy.editor.activeDocument();
-  if (!active) return;
-  const text = await vy.document.getText({ documentId: active.id });
-  await vy.editor.edit({
-    edits: [
-      {
-        range: {
-          start: { line: 0, character: 0 },
-          end: active.end,
+vy.commands.register(
+  {
+    id: "user.uppercase-selection",
+    title: "Uppercase Selection",
+    category: "edit",
+    exNames: ["upper"],
+  },
+  async () => {
+    const active = await vy.editor.activeDocument();
+    if (!active) return;
+    const text = await vy.document.getText({ documentId: active.id });
+    await vy.editor.edit({
+      edits: [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: active.end,
+          },
+          text: text.toUpperCase(),
         },
-        text: text.toUpperCase(),
-      },
-    ],
-  });
-});
+      ],
+    });
+  },
+);
 ```
 
 `vy` はホストがインストールするグローバルで、import は不要です
@@ -65,8 +73,10 @@ vy.commands.registerCommand("user.uppercase-selection", async () => {
 型定義がずれません。
 
 コマンドのタイトル、カテゴリ、Ex 名、引数の宣言は `commands.register`
-で行います。 `registerCommand` は ID とハンドラだけを渡す糖衣です。設計は
-[`commands.md`](./commands.md) の「プラグイン」にあります（実装は Phase 5）。
+で行います。 `registerCommand` は ID とハンドラだけを渡す糖衣です。設計と
+`args` の形は [`commands.md`](./commands.md) の「プラグイン」にあります。
+Ex 名を登録できるのは信頼済みのプラグインだけで、組み込みや他のプラグインと
+重複すると登録に失敗します。
 
 ### 1.2 settings.json
 

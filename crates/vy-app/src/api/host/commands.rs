@@ -7,19 +7,47 @@ use vy_host_api::{CallError, Reply};
 
 use super::ClientHost;
 use crate::commands::{
-    BuiltinCommand, CommandDescriptor, CommandSource, DocumentCommand, KeymapArgs, PaneCommand,
-    UiCommand, argument_error, validate_json_args,
+    ArgList, BuiltinCommand, CommandArg, CommandDescriptor, CommandError, CommandSource,
+    DocumentCommand, KeymapArgs, PaneCommand, SettingCommand, UiCommand, argument_error,
+    validate_json_args,
 };
 use crate::plugin_host::HostAction;
 
 impl CommandsApi for ClientHost<'_, '_, '_> {
     fn register_command(&mut self, params: CommandsRegisterParams) -> Result<Reply<()>, CallError> {
         let owner = self.call.context.owner.clone();
+        let args = ArgList::new(
+            params
+                .args
+                .unwrap_or_default()
+                .into_iter()
+                .map(|arg| CommandArg {
+                    name: arg.name,
+                    kind: arg.kind,
+                    choices: arg.choices,
+                    required: arg.required,
+                    rest: arg.rest,
+                })
+                .collect(),
+        );
         self.call
             .context
             .commands
-            .register(params.id, owner)
-            .map_err(|error| CallError::invalid_state(error.to_string()))?;
+            .register_described(
+                params.id,
+                owner,
+                params.title,
+                params.category,
+                params.ex_names.unwrap_or_default(),
+                args,
+            )
+            .map_err(|error| match error {
+                CommandError::InvalidId(_)
+                | CommandError::Reserved(_)
+                | CommandError::InvalidExName(_)
+                | CommandError::DuplicateExName(_) => CallError::invalid_params(error.to_string()),
+                _ => CallError::invalid_state(error.to_string()),
+            })?;
         Ok(Reply::Value(()))
     }
 
@@ -34,15 +62,16 @@ impl CommandsApi for ClientHost<'_, '_, '_> {
             .find(|command| command.id == id);
 
         if let Some(descriptor) = &descriptor
-            && !matches!(
-                descriptor.source,
-                CommandSource::Init | CommandSource::Plugin(_)
-            )
-            && let Err(error) = validate_json_args(descriptor.args, &params.args)
+            && (!descriptor.args.is_empty()
+                || !matches!(
+                    descriptor.source,
+                    CommandSource::Init | CommandSource::Plugin(_)
+                ))
+            && let Err(error) = validate_json_args(&descriptor.args, &params.args)
         {
             return Err(CallError::invalid_params(argument_error(
                 &id,
-                descriptor.args,
+                &descriptor.args,
                 &error,
             )));
         }
@@ -55,6 +84,11 @@ impl CommandsApi for ClientHost<'_, '_, '_> {
 
         if let Some(command) = UiCommand::parse(&id) {
             self.call.outcome.action = HostAction::Ui {
+                command,
+                args: arguments,
+            };
+        } else if let Some(command) = SettingCommand::parse(&id) {
+            self.call.outcome.action = HostAction::Setting {
                 command,
                 args: arguments,
             };
@@ -98,13 +132,9 @@ fn command_info(command: &CommandDescriptor) -> CommandInfo {
             .args()
             .iter()
             .map(|arg| CommandArgInfo {
-                name: arg.name.to_string(),
+                name: arg.name.clone(),
                 kind: arg.kind,
-                choices: arg
-                    .choices
-                    .iter()
-                    .map(|choice| (*choice).to_string())
-                    .collect(),
+                choices: arg.choices.clone(),
                 required: arg.required,
                 rest: arg.rest,
             })

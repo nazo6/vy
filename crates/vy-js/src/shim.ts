@@ -144,19 +144,50 @@ type RegisterHandler<K extends string> = K extends keyof BuiltinCommandMap
     ? (args: Vy.CommandMap[K]) => unknown
     : (args?: unknown) => unknown;
 
+type CommandArgKind =
+  | "text"
+  | "path"
+  | "document"
+  | "number"
+  | "choice"
+  | "any";
+
+interface CommandArgRegistration {
+  name: string;
+  kind: CommandArgKind;
+  choices?: string[];
+  required?: boolean;
+  rest?: boolean;
+}
+
+interface CommandRegistration {
+  id: string;
+  title?: string;
+  category?: "file" | "edit" | "selection" | "view" | "pane" | "app" | "settings" | "plugin";
+  exNames?: string[];
+  args?: CommandArgRegistration[];
+}
+
 function registerCommand<const K extends string>(
   id: K,
   handler: RegisterHandler<K>,
 ): Disposable {
+  return register({ id }, handler);
+}
+
+function register<const K extends string>(
+  options: CommandRegistration & { id: K },
+  handler: RegisterHandler<K>,
+): Disposable {
   const callback = handler as (args?: unknown) => unknown;
   if (typeof callback !== "function") {
-    throw new TypeError("commands.registerCommand needs a handler function");
+    throw new TypeError("commands.register needs a handler function");
   }
-  call("commands.registerCommand", { id });
-  commandHandlers.set(id, callback);
+  call("commands.registerCommand", options);
+  commandHandlers.set(options.id, callback);
   return {
     dispose() {
-      commandHandlers.delete(id);
+      commandHandlers.delete(options.id);
     },
   };
 }
@@ -174,6 +205,7 @@ function execute<const K extends string>(params: ExecuteParams<K>): Promise<unkn
 }
 
 export const commands = Object.assign(methods<CommandsApi>("commands"), {
+  register,
   registerCommand,
   execute,
 });

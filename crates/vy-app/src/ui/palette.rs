@@ -130,6 +130,21 @@ fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
             empty: "no matching options",
             hint: "Enter choose  ·  Esc deny  ·  Up/Down move",
         },
+        Overlay::Settings(_) => OverlayLabels {
+            count: format!("{filtered_count} settings"),
+            empty: "no matching settings",
+            hint: "Enter change  ·  Esc close  ·  Up/Down move",
+        },
+        Overlay::SettingChoice(_) => OverlayLabels {
+            count: format!("{filtered_count} choices"),
+            empty: "no matching choices",
+            hint: "Enter select  ·  Esc back  ·  Up/Down move",
+        },
+        Overlay::SettingPrompt(_) => OverlayLabels {
+            count: "set value".to_string(),
+            empty: "type a value and press Enter",
+            hint: "Enter apply  ·  Esc back",
+        },
         Overlay::Ex(_) => OverlayLabels {
             count: String::new(),
             empty: "",

@@ -10,9 +10,9 @@ export interface SettingsMap {
   /** Line height in points, or a multiple of the font size when at most 4. */
   "ui.lineHeight": number;
   /** Line number style: absolute, relative, or off. */
-  "ui.lineNumbers": string;
+  "ui.lineNumbers": "absolute" | "relative" | "off";
   /** Color theme: dark or light. */
-  "ui.theme": string;
+  "ui.theme": "dark" | "light";
   /** Idle time in milliseconds before an undo transaction is closed. */
   "editor.transactionIdleMs": number;
   /** Time in milliseconds allowed between keys of one sequence. */

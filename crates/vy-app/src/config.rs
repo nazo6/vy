@@ -73,6 +73,29 @@ pub struct Inspect {
     pub effective: Option<Value>,
 }
 
+/// Which layer supplied the effective value of a setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingSource {
+    Default,
+    User,
+    Project,
+    Memory,
+    /// A per-window override (see `PaneState::settings`).
+    Window,
+}
+
+impl SettingSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::User => "user",
+            Self::Project => "project",
+            Self::Memory => "memory",
+            Self::Window => "window",
+        }
+    }
+}
+
 /// Resolved settings.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Config {
@@ -113,6 +136,22 @@ impl Config {
         self.layers.iter().rev().find_map(|layer| layer.get(key))
     }
 
+    /// Returns the effective value and the layer that supplied it.
+    pub fn effective_with_source(&self, key: &str) -> (Option<Value>, SettingSource) {
+        for (index, layer) in self.layers.iter().enumerate().rev() {
+            if let Some(value) = layer.get(key) {
+                let source = match index {
+                    0 => SettingSource::Default,
+                    1 => SettingSource::User,
+                    2 => SettingSource::Project,
+                    _ => SettingSource::Memory,
+                };
+                return (Some(value.clone()), source);
+            }
+        }
+        (None, SettingSource::Default)
+    }
+
     /// Returns every layer's value for a key.
     pub fn inspect(&self, key: &str) -> Inspect {
         Inspect {
@@ -138,6 +177,11 @@ impl Config {
         let had_values = !memory.is_empty();
         memory.clear();
         had_values
+    }
+
+    /// Removes one memory-layer value. Returns whether it had a value.
+    pub fn remove_memory(&mut self, key: &str) -> bool {
+        self.layers[Layer::Memory.index()].remove(key).is_some()
     }
 
     /// Sets several memory values at once, as `config.set` does. Returns the keys
@@ -328,6 +372,44 @@ mod tests {
 
         config.set("editor.wrap", Value::Bool(true));
         assert!(config.wrap());
+    }
+
+    #[test]
+    fn reports_the_layer_of_each_setting() {
+        let mut config = Config::with_defaults();
+        assert_eq!(
+            config.effective_with_source("ui.fontSize"),
+            (Some(Value::from(14.0)), SettingSource::Default)
+        );
+
+        let mut user = Map::new();
+        user.insert("ui.fontSize".into(), Value::from(18.0));
+        config.replace_layer(Layer::User, user);
+        assert_eq!(
+            config.effective_with_source("ui.fontSize").1,
+            SettingSource::User
+        );
+
+        let mut project = Map::new();
+        project.insert("ui.fontSize".into(), Value::from(20.0));
+        config.replace_layer(Layer::Project, project);
+        assert_eq!(
+            config.effective_with_source("ui.fontSize").1,
+            SettingSource::Project
+        );
+
+        config.set("ui.fontSize", Value::from(22.0));
+        assert_eq!(
+            config.effective_with_source("ui.fontSize").1,
+            SettingSource::Memory
+        );
+
+        assert!(config.remove_memory("ui.fontSize"));
+        assert_eq!(
+            config.effective_with_source("ui.fontSize"),
+            (Some(Value::from(20.0)), SettingSource::Project)
+        );
+        assert!(!config.remove_memory("ui.fontSize"));
     }
 
     #[test]

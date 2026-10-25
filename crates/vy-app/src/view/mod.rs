@@ -72,6 +72,8 @@ pub struct EditorView {
     reconnect_requested: bool,
     pending: HashMap<u64, Pending>,
     config: Config,
+    /// Set when runtime settings changed; the next render refreshes caches.
+    settings_dirty: bool,
     paths: Paths,
     connection: ConnectionSpec,
     connection_name: String,
@@ -215,6 +217,7 @@ impl EditorView {
             reconnect_requested: false,
             pending: HashMap::new(),
             config,
+            settings_dirty: false,
             paths,
             connection: startup.connection.clone(),
             connection_name: startup.connection_name.clone(),
@@ -490,6 +493,27 @@ impl EditorView {
             cx.set_global(theme);
             cx.notify();
         }
+    }
+
+    /// Refreshes cached config values after a runtime settings change.
+    pub(super) fn apply_config_change(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_dirty {
+            return;
+        }
+        self.settings_dirty = false;
+
+        let idle = Duration::from_millis(self.config.transaction_idle_ms());
+        let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
+        self.set_transaction_idle(idle);
+        self.keymap.set_sequence_timeout(timeout);
+        self.config_arc = std::sync::Arc::new(self.config.clone());
+
+        let theme = if self.config.theme() == "light" {
+            Theme::light()
+        } else {
+            Theme::dark()
+        };
+        self.update_theme(theme, cx);
     }
 
     /// Starts the cursor blinking loop.

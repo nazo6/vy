@@ -80,15 +80,18 @@ globals.__vy_run_command = (id, argsJson) => {
     return Promise.resolve(handler(args));
 };
 function registerCommand(id, handler) {
+    return register({ id }, handler);
+}
+function register(options, handler) {
     const callback = handler;
     if (typeof callback !== "function") {
-        throw new TypeError("commands.registerCommand needs a handler function");
+        throw new TypeError("commands.register needs a handler function");
     }
-    call("commands.registerCommand", { id });
-    commandHandlers.set(id, callback);
+    call("commands.registerCommand", options);
+    commandHandlers.set(options.id, callback);
     return {
         dispose() {
-            commandHandlers.delete(id);
+            commandHandlers.delete(options.id);
         },
     };
 }
@@ -96,6 +99,7 @@ function execute(params) {
     return Promise.resolve(call("commands.execute", params));
 }
 export const commands = Object.assign(methods("commands"), {
+    register,
     registerCommand,
     execute,
 });

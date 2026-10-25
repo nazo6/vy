@@ -244,6 +244,7 @@ impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let started = Instant::now();
 
+        self.apply_config_change(cx);
         self.char_width = ui::pane::font_character_width(&self.config, window);
 
         // Fit the viewport to the window before choosing which lines to draw.

@@ -45,6 +45,9 @@ pub struct ContributedCommand {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Short Ex names reserved by the plugin. Only trusted plugins register them.
+    #[serde(default, rename = "exNames", skip_serializing_if = "Vec::is_empty")]
+    pub ex_names: Vec<String>,
 }
 
 /// Contributed features such as commands and configuration.

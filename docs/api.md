@@ -254,7 +254,7 @@ version と一致したときだけ確定します。
 | API                                      | 実行場所 | ケイパビリティ | 優先度     |
 | :--------------------------------------- | :------- | :------------- | :--------- |
 | `commands.registerCommand(id, handler)`  | local    | なし           | P0         |
-| `commands.register(descriptor, handler)` | local    | なし           | P1（予定） |
+| `commands.register(descriptor, handler)` | local    | なし           | P0         |
 | `commands.execute({ id, args? })`        | both     | なし           | P0         |
 | `commands.getCommands()`                 | local    | なし           | P1         |
 | `keymap.bind({ keys, command, when?, args? })` | local    | なし           | P0         |
@@ -270,7 +270,10 @@ version と一致したときだけ確定します。
 です。`when` には コンテキスト式を書きます。
 
 `commands.register` は、ID とハンドラに加えてタイトル、カテゴリ、Ex 名、引数の
-仕様を受け取ります。`registerCommand` はタイトルを省略した糖衣です。
+仕様を受け取ります。`registerCommand` はメタデータを省略した糖衣です。Ex 名を
+登録できるのは信頼済みのプラグインだけで、小文字英字で始まり小文字英字・数字・
+`-` だけを使えます。組み込みや他のプラグインと重複する場合は登録に失敗します。
+引数の `kind` は `text` / `path` / `document` / `number` / `choice` / `any` です。
 `commands.getCommands` は `CommandInfo[]` を返します。各要素は `id`、`title`、
 `category`、`palette`、`exNames`、`args`、`range`、`bang` を持ちます。形は
 [`commands.md`](./commands.md) の「データモデル」と「プラグイン」にあります。
@@ -563,7 +566,7 @@ Webview は最終手段です。Notebook の出力、HTML
 
 - UI:
   `ui`、`views`、`panes`、`windows`、`webview`、`notifications`、`progress`、`keymap`、
-  `commands.registerCommand`
+  `commands.register`、`commands.registerCommand`
 - クライアント状態:
   `editor.activeDocument`、`editor.mode`、`editor.selections`、
   `editor.setMode`、`editor.open`、`editor.reveal`
@@ -636,7 +639,7 @@ Phase 2 では `vy` から呼べる範囲を次のとおり実装しました。
 
 | 名前空間        | 実装済み                                                                                                |
 | :-------------- | :------------------------------------------------------------------------------------------------------ |
-| `commands`      | `registerCommand`、`execute`、`getCommands`                                                             |
+| `commands`      | `register`、`registerCommand`、`execute`、`getCommands`                                                 |
 | `keymap`        | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
 | `config`        | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
 | `editor`        | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |

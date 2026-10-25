@@ -239,6 +239,7 @@ fn write_barrel(directory: &Path) -> std::io::Result<()> {
     let mut output = header();
     output.push_str("export * from \"./bindings\";\n");
     output.push_str("export * from \"./BuiltinCommandMap\";\n");
+    output.push_str("export * from \"./CommandMetadata\";\n");
     output.push_str("export * from \"./HostEvents\";\n");
     output.push_str("export * from \"./HostMethods\";\n");
     output.push_str("export * from \"./SettingsKey\";\n");
