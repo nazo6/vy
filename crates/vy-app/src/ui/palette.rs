@@ -116,6 +116,14 @@ pub fn render_palette(
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .child(format!("{prefix}{}", palette.query))
+                .when(!palette.preedit.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .border_b_1()
+                            .border_color(theme.foreground.default)
+                            .child(palette.preedit.clone()),
+                    )
+                })
                 .child(input_caret(theme, font_size, caret_width)),
         )
         .child(

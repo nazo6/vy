@@ -4,6 +4,7 @@
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ExState {
     pub input: String,
+    pub preedit: String,
     pub history_index: Option<usize>,
 }
 
@@ -15,6 +16,12 @@ impl ExState {
     /// Appends a typed character to the input line.
     pub fn push_char(&mut self, character: char) {
         self.input.push(character);
+        self.history_index = None;
+    }
+
+    /// Appends committed text to the input line.
+    pub fn push_str(&mut self, text: &str) {
+        self.input.push_str(text);
         self.history_index = None;
     }
 
@@ -114,5 +121,14 @@ mod tests {
         history.navigate(&mut state, 1);
         assert_eq!(state.input, "q");
         assert_eq!(state.history_index, Some(1));
+    }
+
+    #[test]
+    fn appends_text_with_push_str() {
+        let mut state = ExState::new();
+        state.push_str("edit");
+        assert_eq!(state.input, "edit");
+        state.push_str(" main.rs");
+        assert_eq!(state.input, "edit main.rs");
     }
 }

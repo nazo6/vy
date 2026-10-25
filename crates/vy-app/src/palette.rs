@@ -86,6 +86,7 @@ pub fn approval_picker_items(
 pub struct PaletteState {
     pub mode: PaletteMode,
     pub query: String,
+    pub preedit: String,
     pub selected: usize,
 }
 
@@ -98,6 +99,7 @@ impl PaletteState {
         Self {
             mode,
             query: String::new(),
+            preedit: String::new(),
             selected: 0,
         }
     }
@@ -115,6 +117,12 @@ impl PaletteState {
     /// Appends a typed character to the query.
     pub fn push_char(&mut self, character: char) {
         self.query.push(character);
+        self.reset_selection();
+    }
+
+    /// Appends committed text to the query.
+    pub fn push_str(&mut self, text: &str) {
+        self.query.push_str(text);
         self.reset_selection();
     }
 
@@ -202,6 +210,15 @@ mod tests {
             filtered_palette_indices(&items, "missing").is_empty(),
             "unexpected matches"
         );
+    }
+
+    #[test]
+    fn appends_text_with_push_str() {
+        let mut palette = PaletteState::new();
+        palette.push_str("file");
+        assert_eq!(palette.query, "file");
+        palette.push_str(" open");
+        assert_eq!(palette.query, "file open");
     }
 
     #[test]

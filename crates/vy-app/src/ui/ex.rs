@@ -42,6 +42,14 @@ pub fn render_ex(
                 .flex()
                 .items_center()
                 .child(ex.input.clone())
+                .when(!ex.preedit.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .border_b_1()
+                            .border_color(theme.foreground.default)
+                            .child(ex.preedit.clone()),
+                    )
+                })
                 .child(input_caret(theme, font_size, caret_width)),
         )
         .focus_trap("ex-bar-trap", focus_handle);

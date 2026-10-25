@@ -513,6 +513,10 @@ impl EditorView {
 
         if self.ex.is_some() {
             if let Some(key) = key {
+                if matches!(key, Key::Char(_)) {
+                    // Printable text reaches input handler via replace_text_in_range
+                    return;
+                }
                 self.handle_ex_key(key);
             }
             self.sync_modal_focus(window, cx);
@@ -523,6 +527,10 @@ impl EditorView {
 
         if self.palette.is_some() {
             if let Some(key) = key {
+                if matches!(key, Key::Char(_)) {
+                    // Printable text reaches input handler via replace_text_in_range
+                    return;
+                }
                 self.handle_palette_key(key);
             }
             self.sync_modal_focus(window, cx);

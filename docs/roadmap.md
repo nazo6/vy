@@ -52,7 +52,7 @@ Phase 8 で扱います。
 - [ ] Phase 1 の検証項目:
   - [x] Linux (Wayland) で起動する。Windows は Phase 1 の対象外とする
   - [ ] macOS で起動する（手元に環境がないため未確認）
-  - [ ] 日本語 IME の前編集が、カーソル位置に正しく出る
+  - [x] 日本語 IME の前編集が、カーソル位置に正しく出る
   - [x] 20万行のファイルを開き、スクロールと入力が引っかからない
     - 実測: 20万行のスナップショットを 7.2 ms で読み込み、1フレームの組み立ては
       0.1–0.4 ms。ホイールで移動できる行は、ファイルの大きさに依存しない
@@ -236,11 +236,11 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       合いません（`crates/vy-app/src/text_layout.rs` の `chunk_line` と
       `scroll_to_show_horizontal`、`crates/vy-app/src/ui/pane.rs`、
       `crates/vy-app/src/view/render.rs` のホバー）。
-- [ ] IME の候補ウィンドウの位置を、横スクロール、折り返し、サブ行を考慮して返す。
+- [x] IME の候補ウィンドウの位置を、横スクロール、折り返し、サブ行を考慮して返す。
       `bounds_for_range` はスクロール量を見ず、`character_index_for_point` は常に
       `None` を返します（`crates/vy-app/src/view/input.rs`）。Phase 1 の
       「日本語 IME の前編集が、カーソル位置に正しく出る」も未チェックのままです。
-- [ ] パレットと Ex コマンドラインで IME の前編集を使えるようにする。どちらも
+- [x] パレットと Ex コマンドラインで IME の前編集を使えるようにする。どちらも
       キーイベントで文字を積むため、日本語の入力と検索ができません
       （`crates/vy-app/src/view/commands.rs`、`crates/vy-app/src/view/input.rs`、
       [`keymap.md`](./keymap.md)）。
