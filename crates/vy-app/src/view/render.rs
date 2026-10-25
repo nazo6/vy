@@ -263,13 +263,44 @@ impl Render for EditorView {
 
         let content = match self.layout.clone() {
             Some(layout) => self.render_node(&layout, cx, window),
-            None => div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(theme.foreground.subtle)
-                .child("waiting for vy-server"),
+            None => {
+                let view_entity = cx.entity();
+                div()
+                    .relative()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.foreground.subtle)
+                    .child("waiting for vy-server")
+                    .child(
+                        canvas(
+                            |_, _, _| (),
+                            move |bounds, _, window, cx| {
+                                let view = view_entity.read(cx);
+                                window.handle_input(
+                                    &view.focus_handle,
+                                    ElementInputHandler::new(bounds, view_entity.clone()),
+                                    cx,
+                                );
+                                window.handle_input(
+                                    &view.palette_focus_handle,
+                                    ElementInputHandler::new(bounds, view_entity.clone()),
+                                    cx,
+                                );
+                                window.handle_input(
+                                    &view.ex_focus_handle,
+                                    ElementInputHandler::new(bounds, view_entity.clone()),
+                                    cx,
+                                );
+                            },
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    )
+            }
         };
 
         let element = div()
@@ -409,6 +440,37 @@ impl EditorView {
                 );
             }
 
+            if active {
+                let view_entity = cx.entity();
+                area = area.child(
+                    canvas(
+                        |_, _, _| (),
+                        move |bounds, _, window, cx| {
+                            let view = view_entity.read(cx);
+                            window.handle_input(
+                                &view.focus_handle,
+                                ElementInputHandler::new(bounds, view_entity.clone()),
+                                cx,
+                            );
+                            window.handle_input(
+                                &view.palette_focus_handle,
+                                ElementInputHandler::new(bounds, view_entity.clone()),
+                                cx,
+                            );
+                            window.handle_input(
+                                &view.ex_focus_handle,
+                                ElementInputHandler::new(bounds, view_entity.clone()),
+                                cx,
+                            );
+                        },
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                );
+            }
+
             let border = if active && self.panes.len() > 1 {
                 theme.background.split_active
             } else if self.panes.len() > 1 {
@@ -447,9 +509,19 @@ impl EditorView {
                 }
 
                 if active {
-                    let focus = view_entity_paint.read(cx).focus_handle.clone();
+                    let view = view_entity_paint.read(cx);
                     window.handle_input(
-                        &focus,
+                        &view.focus_handle,
+                        ElementInputHandler::new(bounds, view_entity_paint.clone()),
+                        cx,
+                    );
+                    window.handle_input(
+                        &view.palette_focus_handle,
+                        ElementInputHandler::new(bounds, view_entity_paint.clone()),
+                        cx,
+                    );
+                    window.handle_input(
+                        &view.ex_focus_handle,
                         ElementInputHandler::new(bounds, view_entity_paint.clone()),
                         cx,
                     );

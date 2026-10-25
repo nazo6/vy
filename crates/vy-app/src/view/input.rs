@@ -1,8 +1,8 @@
 //! Focus and input method (IME) composition handling for `EditorView`.
 
 use gpui::{
-    App, Bounds, Context, EntityInputHandler, FocusHandle, Focusable, Pixels, SharedString,
-    TextRun, UTF16Selection, Window, point, px, size,
+    App, Bounds, Context, EntityInputHandler, FocusHandle, Focusable, Pixels, ScrollStrategy,
+    SharedString, TextRun, UTF16Selection, Window, point, px, size,
 };
 use vy_app::editor::{Action, Mode};
 use vy_app::palette::PaletteMode;
@@ -288,6 +288,8 @@ impl EntityInputHandler for EditorView {
                     if !text.is_empty() {
                         palette.push_str(text);
                     }
+                    self.palette_scroll_handle
+                        .scroll_to_item(0, ScrollStrategy::Top);
                     cx.notify();
                 }
             }
@@ -406,8 +408,7 @@ impl EntityInputHandler for EditorView {
                     + (element_bounds.size.width - palette_w) / 2.0
                     + px(16.0)
                     + width;
-                let origin_y =
-                    element_bounds.origin.y + px(crate::ui::titlebar::TITLEBAR_HEIGHT) + px(20.0);
+                let origin_y = element_bounds.origin.y + px(20.0);
                 Some(Bounds::new(
                     point(origin_x, origin_y),
                     size(px(2.), px(self.line_height())),
@@ -435,7 +436,7 @@ impl EntityInputHandler for EditorView {
                     width = shaped.x_for_index(full_prefix.len());
                 }
                 let origin_x = element_bounds.origin.x + px(8.0) + width;
-                let origin_y = element_bounds.bottom() - px(24.0);
+                let origin_y = element_bounds.bottom();
                 Some(Bounds::new(
                     point(origin_x, origin_y),
                     size(px(2.), px(self.line_height())),
