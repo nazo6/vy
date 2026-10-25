@@ -1,7 +1,6 @@
 //! `views` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 use crate::WidgetNode;
@@ -9,14 +8,14 @@ use crate::WidgetNode;
 /// `views.render` parameters.
 ///
 /// `tree` is the widget tree returned by the view's render callback.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ViewsRenderParams {
     pub id: String,
     pub tree: WidgetNode,
 }
 
 /// Direction a view pane opens toward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ViewDirection {
     Left,
@@ -37,29 +36,27 @@ impl ViewDirection {
 }
 
 /// `views.open` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewOpenParams {
     pub view: String,
     #[serde(default)]
-    #[ts(optional = nullable)]
     pub direction: Option<ViewDirection>,
 }
 
 /// `views.close` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewCloseParams {
     pub view: String,
 }
 
 /// `views.toggle` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewToggleParams {
     pub view: String,
     #[serde(default)]
-    #[ts(optional = nullable)]
     pub direction: Option<ViewDirection>,
 }
 

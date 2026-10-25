@@ -1,56 +1,52 @@
 //! `editor` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_core::{Selection, TextEdit, Uri};
 use vy_host_api::{CallError, DocumentInfoReply, Reply};
 
 use crate::keymap::Mode;
 
 /// `editor.setMode` parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct EditorSetModeParams {
     pub mode: Mode,
 }
 
 /// `editor.setSelections` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct EditorSetSelectionsParams {
     pub selections: Vec<Selection>,
 }
 
 /// `editor.edit` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct EditorEditParams {
     pub edits: Vec<TextEdit>,
 }
 
 /// `editor.edit` reply.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct EditorEditReply {
-    #[ts(type = "number")]
     pub version: u64,
 }
 
 /// `editor.open` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorOpenParams {
     pub uri: Uri,
     #[serde(default)]
-    #[ts(type = "number")]
-    #[ts(optional = nullable)]
     pub pane_id: Option<u64>,
 }
 
 /// Payload of `editor.onDidChangeSelection`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct SelectionChange {
     pub selections: Vec<Selection>,
 }
 
 /// Payload of `editor.onDidChangeActiveDocument`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ActiveDocumentChange {
     pub document: Option<DocumentInfoReply>,
 }

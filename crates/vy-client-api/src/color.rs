@@ -1,7 +1,6 @@
 //! Semantic color tokens scripts can use for slots and widgets.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// A color named after a theme token.
 ///
@@ -17,7 +16,7 @@ use ts_rs::TS;
     Hash,
     Serialize,
     Deserialize,
-    TS,
+    specta::Type,
     strum::IntoStaticStr,
     strum::EnumString,
 )]

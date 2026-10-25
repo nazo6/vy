@@ -135,8 +135,7 @@ pnpm docs:api
   コメントが正です。`pnpm generate:api` で `api-base.d.ts` に JSDoc として出ます。
 - JS 向けの糖衣（`vy.commands.registerCommand`、`vy.commands.execute`、イベント購読）の
   説明は `crates/vy-js/src/shim.ts` に書きます。`shim.d.ts` はそこから生成されます。
-- 型の説明は Rust の doc コメントから `ts-rs` が JSDoc として出します。params
-  型のフィールドは型レベルの説明に書きます（`ts-rs` はフィールド単位の JSDoc
-  を出しません）。
+- 型の説明は Rust の doc コメントから Specta が JSDoc として出します（ADR 0023）。
+  フィールドやバリアント単位の説明も反映されます。
 - コメントは英語で書きます（§1）。生成 HTML の確認は `pnpm docs:api`
   が警告なしで終わることと、主要な API ページに説明と例が出ることです。

@@ -29,7 +29,7 @@ In this repository, `tsconfig.json` maps `vy-api` to
 
 `api-base.d.ts` and [`types/index.ts`](./types/index.ts) are generated from the
 `#[vy_api_trait]` declarations in `crates/vy-host-api` and `crates/vy-client-api`.
-The per-type declarations and the `HostMethods`, `HostEvents`,
+The Specta-generated `bindings.ts` and the `HostMethods`, `HostEvents`,
 `BuiltinCommandMap`, and `SettingsKey` helpers live in `types/`.
 
 The runtime implementation and its JS-facing types live in

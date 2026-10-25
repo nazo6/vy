@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 use crate::{ThemeColor, statusline::StatuslineAlignment};
@@ -12,17 +11,16 @@ use crate::{ThemeColor, statusline::StatuslineAlignment};
 /// `alignment` places the item on the left or right. `priority` orders items
 /// within the same side; higher values are shown first. `command` runs when the
 /// item is clicked.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct StatuslineCreateParams {
     pub id: String,
     pub alignment: StatuslineAlignment,
     #[serde(default)]
-    #[ts(optional)]
     pub priority: Option<i32>,
     pub text: String,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub color: Option<ThemeColor>,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub command: Option<String>,
 }
 
@@ -30,21 +28,23 @@ pub struct StatuslineCreateParams {
 ///
 /// `color` and `command` distinguish an absent field (leave as is) from `null`
 /// (clear it). The host validates `color` against the theme tokens.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct StatuslineUpdateParams {
     pub id: String,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub text: Option<String>,
-    #[ts(type = "string | null")]
+    #[serde(default)]
+    #[specta(type = Option<String>)]
     pub color: Option<Value>,
-    #[ts(type = "string | null")]
+    #[serde(default)]
+    #[specta(type = Option<String>)]
     pub command: Option<Value>,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub visible: Option<bool>,
 }
 
 /// `ui.statusline.disposeItem` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct StatuslineDisposeParams {
     pub id: String,
 }

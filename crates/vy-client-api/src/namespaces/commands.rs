@@ -2,28 +2,26 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 use crate::command::{ArgKind, CommandCategory, PaletteVisibility, RangeSpec};
 
 /// `commands.registerCommand` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct CommandsRegisterParams {
     pub id: String,
 }
 
 /// `commands.execute` parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct CommandsExecuteParams {
     pub id: String,
     #[serde(default)]
-    #[ts(type = "unknown")]
     pub args: Value,
 }
 
 /// One positional argument of a command.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandArgInfo {
     pub name: String,
@@ -34,7 +32,7 @@ pub struct CommandArgInfo {
 }
 
 /// Metadata for a registered command, used by the palette and the Ex resolver.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandInfo {
     pub id: String,

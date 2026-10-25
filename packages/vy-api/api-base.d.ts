@@ -84,7 +84,7 @@ export interface Disposable {
 /** Registers command handlers and runs commands by id. */
 export interface CommandsApi {
   /** Lists the metadata of every registered command. */
-  getCommands(): Promise<Array<CommandInfo>>;
+  getCommands(): Promise<CommandInfo[]>;
 }
 
 /** Reads and writes settings. */
@@ -113,7 +113,7 @@ export interface DocumentApi {
   /** Returns the text of a line, or null when the line is out of range. */
   lineAt(params: DocumentLineAtParams): Promise<string | null>;
   /** Converts a position to a UTF-16 offset. */
-  offsetAt(params: DocumentOffsetAtParams): Promise<number>;
+  offsetAt(params: DocumentOffsetAtParams): Promise<unknown>;
   /** Converts a UTF-16 offset to a position. */
   positionAt(params: DocumentPositionAtParams): Promise<Position>;
 }
@@ -123,7 +123,7 @@ export interface EditorApi {
   /** Returns the document in the focused pane, or null when none is open. */
   activeDocument(): Promise<DocumentInfoReply | null>;
   /** Returns every open document. */
-  documents(): Promise<Array<DocumentInfoReply>>;
+  documents(): Promise<DocumentInfoReply[]>;
   /** Applies edits to the active document in one transaction. */
   edit(params: EditorEditParams): Promise<EditorEditReply>;
   /** Returns the editor mode of the focused pane. */
@@ -133,7 +133,7 @@ export interface EditorApi {
   /** Redoes the last undone transaction. */
   redo(): Promise<void>;
   /** Returns the selections of the focused pane. */
-  selections(): Promise<Array<Selection>>;
+  selections(): Promise<Selection[]>;
   /** Switches the focused pane to a mode. */
   setMode(params: EditorSetModeParams): Promise<void>;
   /** Replaces the selections of the focused pane. */
@@ -175,7 +175,7 @@ export interface KeymapApi {
   /** Sets a keymap context value used by `when` clauses. */
   setContext(params: KeymapSetContextParams): Promise<void>;
   /** Removes a key binding and returns the number removed. */
-  unbind(params: KeymapUnbindParams): Promise<number>;
+  unbind(params: KeymapUnbindParams): Promise<unknown>;
 }
 
 /** Writes to plugin log channels. */
@@ -267,7 +267,7 @@ export interface WorkspaceApi {
   /** Returns the workspace root, name, folders, and trust state. */
   info(): Promise<WorkspaceInfoReply>;
   /** Returns the text documents open in the workspace. */
-  textDocuments(): Promise<Array<DocumentInfoReply>>;
+  textDocuments(): Promise<DocumentInfoReply[]>;
   /** Fires when the workspace folders change. */
   onDidChangeWorkspaceFolders(listener: (event: WorkspaceFoldersChange) => void): Disposable;
 }

@@ -1,7 +1,6 @@
 //! Statusline value types shared with the plugin API.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// Horizontal alignment of a statusline item.
 #[derive(
@@ -12,7 +11,7 @@ use ts_rs::TS;
     Eq,
     Serialize,
     Deserialize,
-    TS,
+    specta::Type,
     strum::IntoStaticStr,
     strum::EnumString,
 )]

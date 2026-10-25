@@ -1,20 +1,19 @@
 //! `keymap` declarations.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use vy_host_api::{CallError, Reply};
 
 /// `keymap.bind` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeymapBindParams {
     pub keys: String,
     pub command: String,
-    #[ts(optional = nullable)]
+    #[serde(default)]
     pub when: Option<String>,
 }
 
 /// `keymap.unbind` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeymapUnbindParams {
     pub keys: String,
 }
@@ -22,7 +21,7 @@ pub struct KeymapUnbindParams {
 /// A value visible to a `when` expression, set by `keymap.setContext`.
 ///
 /// A context value is a boolean, a string, or a number.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, specta::Type)]
 #[serde(untagged)]
 pub enum KeyContextValue {
     Bool(bool),
@@ -31,7 +30,7 @@ pub enum KeyContextValue {
 }
 
 /// `keymap.setContext` parameters.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, specta::Type)]
 pub struct KeymapSetContextParams {
     pub key: String,
     pub value: KeyContextValue,

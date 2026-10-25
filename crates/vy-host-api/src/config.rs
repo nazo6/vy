@@ -4,19 +4,18 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 use vy_api_schema::Json;
 
 use crate::{CallError, Reply};
 
 /// `config.get` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigGetParams {
     pub key: String,
 }
 
 /// `config.inspect` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigInspectParams {
     pub key: String,
 }
@@ -25,22 +24,17 @@ pub struct ConfigInspectParams {
 ///
 /// Layers are listed from lowest to highest precedence: `default`, `user`,
 /// `project`, `memory`. A layer that does not define the key is `null`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigInspectReply {
-    #[ts(type = "unknown")]
     pub default: Option<Value>,
-    #[ts(type = "unknown")]
     pub user: Option<Value>,
-    #[ts(type = "unknown")]
     pub project: Option<Value>,
-    #[ts(type = "unknown")]
     pub memory: Option<Value>,
-    #[ts(type = "unknown")]
     pub effective: Option<Value>,
 }
 
 /// Payload of `config.onDidChange`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ConfigChange {
     pub key: String,
 }

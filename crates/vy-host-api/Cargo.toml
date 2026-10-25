@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-ts-rs.workspace = true
+specta.workspace = true
 vy-api-schema.workspace = true
 vy-core.workspace = true
 vy-proto.workspace = true

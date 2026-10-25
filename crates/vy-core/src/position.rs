@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// A zero-based line and a column in UTF-16 code units.
 ///
 /// This matches how JavaScript counts string positions. The core stores char indices
 /// internally and converts to this type at the boundary (see "Position representation"
 /// in `docs/architecture.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, specta::Type,
+)]
 pub struct Position {
     pub line: u32,
     pub character: u32,
@@ -19,7 +20,7 @@ impl Position {
 }
 
 /// A range between two positions. The end is exclusive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct Range {
     pub start: Position,
     pub end: Position,
@@ -37,7 +38,7 @@ impl Range {
 }
 
 /// A cursor. A point when `anchor` and `head` are equal, otherwise a selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct Selection {
     pub anchor: Position,
     pub head: Position,

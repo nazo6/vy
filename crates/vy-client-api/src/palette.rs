@@ -1,18 +1,15 @@
 //! Picker value types shared with the plugin API.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// A generic item displayed in a picker / palette list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct PickerItem {
     pub id: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional = nullable)]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional = nullable)]
     pub detail: Option<String>,
 }
 

@@ -2,17 +2,11 @@
 //!
 //! A namespace module lists its methods and the TypeScript types that describe
 //! them. The codegen and the shim read these declarations; see
-//! `docs/adr/0008-declare-plugin-api-with-macros.md`.
-
-use std::any::TypeId;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use std::collections::HashSet;
-use std::path::PathBuf;
+//! `docs/adr/0008-declare-plugin-api-with-macros.md` and `docs/adr/0023-specta-api-types.md`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::{Config, TS, TypeVisitor};
+use specta::Type;
 
 /// Any JSON value. Its TypeScript type is `unknown`.
 ///
@@ -22,100 +16,43 @@ use ts_rs::{Config, TS, TypeVisitor};
 #[serde(transparent)]
 pub struct Json(pub Value);
 
-impl TS for Json {
-    type WithoutGenerics = Self;
-    type OptionInnerType = Self;
-
-    fn name(_: &Config) -> String {
-        "unknown".to_string()
-    }
-
-    fn inline(_: &Config) -> String {
-        "unknown".to_string()
+impl Type for Json {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        <specta_typescript::Unknown as Type>::definition(types)
     }
 }
 
 /// A TypeScript type a method or an event refers to.
 ///
-/// The name is `TS::name`, so `Option<T>` becomes `T | null` and `Vec<T>`
-/// becomes `Array<T>`. The collector adds the type and every type it depends
-/// on to the generated files.
+/// The name is rendered with Specta, so `Option<T>` becomes `T | null` and
+/// `Vec<T>` becomes `T[]`. The register function adds the type and every
+/// transitive type it depends on to the `specta::Types` registry.
 #[derive(Clone, Copy, Debug)]
 pub struct TypeRef {
     /// The TypeScript name, for example `EditorSetModeParams`.
     pub name: fn() -> String,
-    /// Adds this type and its transitive dependencies to `collector`.
-    pub collect: fn(&mut TypeCollector),
+    /// Adds this type and its transitive dependencies to `types`.
+    pub register: fn(&mut specta::Types),
 }
 
-/// The TypeScript files a declaration refers to.
+/// Registers `T` and all types it transitively depends on into `types`.
+pub fn register<T: Type>(types: &mut specta::Types) {
+    <T as Type>::definition(types);
+}
+
+/// The TypeScript name of a boundary type.
 ///
-/// `ts-rs` knows how to render a type and the types it depends on, but it only
-/// exports them from generated tests. The codegen walks the declarations with
-/// this collector instead, so every file comes from one place.
-#[derive(Default)]
-pub struct TypeCollector {
-    files: BTreeMap<PathBuf, String>,
-    named: BTreeSet<(String, PathBuf)>,
-    seen: HashSet<TypeId>,
-}
-
-impl TypeCollector {
-    /// Adds `T` and the types it depends on.
-    pub fn insert<T: TS + 'static + ?Sized>(&mut self) {
-        if !self.seen.insert(TypeId::of::<T>()) {
-            return;
-        }
-
-        let config = Config::default();
-        if let Some(path) = T::output_path()
-            && let Ok(body) = T::export_to_string(&config)
-        {
-            self.named.insert((T::name(&config), path.clone()));
-            self.files.insert(path, body);
-        }
-
-        struct Visit<'a>(&'a mut TypeCollector);
-
-        impl TypeVisitor for Visit<'_> {
-            fn visit<T: TS + 'static + ?Sized>(&mut self) {
-                self.0.insert::<T>();
-            }
-        }
-
-        // `visit_dependencies` walks the fields, but wrapper types such as
-        // `Option<T>` and `Vec<T>` only visit their own dependencies there.
-        // Their type parameter arrives through `visit_generics`.
-        T::visit_dependencies(&mut Visit(self));
-        T::visit_generics(&mut Visit(self));
-    }
-
-    /// The files to write, keyed by their path under the export directory.
-    pub fn files(&self) -> &BTreeMap<PathBuf, String> {
-        &self.files
-    }
-
-    /// The named types to import, keyed by TypeScript name.
-    pub fn named(&self) -> impl Iterator<Item = (&str, &PathBuf)> {
-        self.named.iter().map(|(name, path)| (name.as_str(), path))
-    }
-
-    /// Whether the collector found a type with this TypeScript name.
-    pub fn contains(&self, name: &str) -> bool {
-        self.named.iter().any(|(found, _)| found == name)
-    }
-}
-
-/// Adds `T` and the types it depends on to `collector`.
-pub fn collect<T: TS + 'static + ?Sized>(collector: &mut TypeCollector) {
-    collector.insert::<T>();
+/// Specta maps `Option<T>` to `T | null`, `Vec<T>` to `T[]`, and `()` to
+/// `null`, so the declaration needs no hand-written TypeScript strings.
+pub fn ts_name<T: Type>() -> String {
+    let mut types = specta::Types::default();
+    let dt = <T as Type>::definition(&mut types);
+    let exporter: specta_typescript::Exporter = specta_typescript::Typescript::default().into();
+    specta_typescript::primitives::reference(&exporter, &types, &dt)
+        .unwrap_or_else(|_| "unknown".to_string())
 }
 
 /// One host method, as `#[vy_api_trait]` collected it.
-///
-/// `params` is `None` for a method without arguments. The names are computed
-/// from the Rust types with `ts-rs`, so the declarations cannot drift from the
-/// generated `.ts` files.
 #[derive(Clone, Copy, Debug)]
 pub struct MethodDecl {
     /// Wire name, for example `editor.mode`.
@@ -156,42 +93,38 @@ pub struct NamespaceDecl {
     pub doc: &'static str,
 }
 
-/// The TypeScript name of a boundary type.
-///
-/// `ts-rs` maps `Option<T>` to `T | null`, `Vec<T>` to `Array<T>`, and `()` to
-/// `null`, so the declaration needs no hand-written TypeScript strings.
-pub fn ts_name<T: TS>() -> String {
-    <T as TS>::name(&Config::default())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::{Deserialize, Serialize};
 
-    #[derive(Serialize, Deserialize, TS)]
+    #[derive(Serialize, Deserialize, Type)]
     struct Inner {
         value: u32,
     }
 
-    #[derive(Serialize, Deserialize, TS)]
+    #[derive(Serialize, Deserialize, Type)]
     struct Outer {
         inner: Option<Inner>,
         items: Vec<Inner>,
     }
 
     #[test]
-    fn collects_types_behind_wrappers() {
-        let mut collector = TypeCollector::default();
-        collect::<Option<Inner>>(&mut collector);
-        assert!(collector.contains("Inner"));
+    fn registers_types_recursively() {
+        let mut types = specta::Types::default();
+        register::<Outer>(&mut types);
+        let ts = specta_typescript::Typescript::default()
+            .export(&types, &specta_serde::Format)
+            .unwrap();
+        assert!(ts.contains("export type Inner"));
+        assert!(ts.contains("export type Outer"));
     }
 
     #[test]
-    fn collects_field_types_recursively() {
-        let mut collector = TypeCollector::default();
-        collect::<Outer>(&mut collector);
-        assert!(collector.contains("Outer"));
-        assert!(collector.contains("Inner"));
+    fn formats_type_names() {
+        assert_eq!(ts_name::<Inner>(), "Inner");
+        assert_eq!(ts_name::<Option<Inner>>(), "Inner | null");
+        assert_eq!(ts_name::<Vec<Inner>>(), "Inner[]");
+        assert_eq!(ts_name::<()>(), "null");
+        assert_eq!(ts_name::<Json>(), "unknown");
     }
 }

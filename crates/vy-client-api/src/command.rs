@@ -7,10 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
-use ts_rs::TS;
 
 /// The user-facing group a command belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum CommandCategory {
     File,
@@ -24,7 +23,7 @@ pub enum CommandCategory {
 }
 
 /// Whether the command appears in the command palette list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum PaletteVisibility {
     Listed,
@@ -32,7 +31,7 @@ pub enum PaletteVisibility {
 }
 
 /// The ranges a command accepts. `None` rejects a range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RangeSpec {
     None,
@@ -42,7 +41,7 @@ pub enum RangeSpec {
 }
 
 /// The kind of one positional argument.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ArgKind {
     Text,

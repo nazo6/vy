@@ -2,10 +2,9 @@
 
 use crate::{CallError, Reply};
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// `context.info` reply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginContextReply {
     pub plugin_id: String,
@@ -14,7 +13,7 @@ pub struct PluginContextReply {
 }
 
 /// Information about the remote connection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteInfo {
     pub is_remote: bool,
