@@ -773,3 +773,116 @@ fn visual_mode_switching_between_variants() {
     editor.handle_key(Key::Esc);
     assert_eq!(editor.mode(), Mode::Normal);
 }
+
+#[test]
+fn display_motions_move_by_display_line_when_wrapped() {
+    let mut editor = Editor::with_text("0123456789abcdef\nsecond line", 0);
+    editor.set_wrap_width(Some(10));
+
+    // Move to character '3' (display col 3)
+    press(&mut editor, "3l");
+    assert_eq!(editor.cursor(), at(0, 3));
+
+    // 'gj' moves down to chunk 1 of line 0 at display col 3 ('d' at utf16 offset 13)
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(0, 13));
+
+    // 'gj' again moves to line 1 at display col 3 ('o' at utf16 offset 3)
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(1, 3));
+
+    // 'gk' moves back up to chunk 1 of line 0
+    press(&mut editor, "gk");
+    assert_eq!(editor.cursor(), at(0, 13));
+
+    // 'gk' moves back to chunk 0 of line 0
+    press(&mut editor, "gk");
+    assert_eq!(editor.cursor(), at(0, 3));
+}
+
+#[test]
+fn display_motions_with_count() {
+    let mut editor = Editor::with_text("0123456789abcdef\nsecond line", 0);
+    editor.set_wrap_width(Some(10));
+
+    press(&mut editor, "3l");
+    assert_eq!(editor.cursor(), at(0, 3));
+
+    // '2gj' skips the next chunk and lands on line 1
+    press(&mut editor, "2gj");
+    assert_eq!(editor.cursor(), at(1, 3));
+
+    // '2gk' goes back 2 visual rows to chunk 0 of line 0
+    press(&mut editor, "2gk");
+    assert_eq!(editor.cursor(), at(0, 3));
+}
+
+#[test]
+fn display_motions_preserve_display_col_across_short_lines() {
+    let mut editor = Editor::with_text("0123456789abcdef\nxy\n0123456789", 0);
+    editor.set_wrap_width(Some(10));
+
+    press(&mut editor, "5l");
+    assert_eq!(editor.cursor(), at(0, 5));
+
+    // Down to chunk 1 of line 0 (char 'f', offset 15, display col 5)
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(0, 15));
+
+    // Down to line 1 "xy", which has only 2 characters; clamps to 'y' at offset 1
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(1, 1));
+
+    // Down to line 2 "0123456789", restores preferred display col 5 ('5' at offset 5)
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(2, 5));
+}
+
+#[test]
+fn display_motions_behave_like_regular_motions_when_nowrap() {
+    let mut editor = Editor::with_text("hello\nworld", 0);
+    editor.set_wrap_width(None);
+
+    press(&mut editor, "2l");
+    assert_eq!(editor.cursor(), at(0, 2));
+
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(1, 2));
+
+    press(&mut editor, "gk");
+    assert_eq!(editor.cursor(), at(0, 2));
+}
+
+#[test]
+fn display_motions_with_operator_delete() {
+    let mut editor = Editor::with_text("0123456789abcdef\nsecond line", 0);
+    editor.set_wrap_width(Some(10));
+
+    press(&mut editor, "3l");
+    assert_eq!(editor.cursor(), at(0, 3));
+
+    // 'dgj' deletes from character '3' (offset 3) to character 'd' (offset 13)
+    press(&mut editor, "dgj");
+    assert_eq!(editor.text(), "012def\nsecond line");
+    assert_eq!(editor.cursor(), at(0, 3));
+}
+
+#[test]
+fn display_motions_with_wide_characters() {
+    let mut editor = Editor::with_text("あいうえおかきくけこ", 0);
+    editor.set_wrap_width(Some(10));
+
+    // "あいうえお" is 5 chars * 2 width = 10 cols (chunk 0)
+    // "かきくけこ" is 5 chars * 2 width = 10 cols (chunk 1)
+    // Move to 'う' (offset 2, display col 4)
+    press(&mut editor, "2l");
+    assert_eq!(editor.cursor(), at(0, 2));
+
+    // 'gj' should land on 'く' (offset 7, display col 4)
+    press(&mut editor, "gj");
+    assert_eq!(editor.cursor(), at(0, 7));
+
+    // 'gk' should land back on 'う' (offset 2, display col 4)
+    press(&mut editor, "gk");
+    assert_eq!(editor.cursor(), at(0, 2));
+}

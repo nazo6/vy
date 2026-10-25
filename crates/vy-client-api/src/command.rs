@@ -559,6 +559,10 @@ pub enum BuiltinCommand {
     MoveUp,
     #[strum(serialize = "vy.motion.down")]
     MoveDown,
+    #[strum(serialize = "vy.motion.display_up")]
+    MoveDisplayUp,
+    #[strum(serialize = "vy.motion.display_down")]
+    MoveDisplayDown,
     #[strum(serialize = "vy.motion.word_forward")]
     WordForward,
     #[strum(serialize = "vy.motion.word_backward")]
@@ -678,6 +682,8 @@ impl BuiltinCommand {
             | Self::MoveRight
             | Self::MoveUp
             | Self::MoveDown
+            | Self::MoveDisplayUp
+            | Self::MoveDisplayDown
             | Self::WordForward
             | Self::WordBackward
             | Self::WordEnd

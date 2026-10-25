@@ -379,9 +379,17 @@ impl EditorView {
         };
         let last_visual = view.mode().is_select().then(|| view.selection());
 
+        let is_wrap = pane.is_wrap(&self.config);
+        let wrap_width = if is_wrap {
+            Some(pane.viewport_cols.max(1))
+        } else {
+            None
+        };
+
         let Some(document) = self.documents.get_mut(&document_id) else {
             return;
         };
+        document.editor.set_wrap_width(wrap_width);
         if let Some(range) = last_visual {
             document.editor.set_last_visual(range);
         }

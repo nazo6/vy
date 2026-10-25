@@ -33,6 +33,8 @@ export interface BuiltinCommandMap {
   "vy.mode.select": unknown;
   "vy.mode.select_block": unknown;
   "vy.mode.select_line": unknown;
+  "vy.motion.display_down": unknown;
+  "vy.motion.display_up": unknown;
   "vy.motion.document_end": unknown;
   "vy.motion.document_start": unknown;
   "vy.motion.down": unknown;

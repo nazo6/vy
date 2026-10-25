@@ -90,6 +90,26 @@
         "when": "mode != 'insert'"
     },
     {
+        "keys": "g j",
+        "command": "vy.motion.display_down",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "g down",
+        "command": "vy.motion.display_down",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "g k",
+        "command": "vy.motion.display_up",
+        "when": "mode != 'insert'"
+    },
+    {
+        "keys": "g up",
+        "command": "vy.motion.display_up",
+        "when": "mode != 'insert'"
+    },
+    {
         "keys": "g v",
         "command": "vy.edit.last_visual",
         "when": "normalMode"

@@ -68,6 +68,10 @@ pub struct Editor {
     insert_kind: InsertKind,
     /// Column kept across vertical moves. Updated by horizontal moves and dropped by others.
     preferred_character: Option<u32>,
+    /// Display column kept across visual/display vertical moves.
+    preferred_display_col: Option<usize>,
+    /// Visual wrap width (viewport columns) if line wrapping is enabled.
+    wrap_width: Option<usize>,
 }
 
 impl Editor {
@@ -96,6 +100,8 @@ impl Editor {
             insert_buffer: String::new(),
             insert_kind: InsertKind::Normal,
             preferred_character: None,
+            preferred_display_col: None,
+            wrap_width: None,
         };
         editor.select_one_char(Position::new(0, 0));
         editor
@@ -111,6 +117,7 @@ impl Editor {
         self.insert_buffer.clear();
         self.insert_kind = InsertKind::Normal;
         self.preferred_character = None;
+        self.preferred_display_col = None;
         self.select_one_char(Position::new(0, 0));
     }
 
@@ -188,6 +195,7 @@ impl Editor {
         self.anchor = self.clamp(selection.anchor);
         self.head = self.clamp(selection.head);
         self.preferred_character = None;
+        self.preferred_display_col = None;
     }
 
     fn selection_state(&self) -> Selection {
@@ -261,6 +269,7 @@ impl Editor {
             operator_count: self.operator_count,
             text_object: self.text_object,
             preferred_character: self.preferred_character,
+            preferred_display_col: self.preferred_display_col,
         }
     }
 
@@ -273,11 +282,22 @@ impl Editor {
         self.operator_count = state.operator_count;
         self.text_object = state.text_object;
         self.preferred_character = state.preferred_character;
+        self.preferred_display_col = state.preferred_display_col;
 
         // Normal mode always keeps one character selected, even for a fresh pane.
         if self.mode == Mode::Normal && self.anchor == self.head {
             self.select_one_char(self.head);
         }
+    }
+
+    /// Sets the visual wrap width in columns for visual/display line motions.
+    pub fn set_wrap_width(&mut self, width: Option<usize>) {
+        self.wrap_width = width;
+    }
+
+    /// The visual wrap width in columns, or `None` if wrap is disabled.
+    pub fn wrap_width(&self) -> Option<usize> {
+        self.wrap_width
     }
 
     /// Clamps a stored pane state to the current text after another pane edited it.
@@ -311,6 +331,7 @@ impl Editor {
         self.head = self.previous_char(range.end).unwrap_or(self.anchor);
         self.last_edit = None;
         self.preferred_character = None;
+        self.preferred_display_col = None;
         Action::None
     }
 
@@ -368,6 +389,14 @@ impl Editor {
             }
             BuiltinCommand::MoveDown => {
                 self.apply_motion(Motion::Down, args.count);
+                Action::None
+            }
+            BuiltinCommand::MoveDisplayUp => {
+                self.apply_motion(Motion::DisplayUp, args.count);
+                Action::None
+            }
+            BuiltinCommand::MoveDisplayDown => {
+                self.apply_motion(Motion::DisplayDown, args.count);
                 Action::None
             }
             BuiltinCommand::WordForward => {
@@ -588,6 +617,7 @@ impl Editor {
         self.version += 1;
         self.last_edit = Some(Instant::now());
         self.preferred_character = None;
+        self.preferred_display_col = None;
         self.anchor = self.clamp(self.anchor);
         self.head = self.clamp(self.head);
 

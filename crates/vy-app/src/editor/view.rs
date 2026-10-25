@@ -20,6 +20,7 @@ pub struct ViewState {
     pub(super) operator_count: Option<u32>,
     pub(super) text_object: Option<TextObjectKind>,
     pub(super) preferred_character: Option<u32>,
+    pub(super) preferred_display_col: Option<usize>,
 }
 
 impl Default for ViewState {
@@ -33,6 +34,7 @@ impl Default for ViewState {
             operator_count: None,
             text_object: None,
             preferred_character: None,
+            preferred_display_col: None,
         }
     }
 }

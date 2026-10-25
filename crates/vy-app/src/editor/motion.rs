@@ -9,6 +9,8 @@ pub(super) enum Motion {
     Right,
     Up,
     Down,
+    DisplayUp,
+    DisplayDown,
     WordForward,
     WordBackward,
     WordEnd,
@@ -32,6 +34,8 @@ pub(super) fn motion_of(command: BuiltinCommand) -> Option<Motion> {
         BuiltinCommand::MoveRight => Some(Motion::Right),
         BuiltinCommand::MoveUp => Some(Motion::Up),
         BuiltinCommand::MoveDown => Some(Motion::Down),
+        BuiltinCommand::MoveDisplayUp => Some(Motion::DisplayUp),
+        BuiltinCommand::MoveDisplayDown => Some(Motion::DisplayDown),
         BuiltinCommand::WordForward => Some(Motion::WordForward),
         BuiltinCommand::WordBackward => Some(Motion::WordBackward),
         BuiltinCommand::WordEnd => Some(Motion::WordEnd),
@@ -54,6 +58,9 @@ pub(super) fn combined_count(left: Option<u32>, right: Option<u32>) -> Option<u3
 use super::Editor;
 use super::operator::OperatorRange;
 use crate::keymap::Mode;
+use crate::text_layout::{
+    DEFAULT_TAB_STOP, cached_chunk_line, display_col_to_utf16, utf16_to_display_col,
+};
 use vy_core::Position;
 
 impl Editor {
@@ -72,6 +79,8 @@ impl Editor {
             }
             Motion::Up => self.move_vertical(-(times as i64)),
             Motion::Down => self.move_vertical(times as i64),
+            Motion::DisplayUp => self.move_display_vertical(-(times as i64)),
+            Motion::DisplayDown => self.move_display_vertical(times as i64),
             Motion::WordForward => {
                 for _ in 0..times {
                     let target = self.word_forward_at(self.current());
@@ -206,6 +215,26 @@ impl Editor {
                 let (first, last) = (start.line.min(target), start.line.max(target));
                 Some(self.linewise_range(first, last))
             }
+            Motion::DisplayUp | Motion::DisplayDown => {
+                let delta = match motion {
+                    Motion::DisplayUp => -(times as i64),
+                    _ => times as i64,
+                };
+                let (target, _) = self.target_display_vertical(start, delta, None);
+                if target == start {
+                    return None;
+                }
+                let (first, last) = if start <= target {
+                    (start, target)
+                } else {
+                    (target, start)
+                };
+                Some(OperatorRange {
+                    start: first,
+                    end: last,
+                    linewise: false,
+                })
+            }
             Motion::DocumentStart => Some(self.linewise_range(0, start.line)),
             Motion::DocumentEnd => Some(self.linewise_range(start.line, self.last_line())),
         }
@@ -213,6 +242,7 @@ impl Editor {
 
     pub(super) fn move_to(&mut self, position: Position) {
         self.preferred_character = None;
+        self.preferred_display_col = None;
         self.move_to_inner(position);
     }
 
@@ -238,6 +268,7 @@ impl Editor {
         };
         let position = self.text.char_to_position(target).unwrap_or(current);
         self.preferred_character = Some(position.character);
+        self.preferred_display_col = None;
         self.move_to_inner(position);
     }
 
@@ -253,6 +284,142 @@ impl Editor {
         };
         let position = Position::new(line, desired.min(limit));
         self.preferred_character = Some(desired);
+        self.preferred_display_col = None;
+        self.move_to_inner(position);
+    }
+
+    pub(super) fn target_display_vertical(
+        &self,
+        from: Position,
+        delta: i64,
+        preferred_col: Option<usize>,
+    ) -> (Position, usize) {
+        let Some(cols) = self.wrap_width else {
+            let desired = preferred_col
+                .unwrap_or_else(|| self.preferred_character.unwrap_or(from.character) as usize);
+            let line = (from.line as i64 + delta).clamp(0, self.last_line() as i64) as u32;
+            let length = self.text.line_len_utf16(line as usize).unwrap_or_default();
+            let limit = match self.mode {
+                Mode::Normal => length.saturating_sub(1),
+                _ => length,
+            };
+            let position = Position::new(line, (desired as u32).min(limit));
+            return (position, desired);
+        };
+
+        let cols = cols.max(1);
+        let tab_stop = DEFAULT_TAB_STOP;
+
+        let from_line_text = self
+            .text
+            .line_string(from.line as usize)
+            .unwrap_or_default();
+        let from_chunks = cached_chunk_line(&from_line_text, cols, tab_stop);
+        let char_offset = from.character as usize;
+
+        let current_chunk_idx = from_chunks
+            .chunks
+            .iter()
+            .enumerate()
+            .find_map(|(idx, chunk)| {
+                let is_last = idx + 1 >= from_chunks.chunks.len();
+                if is_last {
+                    if char_offset >= chunk.utf16_range.start {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                } else if char_offset >= chunk.utf16_range.start
+                    && char_offset < chunk.utf16_range.end
+                {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        let current_chunk = &from_chunks.chunks[current_chunk_idx];
+        let offset_in_chunk = char_offset.saturating_sub(current_chunk.utf16_range.start);
+        let chunk_text = from_line_text
+            .get(current_chunk.byte_range.clone())
+            .unwrap_or("");
+        let current_col = utf16_to_display_col(chunk_text, offset_in_chunk, tab_stop);
+        let desired_col = preferred_col.unwrap_or(current_col);
+
+        let mut line = from.line as usize;
+        let mut chunk_idx = current_chunk_idx;
+        let total_lines = self.text.line_count();
+
+        if delta > 0 {
+            let mut remaining = delta as usize;
+            while remaining > 0 {
+                let line_text = self.text.line_string(line).unwrap_or_default();
+                let chunks = cached_chunk_line(&line_text, cols, tab_stop);
+                if chunk_idx + 1 < chunks.chunks.len() {
+                    chunk_idx += 1;
+                    remaining -= 1;
+                } else if line + 1 < total_lines {
+                    line += 1;
+                    chunk_idx = 0;
+                    remaining -= 1;
+                } else {
+                    break;
+                }
+            }
+        } else if delta < 0 {
+            let mut remaining = delta.unsigned_abs() as usize;
+            while remaining > 0 {
+                if chunk_idx > 0 {
+                    chunk_idx -= 1;
+                    remaining -= 1;
+                } else if line > 0 {
+                    line -= 1;
+                    let prev_text = self.text.line_string(line).unwrap_or_default();
+                    let prev_chunks = cached_chunk_line(&prev_text, cols, tab_stop);
+                    chunk_idx = prev_chunks.chunks.len().saturating_sub(1);
+                    remaining -= 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let target_line_text = self.text.line_string(line).unwrap_or_default();
+        let target_chunks = cached_chunk_line(&target_line_text, cols, tab_stop);
+        let target_chunk = &target_chunks.chunks[chunk_idx];
+        let target_chunk_text = target_line_text
+            .get(target_chunk.byte_range.clone())
+            .unwrap_or("");
+
+        let char_in_chunk = display_col_to_utf16(target_chunk_text, desired_col, tab_stop);
+        let chunk_len = target_chunk
+            .utf16_range
+            .end
+            .saturating_sub(target_chunk.utf16_range.start);
+
+        let clamped_char_in_chunk = match self.mode {
+            Mode::Normal => {
+                if chunk_len == 0 {
+                    0
+                } else {
+                    char_in_chunk.min(chunk_len.saturating_sub(1))
+                }
+            }
+            _ => char_in_chunk.min(chunk_len),
+        };
+
+        let target_char = (target_chunk.utf16_range.start + clamped_char_in_chunk) as u32;
+        let position = Position::new(line as u32, target_char);
+        (position, desired_col)
+    }
+
+    pub fn move_display_vertical(&mut self, delta: i64) {
+        let current = self.current();
+        let (position, desired_col) =
+            self.target_display_vertical(current, delta, self.preferred_display_col);
+        self.preferred_display_col = Some(desired_col);
+        self.preferred_character = Some(position.character);
         self.move_to_inner(position);
     }
 
