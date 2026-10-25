@@ -49,11 +49,17 @@ export interface BuiltinCommandMap {
   "vy.operator.inner": unknown;
   "vy.operator.yank": unknown;
   "vy.pane.close": unknown;
+  "vy.pane.decrease_height": unknown;
+  "vy.pane.decrease_width": unknown;
+  "vy.pane.equalize": unknown;
   "vy.pane.focus_down": unknown;
   "vy.pane.focus_left": unknown;
   "vy.pane.focus_right": unknown;
   "vy.pane.focus_up": unknown;
+  "vy.pane.increase_height": unknown;
+  "vy.pane.increase_width": unknown;
   "vy.pane.next": unknown;
+  "vy.pane.resize": unknown;
   "vy.pane.split_down": unknown;
   "vy.pane.split_left": unknown;
   "vy.pane.split_right": unknown;

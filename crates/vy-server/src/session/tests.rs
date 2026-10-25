@@ -878,7 +878,61 @@ fn sync_request_replaces_unsaved_text_and_keeps_saved_version() {
     assert_eq!(synced.documents[0].version, 7);
     assert_eq!(synced.documents[0].saved_version, 5);
     assert_eq!(synced.documents[0].document_id, opened.document_id);
-
     let _ = std::fs::remove_dir_all(&data);
     let _ = std::fs::remove_dir_all(&workspace);
+}
+
+#[test]
+fn resizes_pane_and_notifies_layout_change() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    open_untitled(&mut session);
+
+    // Split to create a second pane
+    let outcome = request(
+        &mut session,
+        3,
+        "pane/open",
+        to_value(&PaneOpenParams {
+            view: None,
+            uri: "vy:untitled".into(),
+            placement: Some(vy_proto::PanePlacement {
+                target: Some(1),
+                direction: Some("right".into()),
+                ratio: None,
+            }),
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 2);
+
+    // Resize pane 1
+    let outcome = request(
+        &mut session,
+        4,
+        "pane/resize",
+        to_value(&vy_proto::PaneResizeParams {
+            pane_id: Some(1),
+            direction: Some("horizontal".into()),
+            delta: Some(0.1),
+            ..Default::default()
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 2);
+    let res: vy_proto::PaneResizeResult =
+        decode_params(ok_value(&outcome.messages[0])).expect("resize result");
+    assert_eq!(res.revision, 3);
+
+    // Verify layout did_change notification was sent
+    let notification = &outcome.messages[1];
+    let RpcMessage::Notification { method, params } = notification else {
+        panic!("expected notification");
+    };
+    assert_eq!(method, "layout/did_change");
+    let layout_notif: vy_proto::LayoutDidChangeNotification =
+        decode_params(params).expect("layout did change");
+    assert_eq!(layout_notif.reason.as_deref(), Some("resize"));
+    let Some(vy_core::LayoutNode::Split { ratio, .. }) = layout_notif.layout else {
+        panic!("expected split node");
+    };
+    assert!((ratio - 0.6).abs() < 1e-4);
 }

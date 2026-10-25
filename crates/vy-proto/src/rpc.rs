@@ -79,6 +79,8 @@ define_methods! {
     PaneFocus => ("pane/focus", PaneFocusParams, PaneFocusResult),
     /// Closes a pane.
     PaneClose => ("pane/close", PaneCloseParams, PaneCloseResult),
+    /// Resizes a pane or boundary.
+    PaneResize => ("pane/resize", PaneResizeParams, PaneResizeResult),
     /// Returns the whole layout.
     LayoutGet => ("layout/get", (), LayoutGetResult),
     /// Opens a document in an existing pane.

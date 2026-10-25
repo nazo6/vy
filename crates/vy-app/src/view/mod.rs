@@ -51,6 +51,7 @@ pub(super) enum Pending {
     Redo,
     Close,
     Focus,
+    Resize,
     EditorOpen,
     Save,
     HostCall {
@@ -64,6 +65,18 @@ pub(super) struct PluginRuntime {
     pub(super) host: PluginHost,
     pub(super) generation: u64,
     pub(super) started: bool,
+}
+
+/// Active drag operation resizing a split.
+#[derive(Debug, Clone)]
+pub(super) struct SplitDragState {
+    pub(super) first_pane: PaneId,
+    pub(super) second_pane: PaneId,
+    pub(super) direction: vy_core::SplitDirection,
+    pub(super) start_mouse: Point<Pixels>,
+    pub(super) start_ratio: f32,
+    pub(super) total_pixels: f32,
+    pub(super) current_ratio: f32,
 }
 
 pub struct EditorView {
@@ -151,6 +164,7 @@ pub struct EditorView {
     pub(super) status_generation: usize,
     pub(crate) config_arc: std::sync::Arc<Config>,
     pub(crate) theme_arc: std::sync::Arc<Theme>,
+    pub(super) resizing_split: Option<SplitDragState>,
 }
 
 impl EditorView {
@@ -275,6 +289,7 @@ impl EditorView {
             status_generation: 0,
             config_arc,
             theme_arc,
+            resizing_split: None,
         };
 
         if let Some(warning) = warnings.last() {

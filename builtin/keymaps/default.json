@@ -387,5 +387,30 @@
         "keys": "ctrl-w w",
         "command": "vy.pane.next",
         "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w +",
+        "command": "vy.pane.increase_height",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w -",
+        "command": "vy.pane.decrease_height",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w >",
+        "command": "vy.pane.increase_width",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w <",
+        "command": "vy.pane.decrease_width",
+        "when": "normalMode"
+    },
+    {
+        "keys": "ctrl-w =",
+        "command": "vy.pane.equalize",
+        "when": "normalMode"
     }
 ]

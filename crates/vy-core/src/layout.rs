@@ -130,6 +130,66 @@ impl Layout {
         self.leaves().contains(&pane)
     }
 
+    /// Resets all split ratios in the layout tree to 0.5.
+    pub fn equalize(&mut self) {
+        if let Some(root) = self.root.as_mut() {
+            equalize_node(root);
+            self.revision += 1;
+        }
+    }
+
+    /// Resizes the boundary between two adjacent panes (their lowest common ancestor split).
+    pub fn resize_boundary(
+        &mut self,
+        first_pane: PaneId,
+        second_pane: PaneId,
+        ratio: f32,
+    ) -> Result<(), LayoutError> {
+        if !self.contains(first_pane) {
+            return Err(LayoutError::PaneNotFound(first_pane));
+        }
+        if !self.contains(second_pane) {
+            return Err(LayoutError::PaneNotFound(second_pane));
+        }
+        let Some(root) = self.root.as_mut() else {
+            return Err(LayoutError::PaneNotFound(first_pane));
+        };
+
+        let clamped = ratio.clamp(0.05, 0.95);
+        if set_boundary_ratio(root, first_pane, second_pane, clamped) {
+            self.revision += 1;
+            Ok(())
+        } else {
+            Err(LayoutError::PaneNotFound(second_pane))
+        }
+    }
+
+    /// Adjusts the size of a pane along `direction`, or the nearest split if `direction` is None.
+    ///
+    /// When `delta` is given, increases or decreases the pane's share of the split.
+    /// When `ratio` is given, sets the pane's share to that absolute value.
+    pub fn resize_pane(
+        &mut self,
+        pane: PaneId,
+        direction: Option<SplitDirection>,
+        delta: Option<f32>,
+        ratio: Option<f32>,
+    ) -> Result<(), LayoutError> {
+        if !self.contains(pane) {
+            return Err(LayoutError::PaneNotFound(pane));
+        }
+        let Some(root) = self.root.as_mut() else {
+            return Err(LayoutError::PaneNotFound(pane));
+        };
+
+        let adjusted = adjust_pane_split(root, pane, direction, delta, ratio)
+            || (direction.is_some() && adjust_pane_split(root, pane, None, delta, ratio));
+        if adjusted {
+            self.revision += 1;
+        }
+        Ok(())
+    }
+
     /// Adds a pane next to `target`, or makes it the root when the tree is empty.
     ///
     /// `before` puts the new pane in the first slot. When `target` is omitted, the
@@ -263,6 +323,124 @@ fn remove_leaf(node: &mut LayoutNode, pane: PaneId) {
     }
 }
 
+fn equalize_node(node: &mut LayoutNode) {
+    if let LayoutNode::Split {
+        ratio,
+        first,
+        second,
+        ..
+    } = node
+    {
+        *ratio = 0.5;
+        equalize_node(first);
+        equalize_node(second);
+    }
+}
+
+pub fn set_boundary_ratio(
+    node: &mut LayoutNode,
+    first_pane: PaneId,
+    second_pane: PaneId,
+    new_ratio: f32,
+) -> bool {
+    let LayoutNode::Split {
+        ratio,
+        first,
+        second,
+        ..
+    } = node
+    else {
+        return false;
+    };
+
+    let first_has_a = node_contains(first, first_pane);
+    let second_has_b = node_contains(second, second_pane);
+
+    if first_has_a && second_has_b {
+        *ratio = new_ratio;
+        return true;
+    }
+
+    let first_has_b = node_contains(first, second_pane);
+    let second_has_a = node_contains(second, first_pane);
+
+    if first_has_b && second_has_a {
+        *ratio = 1.0 - new_ratio;
+        return true;
+    }
+
+    if first_has_a && first_has_b {
+        return set_boundary_ratio(first, first_pane, second_pane, new_ratio);
+    }
+
+    if second_has_a && second_has_b {
+        return set_boundary_ratio(second, first_pane, second_pane, new_ratio);
+    }
+
+    false
+}
+
+fn node_contains(node: &LayoutNode, pane: PaneId) -> bool {
+    match node {
+        LayoutNode::Leaf { pane_id } => *pane_id == pane,
+        LayoutNode::Split { first, second, .. } => {
+            node_contains(first, pane) || node_contains(second, pane)
+        }
+    }
+}
+
+fn adjust_pane_split(
+    node: &mut LayoutNode,
+    target: PaneId,
+    direction: Option<SplitDirection>,
+    delta: Option<f32>,
+    ratio_val: Option<f32>,
+) -> bool {
+    let LayoutNode::Split {
+        direction: split_dir,
+        ratio,
+        first,
+        second,
+    } = node
+    else {
+        return false;
+    };
+
+    let target_in_first = node_contains(first, target);
+    let target_in_second = node_contains(second, target);
+
+    if !target_in_first && !target_in_second {
+        return false;
+    }
+
+    if target_in_first && adjust_pane_split(first, target, direction, delta, ratio_val) {
+        return true;
+    }
+    if target_in_second && adjust_pane_split(second, target, direction, delta, ratio_val) {
+        return true;
+    }
+
+    if direction.is_none() || direction == Some(*split_dir) {
+        if let Some(delta) = delta {
+            if target_in_first {
+                *ratio = (*ratio + delta).clamp(0.05, 0.95);
+            } else {
+                *ratio = (*ratio - delta).clamp(0.05, 0.95);
+            }
+        } else if let Some(new_r) = ratio_val {
+            let clamped = new_r.clamp(0.05, 0.95);
+            if target_in_first {
+                *ratio = clamped;
+            } else {
+                *ratio = 1.0 - clamped;
+            }
+        }
+        return true;
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +564,95 @@ mod tests {
             layout.open(2, Some(9), SplitDirection::Horizontal, false),
             Err(LayoutError::PaneNotFound(9))
         );
+    }
+
+    #[test]
+    fn resizes_boundary_between_two_panes() {
+        let mut layout = Layout::new(1);
+        layout
+            .open(1, None, SplitDirection::Horizontal, false)
+            .unwrap();
+        layout
+            .open(2, Some(1), SplitDirection::Horizontal, false)
+            .unwrap();
+
+        layout.resize_boundary(1, 2, 0.7).unwrap();
+        let expected = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.7,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+        };
+        assert_eq!(layout.root(), Some(&expected));
+
+        // Reversing pane order should invert ratio.
+        layout.resize_boundary(2, 1, 0.7).unwrap();
+        let expected_inverted = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.3,
+            first: Box::new(LayoutNode::Leaf { pane_id: 1 }),
+            second: Box::new(LayoutNode::Leaf { pane_id: 2 }),
+        };
+        assert_eq!(layout.root(), Some(&expected_inverted));
+    }
+
+    #[test]
+    fn adjusts_pane_size_with_delta() {
+        let mut layout = Layout::new(1);
+        layout
+            .open(1, None, SplitDirection::Horizontal, false)
+            .unwrap();
+        layout
+            .open(2, Some(1), SplitDirection::Horizontal, false)
+            .unwrap();
+
+        // Expanding first pane increases ratio
+        layout
+            .resize_pane(1, Some(SplitDirection::Horizontal), Some(0.1), None)
+            .unwrap();
+        let LayoutNode::Split { ratio, .. } = layout.root().unwrap() else {
+            panic!("expected split");
+        };
+        assert!((ratio - 0.6).abs() < 1e-4);
+
+        // Expanding second pane decreases ratio (giving more to second)
+        layout
+            .resize_pane(2, Some(SplitDirection::Horizontal), Some(0.2), None)
+            .unwrap();
+        let LayoutNode::Split { ratio, .. } = layout.root().unwrap() else {
+            panic!("expected split");
+        };
+        assert!((ratio - 0.4).abs() < 1e-4);
+    }
+
+    #[test]
+    fn equalizes_all_splits() {
+        let mut layout = Layout::new(1);
+        layout
+            .open(1, None, SplitDirection::Horizontal, false)
+            .unwrap();
+        layout
+            .open(2, Some(1), SplitDirection::Horizontal, false)
+            .unwrap();
+        layout
+            .open(3, Some(2), SplitDirection::Vertical, false)
+            .unwrap();
+
+        layout.resize_boundary(1, 2, 0.8).unwrap();
+        layout.resize_boundary(2, 3, 0.2).unwrap();
+
+        layout.equalize();
+
+        let LayoutNode::Split {
+            ratio: r1, second, ..
+        } = layout.root().unwrap()
+        else {
+            panic!("expected split");
+        };
+        assert_eq!(*r1, 0.5);
+        let LayoutNode::Split { ratio: r2, .. } = &**second else {
+            panic!("expected second split");
+        };
+        assert_eq!(*r2, 0.5);
     }
 }

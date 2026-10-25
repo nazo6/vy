@@ -103,6 +103,30 @@ pub struct PaneCloseResult {
     pub pane_id: u64,
 }
 
+/// Parameters for `pane/resize`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PaneResizeParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_pane_id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equalize: Option<bool>,
+}
+
+/// Response from `pane/resize`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaneResizeResult {
+    pub window_id: u64,
+    pub revision: u64,
+}
+
 /// Parameters for `editor/open`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditorOpenParams {

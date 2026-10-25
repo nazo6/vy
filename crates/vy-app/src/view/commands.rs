@@ -27,7 +27,8 @@ use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_client_api::settings::{self, SettingKind, SettingScope};
 use vy_proto::{
     DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
-    PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement,
+    PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement, PaneResize,
+    PaneResizeParams,
 };
 
 use super::{EditorView, Pending};
@@ -45,7 +46,97 @@ impl EditorView {
             PaneCommand::FocusUp => self.focus_direction("up"),
             PaneCommand::FocusRight => self.focus_direction("right"),
             PaneCommand::Next => self.focus_next_pane(),
+            PaneCommand::IncreaseWidth => {
+                let count = invocation.args.count.unwrap_or(1) as f32;
+                self.resize_active_pane(Some("horizontal"), Some(0.05 * count), None);
+            }
+            PaneCommand::DecreaseWidth => {
+                let count = invocation.args.count.unwrap_or(1) as f32;
+                self.resize_active_pane(Some("horizontal"), Some(-0.05 * count), None);
+            }
+            PaneCommand::IncreaseHeight => {
+                let count = invocation.args.count.unwrap_or(1) as f32;
+                self.resize_active_pane(Some("vertical"), Some(0.05 * count), None);
+            }
+            PaneCommand::DecreaseHeight => {
+                let count = invocation.args.count.unwrap_or(1) as f32;
+                self.resize_active_pane(Some("vertical"), Some(-0.05 * count), None);
+            }
+            PaneCommand::Equalize => self.equalize_panes(),
+            PaneCommand::Resize => self.run_pane_resize_command(invocation),
         }
+    }
+
+    pub(super) fn resize_active_pane(
+        &mut self,
+        direction: Option<&str>,
+        delta: Option<f32>,
+        ratio: Option<f32>,
+    ) {
+        let Some(pane_id) = self.active_pane else {
+            return;
+        };
+        self.request::<PaneResize>(
+            PaneResizeParams {
+                pane_id: Some(pane_id),
+                direction: direction.map(str::to_string),
+                delta,
+                ratio,
+                ..Default::default()
+            },
+            Pending::Resize,
+        );
+    }
+
+    pub(super) fn equalize_panes(&mut self) {
+        self.request::<PaneResize>(
+            PaneResizeParams {
+                equalize: Some(true),
+                ..Default::default()
+            },
+            Pending::Resize,
+        );
+    }
+
+    pub(super) fn run_pane_resize_command(&mut self, invocation: &Invocation) {
+        let delta = invocation
+            .args
+            .f64("delta")
+            .or_else(|| invocation.args.f64("amount"))
+            .map(|v| v as f32);
+        let ratio = invocation.args.f64("ratio").map(|v| v as f32);
+        let direction = invocation.args.string("direction").map(str::to_string);
+
+        let (delta, ratio) = if delta.is_none() && ratio.is_none() {
+            if let Some(raw) = invocation
+                .args
+                .string("_raw")
+                .or_else(|| invocation.args.string("value"))
+            {
+                let trimmed = raw.trim();
+                if let Some(rest) = trimmed.strip_prefix('+') {
+                    (rest.parse::<f32>().ok().map(|n| n * 0.02), None)
+                } else if let Some(rest) = trimmed.strip_prefix('-') {
+                    (rest.parse::<f32>().ok().map(|n| -n * 0.02), None)
+                } else if let Ok(val) = trimmed.parse::<f32>() {
+                    if val > 0.0 && val < 1.0 {
+                        (None, Some(val))
+                    } else if (1.0..=100.0).contains(&val) {
+                        (None, Some(val / 100.0))
+                    } else {
+                        (Some(0.05), None)
+                    }
+                } else {
+                    (Some(0.05), None)
+                }
+            } else {
+                (Some(0.05), None)
+            }
+        } else {
+            (delta, ratio)
+        };
+
+        self.resize_active_pane(direction.as_deref().or(Some("vertical")), delta, ratio);
     }
 
     pub(super) fn run_document_command(

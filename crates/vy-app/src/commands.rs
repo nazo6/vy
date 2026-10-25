@@ -69,6 +69,10 @@ impl CommandArgs {
         self.value(name).and_then(JsonValue::as_u64)
     }
 
+    pub fn f64(&self, name: &str) -> Option<f64> {
+        self.value(name).and_then(JsonValue::as_f64)
+    }
+
     pub fn keymap_args(&self) -> KeymapArgs {
         KeymapArgs {
             count: self.count,

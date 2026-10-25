@@ -73,6 +73,78 @@ pub fn collect_pane_rects(node: &LayoutNode, rect: PaneRect, rects: &mut Vec<Pan
     }
 }
 
+/// Normalized bounding box of a split and its boundary within the window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SplitRect {
+    pub first_pane: PaneId,
+    pub second_pane: PaneId,
+    pub direction: SplitDirection,
+    pub ratio: f32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+pub fn first_leaf(node: &LayoutNode) -> PaneId {
+    match node {
+        LayoutNode::Leaf { pane_id } => *pane_id,
+        LayoutNode::Split { first, .. } => first_leaf(first),
+    }
+}
+
+pub fn last_leaf(node: &LayoutNode) -> PaneId {
+    match node {
+        LayoutNode::Leaf { pane_id } => *pane_id,
+        LayoutNode::Split { second, .. } => last_leaf(second),
+    }
+}
+
+/// Computes the normalized bounding rectangles of all splits in the layout tree.
+pub fn collect_split_rects(
+    node: &LayoutNode,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    splits: &mut Vec<SplitRect>,
+) {
+    if let LayoutNode::Split {
+        direction,
+        ratio,
+        first,
+        second,
+    } = node
+    {
+        let ratio = ratio.clamp(0.05, 0.95);
+        splits.push(SplitRect {
+            first_pane: last_leaf(first),
+            second_pane: first_leaf(second),
+            direction: *direction,
+            ratio,
+            x,
+            y,
+            width,
+            height,
+        });
+
+        match direction {
+            SplitDirection::Horizontal => {
+                let first_w = width * ratio;
+                let second_w = width * (1.0 - ratio);
+                collect_split_rects(first, x, y, first_w, height, splits);
+                collect_split_rects(second, x + first_w, y, second_w, height, splits);
+            }
+            SplitDirection::Vertical => {
+                let first_h = height * ratio;
+                let second_h = height * (1.0 - ratio);
+                collect_split_rects(first, x, y, width, first_h, splits);
+                collect_split_rects(second, x, y + first_h, width, second_h, splits);
+            }
+        }
+    }
+}
+
 /// Picks the nearest pane in `direction` from `active`, using split ratios.
 pub fn focus_neighbor(layout: &LayoutNode, active: PaneId, direction: &str) -> Option<PaneId> {
     let mut rects = Vec::new();
@@ -157,5 +229,38 @@ mod tests {
         };
         assert_eq!(focus_neighbor(&stacked, 1, "down"), Some(2));
         assert_eq!(focus_neighbor(&stacked, 2, "up"), Some(1));
+    }
+
+    #[test]
+    fn collects_split_rects() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.4,
+            first: Box::new(LayoutNode::Leaf { pane_id: 10 }),
+            second: Box::new(LayoutNode::Split {
+                direction: SplitDirection::Vertical,
+                ratio: 0.6,
+                first: Box::new(LayoutNode::Leaf { pane_id: 20 }),
+                second: Box::new(LayoutNode::Leaf { pane_id: 30 }),
+            }),
+        };
+
+        let mut splits = Vec::new();
+        collect_split_rects(&layout, 0.0, 0.0, 1.0, 1.0, &mut splits);
+        assert_eq!(splits.len(), 2);
+
+        // Root horizontal split between pane 10 and 20
+        assert_eq!(splits[0].first_pane, 10);
+        assert_eq!(splits[0].second_pane, 20);
+        assert_eq!(splits[0].direction, SplitDirection::Horizontal);
+        assert_eq!(splits[0].ratio, 0.4);
+
+        // Child vertical split between pane 20 and 30
+        assert_eq!(splits[1].first_pane, 20);
+        assert_eq!(splits[1].second_pane, 30);
+        assert_eq!(splits[1].direction, SplitDirection::Vertical);
+        assert_eq!(splits[1].ratio, 0.6);
+        assert_eq!(splits[1].x, 0.4);
+        assert_eq!(splits[1].width, 0.6);
     }
 }

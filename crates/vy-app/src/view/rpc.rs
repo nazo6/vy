@@ -251,7 +251,7 @@ impl EditorView {
                     Some(history) => self.received_history(history),
                     None => self.status = "history could not be decoded".into(),
                 },
-                Pending::Close | Pending::Focus => {}
+                Pending::Close | Pending::Focus | Pending::Resize => {}
                 Pending::EditorOpen => match decode_reply::<EditorOpen>(&value) {
                     Some(opened) => self.editor_opened(opened),
                     None => self.status = "editor/open response has no pane or document".into(),

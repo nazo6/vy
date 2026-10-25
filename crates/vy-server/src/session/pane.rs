@@ -1,7 +1,7 @@
 use vy_core::{Buffer, DocumentId, SplitDirection, Uri};
 use vy_proto::{
     EditorOpen, EditorOpenParams, ErrorCode, PaneClose, PaneCloseResult, PaneFocus,
-    PaneFocusResult, PaneOpen, PaneOpenResult, RpcMessage,
+    PaneFocusResult, PaneOpen, PaneOpenResult, PaneResize, PaneResizeResult, RpcMessage,
 };
 
 use super::{Outcome, Pane, Session, ok_message, ok_response};
@@ -280,5 +280,66 @@ impl Session {
                 replaced: previous != document_id,
             },
         )
+    }
+
+    /// Resizes a pane or boundary in the layout tree.
+    pub(super) fn resize_pane(&mut self, id: u64, params: vy_proto::PaneResizeParams) -> Outcome {
+        if params.equalize == Some(true) {
+            self.layout.equalize();
+        } else if let Some(sibling_id) = params.sibling_pane_id {
+            let target = params.pane_id.or_else(|| self.layout.active_pane());
+            let Some(target) = target else {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidState,
+                    "there is no active pane to resize",
+                ));
+            };
+            let ratio = params.ratio.unwrap_or(0.5);
+            if let Err(error) = self.layout.resize_boundary(target, sibling_id, ratio) {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidRequest,
+                    error.to_string(),
+                ));
+            }
+        } else {
+            let target = params.pane_id.or_else(|| self.layout.active_pane());
+            let Some(target) = target else {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidState,
+                    "there is no active pane to resize",
+                ));
+            };
+
+            let direction = params.direction.as_deref().and_then(SplitDirection::parse);
+
+            if let Err(error) =
+                self.layout
+                    .resize_pane(target, direction, params.delta, params.ratio)
+            {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidRequest,
+                    error.to_string(),
+                ));
+            }
+        }
+
+        self.persist_session();
+
+        let response = ok_message::<PaneResize>(
+            id,
+            &PaneResizeResult {
+                window_id: self.layout.window_id(),
+                revision: self.layout.revision(),
+            },
+        );
+
+        Outcome {
+            messages: vec![response, self.layout_notification("resize")],
+            close: false,
+        }
     }
 }

@@ -3,8 +3,8 @@
 use std::time::Instant;
 
 use gpui::{
-    Context, DefiniteLength, Div, ElementInputHandler, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Window, canvas, div, px,
+    Context, CursorStyle, DefiniteLength, Div, ElementInputHandler, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Render, Styled, Window, canvas, div, px,
 };
 
 use vy_app::overlay::Overlay;
@@ -14,7 +14,7 @@ use vy_app::text_layout::{
 };
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
-use super::EditorView;
+use super::{EditorView, Pending};
 use crate::theme::{ActiveTheme, Theme};
 use crate::ui;
 
@@ -271,7 +271,7 @@ impl Render for EditorView {
         let theme = cx.theme().clone();
 
         let content = match self.layout.clone() {
-            Some(layout) => self.render_node(&layout, cx, window),
+            Some(layout) => self.render_node(&layout, width, height, cx, window),
             None => {
                 let view_entity = cx.entity();
                 div()
@@ -312,6 +312,8 @@ impl Render for EditorView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .flex()
             .flex_col()
             .size_full()
@@ -348,7 +350,71 @@ impl Render for EditorView {
 }
 
 impl EditorView {
-    fn render_node(&self, node: &LayoutNode, cx: &mut Context<Self>, window: &mut Window) -> Div {
+    fn on_mouse_move(
+        &mut self,
+        event: &gpui::MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(ref mut drag) = self.resizing_split {
+            if event.pressed_button != Some(MouseButton::Left) {
+                self.finish_split_resize(cx);
+                return;
+            }
+
+            let delta_px = match drag.direction {
+                SplitDirection::Horizontal => f32::from(event.position.x - drag.start_mouse.x),
+                SplitDirection::Vertical => f32::from(event.position.y - drag.start_mouse.y),
+            };
+
+            if drag.total_pixels > 0.0 {
+                let new_ratio = (drag.start_ratio + delta_px / drag.total_pixels).clamp(0.05, 0.95);
+                drag.current_ratio = new_ratio;
+                if let Some(ref mut layout) = self.layout {
+                    vy_core::set_boundary_ratio(
+                        layout,
+                        drag.first_pane,
+                        drag.second_pane,
+                        new_ratio,
+                    );
+                }
+                cx.notify();
+            }
+        }
+    }
+
+    fn on_mouse_up(
+        &mut self,
+        _event: &gpui::MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.finish_split_resize(cx);
+    }
+
+    fn finish_split_resize(&mut self, cx: &mut Context<Self>) {
+        if let Some(drag) = self.resizing_split.take() {
+            self.request::<vy_proto::PaneResize>(
+                vy_proto::PaneResizeParams {
+                    pane_id: Some(drag.first_pane),
+                    sibling_pane_id: Some(drag.second_pane),
+                    ratio: Some(drag.current_ratio),
+                    ..Default::default()
+                },
+                Pending::Resize,
+            );
+            cx.notify();
+        }
+    }
+
+    fn render_node(
+        &self,
+        node: &LayoutNode,
+        total_w: f32,
+        total_h: f32,
+        cx: &mut Context<Self>,
+        window: &mut Window,
+    ) -> Div {
         match node {
             LayoutNode::Leaf { pane_id } => self.render_pane(*pane_id, cx, window),
             LayoutNode::Split {
@@ -362,9 +428,23 @@ impl EditorView {
                     SplitDirection::Vertical => div().flex().flex_col(),
                 };
 
-                // The wrappers own the ratio. The pane itself uses size_full, so
-                // letting it size the flex item would force 100% width (or height)
-                // and push its sibling out of view.
+                let (first_w, first_h, second_w, second_h, split_total_pixels) = match direction {
+                    SplitDirection::Horizontal => (
+                        total_w * ratio,
+                        total_h,
+                        total_w * (1.0 - ratio),
+                        total_h,
+                        total_w,
+                    ),
+                    SplitDirection::Vertical => (
+                        total_w,
+                        total_h * ratio,
+                        total_w,
+                        total_h * (1.0 - ratio),
+                        total_h,
+                    ),
+                };
+
                 let first_wrapper = match direction {
                     SplitDirection::Horizontal => div().h_full(),
                     SplitDirection::Vertical => div().w_full(),
@@ -372,7 +452,7 @@ impl EditorView {
                 .flex_basis(DefiniteLength::Fraction(*ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
-                .child(self.render_node(first, cx, window));
+                .child(self.render_node(first, first_w, first_h, cx, window));
 
                 let second_wrapper = match direction {
                     SplitDirection::Horizontal => div().h_full(),
@@ -381,9 +461,69 @@ impl EditorView {
                 .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
-                .child(self.render_node(second, cx, window));
+                .child(self.render_node(second, second_w, second_h, cx, window));
 
-                row.size_full().child(first_wrapper).child(second_wrapper)
+                let first_pane = vy_app::geometry::last_leaf(first);
+                let second_pane = vy_app::geometry::first_leaf(second);
+                let dir = *direction;
+                let current_ratio = *ratio;
+                let theme = cx.theme().clone();
+
+                let divider = match dir {
+                    SplitDirection::Horizontal => div()
+                        .h_full()
+                        .w(px(5.0))
+                        .mx(px(-2.5))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor(CursorStyle::ResizeLeftRight)
+                        .child(div().h_full().w(px(1.0)).bg(theme.titlebar.border))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, event: &gpui::MouseDownEvent, _window, cx| {
+                                view.resizing_split = Some(super::SplitDragState {
+                                    first_pane,
+                                    second_pane,
+                                    direction: dir,
+                                    start_mouse: event.position,
+                                    start_ratio: current_ratio,
+                                    total_pixels: split_total_pixels,
+                                    current_ratio,
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                    SplitDirection::Vertical => div()
+                        .w_full()
+                        .h(px(5.0))
+                        .my(px(-2.5))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor(CursorStyle::ResizeUpDown)
+                        .child(div().w_full().h(px(1.0)).bg(theme.titlebar.border))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, event: &gpui::MouseDownEvent, _window, cx| {
+                                view.resizing_split = Some(super::SplitDragState {
+                                    first_pane,
+                                    second_pane,
+                                    direction: dir,
+                                    start_mouse: event.position,
+                                    start_ratio: current_ratio,
+                                    total_pixels: split_total_pixels,
+                                    current_ratio,
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                };
+
+                row.size_full()
+                    .child(first_wrapper)
+                    .child(divider)
+                    .child(second_wrapper)
             }
         }
     }

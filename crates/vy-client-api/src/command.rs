@@ -490,6 +490,18 @@ pub enum PaneCommand {
     FocusRight,
     #[strum(serialize = "vy.pane.next")]
     Next,
+    #[strum(serialize = "vy.pane.increase_width")]
+    IncreaseWidth,
+    #[strum(serialize = "vy.pane.decrease_width")]
+    DecreaseWidth,
+    #[strum(serialize = "vy.pane.increase_height")]
+    IncreaseHeight,
+    #[strum(serialize = "vy.pane.decrease_height")]
+    DecreaseHeight,
+    #[strum(serialize = "vy.pane.equalize")]
+    Equalize,
+    #[strum(serialize = "vy.pane.resize")]
+    Resize,
 }
 
 impl PaneCommand {
@@ -516,6 +528,12 @@ impl PaneCommand {
             Self::FocusLeft | Self::FocusDown | Self::FocusUp | Self::FocusRight | Self::Next => {
                 CommandMeta::hidden(CommandCategory::Pane)
             }
+            Self::IncreaseWidth
+            | Self::DecreaseWidth
+            | Self::IncreaseHeight
+            | Self::DecreaseHeight => CommandMeta::listed(CommandCategory::Pane, &[]),
+            Self::Equalize => CommandMeta::listed(CommandCategory::Pane, &["equalize"]),
+            Self::Resize => CommandMeta::listed(CommandCategory::Pane, &["resize", "res"]),
         }
     }
 }

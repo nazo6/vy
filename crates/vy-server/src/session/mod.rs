@@ -19,8 +19,9 @@ pub(super) use vy_proto::value::get;
 use vy_proto::{
     BufferDidChange, BufferRedo, BufferSnapshot, BufferUndo, DocumentSave, EditorOpen, ErrorCode,
     FsCopy, FsCreateDir, FsExists, FsReadDir, FsReadFile, FsReadTextFile, FsRemove, FsRename,
-    FsStat, FsWriteFile, Initialize, LayoutGet, PaneClose, PaneFocus, PaneOpen, ProcessExec,
-    ProcessKill, ProcessSpawn, ProcessStdin, RpcMessage, RpcMethod, RpcNotification, SyncRequest,
+    FsStat, FsWriteFile, Initialize, LayoutGet, PaneClose, PaneFocus, PaneOpen, PaneResize,
+    ProcessExec, ProcessKill, ProcessSpawn, ProcessStdin, RpcMessage, RpcMethod, RpcNotification,
+    SyncRequest,
 };
 #[cfg(test)]
 pub(super) use vy_proto::{decode_value as decode_params, to_value};
@@ -217,11 +218,7 @@ impl Session {
             m if m == PaneOpen::METHOD => call!(PaneOpen => open_pane),
             m if m == PaneFocus::METHOD => call!(PaneFocus => focus_pane),
             m if m == PaneClose::METHOD => call!(PaneClose => close_pane),
-            "pane/resize" => Outcome::one(RpcMessage::err(
-                id,
-                ErrorCode::UnsupportedFeature,
-                "pane/resize is not implemented yet",
-            )),
+            m if m == PaneResize::METHOD => call!(PaneResize => resize_pane),
             m if m == LayoutGet::METHOD => self.layout_get(id),
             m if m == EditorOpen::METHOD => call!(EditorOpen => editor_open),
             m if m == DocumentSave::METHOD => call!(DocumentSave => save_document),

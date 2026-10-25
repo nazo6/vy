@@ -11,7 +11,9 @@ pub mod uri;
 
 pub use buffer::{Applied, Buffer, DEFAULT_UNDO_LIMIT, DocumentId, Version};
 pub use edit::{EditError, TextEdit};
-pub use layout::{Layout, LayoutError, LayoutNode, PaneId, SplitDirection, WindowId};
+pub use layout::{
+    Layout, LayoutError, LayoutNode, PaneId, SplitDirection, WindowId, set_boundary_ratio,
+};
 pub use position::{Position, Range, Selection};
 pub use text::{Text, byte_to_utf16, utf16_to_byte};
 pub use uri::{Uri, UriError};
