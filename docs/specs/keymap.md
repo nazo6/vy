@@ -1,8 +1,17 @@
+---
+title: "キーマップ一覧と実装状況"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0016", "0022"]
+tags: ["keymap", "modal-editing", "helix"]
+---
+
 # キーマップ一覧と実装状況
 
 Vy のモーダル編集で扱うキーと、その実装状況の一覧です。キー入力の設計は
 [`ui.md`](./ui.md) の「キー入力の流れ」、実装の順序は
-[`roadmap.md`](./roadmap.md) にあります。
+[`roadmap.md`](../roadmap.md) にあります。
 
 現時点は、`crates/vy-app/src/keymap.rs`
 がキー列を照合し、`builtin/keymaps/default.json` の既定キーマップからコマンド ID
@@ -148,7 +157,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 スクロール位置、カーソル、選択、モードはペインごとに独立しています。同じ文書を
 複数のペインで開いても干渉しません。最後に選択した範囲だけは文書ごとに覚え、
 `g v`
-でどのペインからでも復元できます（[ADR 0003](./adr/0003-editor-state.md)）。
+でどのペインからでも復元できます（[ADR 0003](../adr/0003-editor-state.md)）。
 
 コマンドパレットは `Space` で開きます。コマンド名と ID を単語単位で絞り込み、
 `Up` / `Down`（`Ctrl-p` / `Ctrl-n`）で選び、`Enter` で実行、`Esc` で閉じます。
@@ -164,7 +173,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 
 Phase 1 と 2
 で入れていないキーです。実装するときにこの表を「実装済み」へ移します。
-「予定」は [`roadmap.md`](./roadmap.md) のフェーズに合わせています。Phase 2 では
+「予定」は [`roadmap.md`](../roadmap.md) のフェーズに合わせています。Phase 2 では
 `init.ts` とキーマップの基盤までで、下のキーは入れていません。
 
 | 分類             | キー                                                                                                | 予定         |

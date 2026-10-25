@@ -30,28 +30,30 @@
 
 ## 📚 ドキュメント構成
 
-詳細な設計ドキュメントは [`docs/`](./docs) 配下にあります。
+詳細な設計ドキュメントは [`docs/`](./docs/README.md) 配下にあります。
 
-- [**全体アーキテクチャ設計 (`docs/architecture.md`)**](./docs/architecture.md)
+- [**ドキュメント案内 (`docs/README.md`)**](./docs/README.md)
+  - ドキュメント全体の構造、仕様書・ADR・提案・作業ログの役割分担
+- [**全体アーキテクチャ設計 (`docs/specs/architecture.md`)**](./docs/specs/architecture.md)
   - GPUIフロントエンドとコアの分離、エディタ本体とプラグインの責務分担
-- [**プラグインシステムと設定 (`docs/plugin-system.md`)**](./docs/plugin-system.md)
+- [**プラグインシステムと設定 (`docs/specs/plugin-system.md`)**](./docs/specs/plugin-system.md)
   - `init.ts` と `settings.json`
     の役割、実行モデル、マニフェスト、ケイパビリティの承認
-- [**プラグイン・設定 API 一覧 (`docs/api.md`)**](./docs/api.md)
+- [**プラグイン・設定 API 一覧 (`docs/specs/api.md`)**](./docs/specs/api.md)
   - 名前空間ごとの API、実行場所、必要なケイパビリティ、実装の優先度
-- [**ペインとレイアウト (`docs/panes.md`)**](./docs/panes.md)
+- [**ペインとレイアウト (`docs/specs/panes.md`)**](./docs/specs/panes.md)
   - ウィンドウ、ペイン、ビューのモデル、操作の意味論、API、メッセージ、保存の単位
-- [**プラグイン UI (`docs/ui.md`)**](./docs/ui.md)
+- [**プラグイン UI (`docs/specs/ui.md`)**](./docs/specs/ui.md)
   - ネイティブのウィジェット木、キー入力とフォーカス、アクション、Webview
     の位置づけ
-- [**キーマップ一覧と実装状況 (`docs/keymap.md`)**](./docs/keymap.md)
+- [**キーマップ一覧と実装状況 (`docs/specs/keymap.md`)**](./docs/specs/keymap.md)
   - モードごとのキー、実装済みの範囲、これから入れるキー、キーマップ API の予定
-- [**コマンドと設定 (`docs/commands.md`)**](./docs/commands.md)
+- [**コマンドと設定 (`docs/specs/commands.md`)**](./docs/specs/commands.md)
   - パレット、Ex コマンドライン、キーマップの役割分担と、設定のスコープ・`:set`
     の設計
-- [**ファイルとフォルダの構成 (`docs/layout.md`)**](./docs/layout.md)
+- [**ファイルとフォルダの構成 (`docs/specs/layout.md`)**](./docs/specs/layout.md)
   - ユーザー設定、プロジェクト、プラグインのパッケージ、リポジトリの構成
-- [**通信プロトコル仕様 (`docs/protocol.md`)**](./docs/protocol.md)
+- [**通信プロトコル仕様 (`docs/specs/protocol.md`)**](./docs/specs/protocol.md)
   - Pure Rust `rmp-serde` によるMessagePackバイナリRPCメッセージ構造
 - [**ロードマップ (`docs/roadmap.md`)**](./docs/roadmap.md)
   - 実装フェーズ（Phase 1〜6）と、決定済みの項目、残っている論点
@@ -59,6 +61,10 @@
   - 言語、エラー、状態の所在、ビルドと検証の決まり
 - [**アーキテクチャ決定記録 (`docs/adr/`)**](./docs/adr/README.md)
   - 設計上の決定と、見直しの条件
+- [**提案・設計検討 (`docs/proposals/`)**](./docs/proposals/README.md)
+  - 新機能や未決定事項の検討・RFC
+- [**作業ログ (`docs/worklogs/`)**](./docs/worklogs/README.md)
+  - リファクタリングや移行作業の計画・実施ログ
 
 ---
 
@@ -105,7 +111,7 @@ cargo run -p vy-app -- README.md
 テキストオブジェクトは `iw` / `aw` / `ip` / `ap`、`i"` / `a"`、`i(` / `a(`
 などに対応しています。
 
-キーの全一覧と実装状況は [`docs/keymap.md`](./docs/keymap.md) にあります。
+キーの全一覧と実装状況は [`docs/specs/keymap.md`](./docs/specs/keymap.md) にあります。
 
 ### 設定
 
@@ -176,7 +182,7 @@ vy.commands.register(
 `vy-api` からの import
 は書きません（[ADR 0019](./docs/adr/0019-global-vy-api.md)）。
 `import type {} from "vy-api"` は型を有効にするための1行で、実行時には消えます。
-評価できる API は [`docs/api.md`](./docs/api.md) の「Phase 2
+評価できる API は [`docs/specs/api.md`](./docs/specs/api.md) の「Phase 2
 の実装状況」にまとめました。型定義は
 [`packages/vy-api/index.d.ts`](./packages/vy-api/index.d.ts) にあり、プロトコル
 とプラグイン境界の型は [`packages/vy-api/types`](./packages/vy-api/types) に

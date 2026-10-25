@@ -1,3 +1,13 @@
+---
+id: "0017"
+title: "CLI 引数の解析に usage-rs を使う"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0017: CLI 引数の解析に usage-rs を使う
 
 - 状態: 採用

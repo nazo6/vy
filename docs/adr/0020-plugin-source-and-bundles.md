@@ -1,3 +1,13 @@
+---
+id: "0020"
+title: "プラグインはソース形態とバンドル形態の2つを許す"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0020: プラグインはソース形態とバンドル形態の2つを許す
 
 - 状態: 採用（実装済み。検証の詳細は 0021）

@@ -1,3 +1,12 @@
+---
+title: "プラグイン・設定 API 一覧"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0007", "0009", "0012", "0013", "0019", "0023"]
+tags: ["api", "plugins", "typescript"]
+---
+
 # プラグイン・設定 API 一覧
 
 Vy がプラグインと設定に公開する API
@@ -10,7 +19,7 @@ Phase に分けます。
 - 入口はグローバル `vy` にします（`vy.editor.open(...)`）。`vy-api` という
   仮想モジュールは持ちません。型は `packages/vy-api` が ambient 宣言として
   提供し、`import type {} from "vy-api"` を1回読み込むと `vy` と `Vy.CommandMap`
-  が見えます（[ADR 0019](./adr/0019-global-vy-api.md)）。
+  が見えます（[ADR 0019](../adr/0019-global-vy-api.md)）。
 - 以下の表では名前空間のパスだけを書きます。呼び出しは
   `vy.commands.execute(...)` のように `vy.` を付けます。
 - 状態の読み取りも Promise
@@ -29,7 +38,7 @@ Phase に分けます。
 - 境界の型は Rust を正とします。params / reply / イベント payload
   型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は
   `vy-app` の対応するモジュールに置きます。`packages/vy-api`（生成された型は
-  `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
+  `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](../adr/0009-api-types-live-with-handlers.md)）。
 
 ## 2. 表記の約束
 
@@ -41,7 +50,7 @@ Phase に分けます。
 | remote | コアで完結する。クライアントは要求を送り、結果を受け取る。          |
 | both   | コアとクライアントの両方が関わる。状態を持つ層は API ごとに異なる。 |
 
-クライアントとコアは、ローカル接続でも別のプロセスです（[ADR 0002](./adr/0002-process-model.md)）。`editor.open`
+クライアントとコアは、ローカル接続でも別のプロセスです（[ADR 0002](../adr/0002-process-model.md)）。`editor.open`
 が `both`
 なのは、文書とペインをコアが作り、クライアントがそれを描くためです。ローカル接続でも、ファイルを開くのはコアのプロセスになります。
 
@@ -141,7 +150,7 @@ version と一致したときだけ確定します。
 
 `editor.undo()` と `editor.redo()`
 は、コアが持つ履歴をたどります。カーソルと選択はクライアントが持つため、`editor.edit`
-は編集の前後の選択を一緒に送ります。取り消したあとの選択は、コアが返した値をクライアントが適用します。コアが起こした編集（整形、リネーム、複数ファイルの置換）も同じ履歴に入ります（[ADR 0004](./adr/0004-undo-in-core.md)）。
+は編集の前後の選択を一緒に送ります。取り消したあとの選択は、コアが返した値をクライアントが適用します。コアが起こした編集（整形、リネーム、複数ファイルの置換）も同じ履歴に入ります（[ADR 0004](../adr/0004-undo-in-core.md)）。
 
 ## 5. documents
 
@@ -420,7 +429,7 @@ ID、進捗の値です。任意のレイアウトは渡せません。自由な
 
 #### ステータスライン API
 
-ステータスラインはウィンドウ最下部に配置されるグローバルスロットです（[ADR 0006](./adr/0006-user-controlled-ui-and-slots.md)）。
+ステータスラインはウィンドウ最下部に配置されるグローバルスロットです（[ADR 0006](../adr/0006-user-controlled-ui-and-slots.md)）。
 
 ```typescript
 export interface StatuslineItemOptions {
@@ -518,7 +527,7 @@ Webview は最終手段です。Notebook の出力、HTML
 
 `backend.ts`
 は接続先のコアで動きます。重い処理、ファイル監視、外部プロセスの結合に使います
-（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。フロントとバックエンドで
+（[ADR 0011](../adr/0011-backend-plugins-on-core.md)）。フロントとバックエンドで
 コアの名前空間を共有し、`backend` はチャネルとライフサイクルだけを持ちます。
 
 ### 18.1 ライフサイクルとチャネル
@@ -608,7 +617,7 @@ Webview は最終手段です。Notebook の出力、HTML
 など）と、ウィジェットの語彙（`Gap` の `sm`/`md`/`lg`、`Font` の
 `mono`、`ButtonVariant` の `primary`/`danger`）は列挙です。未知の値は
 `InvalidParams`
-で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](./adr/0007-rust-typed-plugin-api.md)
+で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](../adr/0007-rust-typed-plugin-api.md)
 §6）。
 
 ## 20. エラー

@@ -1,8 +1,6 @@
 # AGENTS.md
 
-Vy の開発方針です。作業を始める前に
-[`docs/development.md`](./docs/development.md) と
-[`docs/roadmap.md`](./docs/roadmap.md) を読んでください。
+Vy の開発方針です。作業を始める前に [`docs/README.md`](./docs/README.md) を確認し、関連する仕様書や設計ドキュメントを読んでください。
 
 ## 言語
 
@@ -13,15 +11,17 @@ Vy の開発方針です。作業を始める前に
 - テストデータとして日本語や絵文字を使うことはあります（UTF-16 の検証など）。
 - コミットメッセージは英語にします。
 
-## 設計
+## ドキュメントと設計
 
-- 決定は `docs/` に書き、決定を変えるときは ADR を追加します
-  （[`docs/adr/README.md`](./docs/adr/README.md)）。
-- 決まっていない項目は各ドキュメントの「未決定事項」に置き、決めたら「決定済み」へ
-  移します。
-- クライアントとコアは常に別プロセスにします（[ADR 0002](./docs/adr/0002-process-model.md)）。
-  同一プロセスでコアを呼ぶ近道は作りません。
-- `vy-app` だけが GPUI に依存します。`vy-core` は描画に依存させません。
+設計の決定や現在の仕様については `docs/` 配下を参照してください。個別のアーキテクチャや設計ルールはコードに直接埋め込まず、ドキュメントを正とします。
+
+- **現在の仕様・設計**: [`docs/specs/`](./docs/specs/README.md)
+- **意思決定の記録 (ADR)**: [`docs/adr/`](./docs/adr/README.md)
+  - 設計上の決定を変えるときは既存の ADR を書き換えず、新しい ADR を追加します。
+- **未決定事項・検討案**: [`docs/proposals/`](./docs/proposals/README.md)
+- **作業ログ**: [`docs/worklogs/`](./docs/worklogs/README.md)
+- **開発方針・運用ルール**: [`docs/development.md`](./docs/development.md)
+- **実装ロードマップ**: [`docs/roadmap.md`](./docs/roadmap.md)
 
 ## 検証
 

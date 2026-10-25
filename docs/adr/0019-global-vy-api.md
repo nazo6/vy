@@ -1,3 +1,13 @@
+---
+id: "0019"
+title: "プラグイン API はグローバル vy に統一する"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: ["0016"]
+superseded_by: null
+---
+
 # ADR 0019: プラグイン API はグローバル `vy` に統一する
 
 - 状態: 採用（実装済み）

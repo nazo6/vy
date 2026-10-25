@@ -1,7 +1,16 @@
+---
+title: "コマンドと設定"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0016", "0022"]
+tags: ["commands", "keymap", "config"]
+---
+
 # コマンドと設定
 
 コマンドパレット、Ex コマンドライン、キーマップ、設定の関係をまとめた文書です。
-決定の背景は [ADR 0022](./adr/0022-command-surfaces.md) にあります。
+決定の背景は [ADR 0022](../adr/0022-command-surfaces.md) にあります。
 
 - コマンド ID、キーバインド、`commands.execute` の API は [`api.md`](./api.md)
   の「コマンドとキーバインド」「設定」にあります。
@@ -338,7 +347,7 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
   コマンドを実行せずにエラーにします。
 - コマンドの実行中は入力を待たせ、二重実行を防ぎます。
 - エラーは英語のメッセージと安定した `ErrorCode` で表します。Vim の `E123` の
-  ような番号を主識別子にはしません（[`development.md`](./development.md)）。
+  ような番号を主識別子にはしません（[`development.md`](../development.md)）。
 - メッセージの履歴（`:messages`）はまだありません。当面はステータス行に出します。
 
 ### 5.7 画面と入力

@@ -149,7 +149,7 @@ impl Buffer {
     /// Applies an edit transaction.
     ///
     /// If `base_version` does not match the current version, nothing changes. The caller
-    /// resends the text and resyncs (see "Buffer change notifications" in `docs/protocol.md`).
+    /// resends the text and resyncs (see "Buffer change notifications" in `docs/specs/protocol.md`).
     pub fn apply_edits(
         &mut self,
         base_version: Version,

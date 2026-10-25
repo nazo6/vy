@@ -13,7 +13,7 @@
 const globals = globalThis;
 const hostCall = globals.__vy_host_call;
 // Calls the host and returns the value. Host errors become exceptions with a
-// stable `code`, as `docs/api.md` §20 describes.
+// stable `code`, as `docs/specs/api.md` §20 describes.
 function call(method, params) {
     const raw = hostCall(method, JSON.stringify(params === undefined ? null : params));
     const reply = JSON.parse(raw);

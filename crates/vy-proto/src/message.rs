@@ -10,7 +10,7 @@ pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Payload of every RPC frame.
 ///
-/// It follows the message envelope in `docs/protocol.md`.
+/// It follows the message envelope in `docs/specs/protocol.md`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum RpcMessage {

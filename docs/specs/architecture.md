@@ -1,3 +1,12 @@
+---
+title: "全体アーキテクチャ設計"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0001", "0002", "0003", "0004", "0005"]
+tags: ["architecture", "process-model", "state"]
+---
+
 # 全体アーキテクチャ設計
 
 Vy は、Vimのモーダル編集の軽快さと、VS
@@ -57,7 +66,7 @@ flowchart TB
 
 ### 1.1 プロセスの構成
 
-ローカル接続とリモート接続のどちらでも、クライアントとコアは別のプロセスです（[ADR 0002](./adr/0002-process-model.md)）。
+ローカル接続とリモート接続のどちらでも、クライアントとコアは別のプロセスです（[ADR 0002](../adr/0002-process-model.md)）。
 
 | 接続   | クライアント | コア                                         | 経路             |
 | :----- | :----------- | :------------------------------------------- | :--------------- |
@@ -67,7 +76,7 @@ flowchart TB
 リモート接続は `ssh -T [-p port] [user@]host -- <serverPath> --stdio`
 で起動します。 接続先には導入済みの `vy-server`
 を使い、バイナリの自動転送は行いません。接続先は `~/.config/vy/connections.json`
-のプロファイルで選びます （[ADR 0010](./adr/0010-remote-connection.md)）。
+のプロファイルで選びます （[ADR 0010](../adr/0010-remote-connection.md)）。
 
 `fs`、`process`、検索、文書の読み書きは常にコアが行います。ローカル接続でも、ファイルを開くのはコアのプロセスです。クライアントが行うのは、キー入力の照合、描画、Webview
 の表示、クライアント側の QuickJS の実行です。
@@ -86,7 +95,7 @@ flowchart TB
   読み直し、クライアントは `layout/get` と `sync/request`
   で開いていた文書を戻します。
   未保存の本文はクライアントから送り、アンドゥ履歴だけ捨てます
-  （[ADR 0010](./adr/0010-remote-connection.md)）。
+  （[ADR 0010](../adr/0010-remote-connection.md)）。
 - 保存済みの文書はコアがディスクから読み直します。ディスク上の内容が変わっていた場合は、
   コアが返した本文と version をクライアントが採用します。
 - セッションを復元した起動では最初の `buffer/snapshot`
@@ -110,9 +119,9 @@ flowchart TB
 - `init.ts` と各プラグインは、それぞれの QuickJS ランタイムで動きます。QuickJS
   は同期なので、ホストがジョブキューを回して Promise を進めます。API は
   ホストがインストールするグローバル `vy` で、仮想モジュールはありません
-  （[ADR 0019](./adr/0019-global-vy-api.md)）。ソース形態のプラグインは、
+  （[ADR 0019](../adr/0019-global-vy-api.md)）。ソース形態のプラグインは、
   プラグインのディレクトリをルートに相対 import を解決します
-  （[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
+  （[ADR 0020](../adr/0020-plugin-source-and-bundles.md)）。
 - JS から状態を読む・変える呼び出しは `HostRequest` で UI に渡し、UI が
   `HostReply` を返します。JS スレッドは応答を待ちますが、UI
   は待ちません。初期化は 1 秒、コマンドは 5 秒、応答は 5 秒で打ち切り、メモリは
@@ -139,7 +148,7 @@ flowchart TB
 
 ## 3. UIレンダリング: GPUI + `gpui-kit/webview`
 
-採用の理由と比較は [ADR 0001](./adr/0001-ui-framework.md)
+採用の理由と比較は [ADR 0001](../adr/0001-ui-framework.md)
 に記録しました。要点だけを書きます。
 
 - **メイン画面**: GPUI を使います。macOS は Metal、Windows は Win32 と
@@ -168,7 +177,7 @@ Webview は最終手段です。Web の文書そのものを表示するとき�
 
 ### 3.1 状態の所在
 
-編集の状態は、キー入力のたびに変わるものと、文書に属するものに分けます（[ADR 0003](./adr/0003-editor-state.md)）。
+編集の状態は、キー入力のたびに変わるものと、文書に属するものに分けます（[ADR 0003](../adr/0003-editor-state.md)）。
 
 | 状態                                                           | 持つ場所     | 理由                                                         |
 | :------------------------------------------------------------- | :----------- | :----------------------------------------------------------- |
@@ -185,7 +194,7 @@ Webview は最終手段です。Web の文書そのものを表示するとき�
 
 コアに位置が要る操作（補完、ホバー、LSP、整形）は、呼び出しのたびに位置を渡します。常時は同期しません。
 
-アンドゥの履歴はコアが持ちます（[ADR 0004](./adr/0004-undo-in-core.md)）。言語サーバーの整形や、複数ファイルの置換も同じ履歴に入れるためです。
+アンドゥの履歴はコアが持ちます（[ADR 0004](../adr/0004-undo-in-core.md)）。言語サーバーの整形や、複数ファイルの置換も同じ履歴に入れるためです。
 
 カーソルと選択はクライアントが持つため、編集を送るときに前後の選択を一緒に渡します。コアは本文の逆編集と選択を1つの項目として積み、アンドゥのときは逆の編集と選択を返します。
 
@@ -257,12 +266,12 @@ vy-server ---> vy-core --->  ropey
 `ui`、`views`、`keymap`、`commands`、 `editor`
 などクライアント専用の型と宣言を持ちます。どちらもハンドラを持たず、
 クライアントは `vy-app/src/api`、コアは `vy-server/src/api` にハンドラを置きます
-（[ADR 0012](./adr/0012-shared-host-api.md)）。
+（[ADR 0012](../adr/0012-shared-host-api.md)）。
 
 名前空間は trait として宣言し、`HostApi`（共有）と `ClientHostApi`（共有 +
 クライアント専用）の facade が `dispatch` をまとめます。ホスト構造体は名前空間
 trait を 実装するだけで、メソッドごとの adapter を持ちません
-（[ADR 0013](./adr/0013-host-api-traits.md)）。
+（[ADR 0013](../adr/0013-host-api-traits.md)）。
 
 - `vy-app` だけが GPUI に依存します。CI で `cargo tree` を検査し、他のクレートが
   GPUI を引いたら失敗させます。
@@ -301,7 +310,7 @@ trait を 実装するだけで、メソッドごとの adapter を持ちませ�
 - `vy-server`
   を1つのプロセスで複数のワークスペースに使うか、ワークスペースごとに分けるか。
 - 接続先の `vy-server` を自動で更新するか。Phase 5 では導入済みのものを使い、
-  版が合わなければエラーにします（[ADR 0010](./adr/0010-remote-connection.md)）。
+  版が合わなければエラーにします（[ADR 0010](../adr/0010-remote-connection.md)）。
 - `vy-server` の並行ディスパッチ。リクエストごとに `tokio::spawn`
   するか、version の順序を保つために文書ごとのキューにするか。大きな `pane/open`
   を `spawn_blocking` に回すかは、先に決めます。

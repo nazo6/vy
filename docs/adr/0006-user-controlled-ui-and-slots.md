@@ -1,3 +1,13 @@
+---
+id: "0006"
+title: "ユーザー制御 UI とスロットによるステータスライン"
+type: "adr"
+status: "accepted"
+date: 2026-10-22
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0006: ユーザー制御 UI とスロットによるステータスライン
 
 - 状態: 採用

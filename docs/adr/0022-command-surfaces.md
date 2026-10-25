@@ -1,3 +1,13 @@
+---
+id: "0022"
+title: "コマンドの入口と設定の分離"
+type: "adr"
+status: "accepted"
+date: 2026-10-25
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0022: コマンドの入口と設定の分離
 
 - 状態: 採用

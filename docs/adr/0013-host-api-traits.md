@@ -1,3 +1,13 @@
+---
+id: "0013"
+title: "名前空間 trait と HostApi facade でホスト API を実装する"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: ["0008", "0012"]
+superseded_by: null
+---
+
 # ADR 0013: 名前空間 trait と `HostApi` facade でホスト API を実装する
 
 - 状態: 採用（すべての名前空間を trait 化）

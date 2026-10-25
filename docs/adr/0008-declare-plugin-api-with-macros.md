@@ -1,3 +1,13 @@
+---
+id: "0008"
+title: "プラグイン API を宣言マクロで一本化する"
+type: "adr"
+status: "superseded"
+date: 2026-10-24
+supersedes: ["0007"]
+superseded_by: "0013"
+---
+
 # ADR 0008: プラグイン API を宣言マクロで一本化する
 
 - 状態: 置き換え済み（名前空間の宣言方法は [0013](./0013-host-api-traits.md) で

@@ -1,3 +1,13 @@
+---
+id: "0023"
+title: "型生成を ts-rs から specta に移行し単一ファイルへ集約する"
+type: "adr"
+status: "accepted"
+date: 2026-10-25
+supersedes: ["0009", "0015"]
+superseded_by: null
+---
+
 # ADR 0023: 型生成を ts-rs から specta に移行し単一ファイルへ集約する
 
 - 状態: 採用

@@ -1,3 +1,13 @@
+---
+id: "0012"
+title: "共有するホスト API の型と宣言は vy-host-api に置く"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0012: 共有するホスト API の型と宣言は `vy-host-api` に置く
 
 - 状態: 採用（型の置き場所は有効。宣言の共有方法は

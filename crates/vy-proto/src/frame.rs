@@ -1,6 +1,6 @@
 use crate::error::ProtoError;
 
-/// Upper bound for a single frame. See "Streams and large data" in `docs/protocol.md`.
+/// Upper bound for a single frame. See "Streams and large data" in `docs/specs/protocol.md`.
 ///
 /// A `buffer/snapshot` of a large file arrives in one frame, so the limit has to leave
 /// room for the whole text. Chunked snapshots would let it shrink again.

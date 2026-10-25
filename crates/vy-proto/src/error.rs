@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Protocol error codes. Values and meanings are in "Errors" in `docs/protocol.md`.
+/// Protocol error codes. Values and meanings are in "Errors" in `docs/specs/protocol.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
     InvalidRequest,

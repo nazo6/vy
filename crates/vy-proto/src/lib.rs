@@ -1,6 +1,6 @@
 //! RPC types, framing, and version for the link between the Vy client and core.
 //!
-//! See [`protocol.md`](../../../docs/protocol.md) for how messages are sent and
+//! See [`protocol.md`](../../../docs/specs/protocol.md) for how messages are sent and
 //! received. This crate has no I/O. It provides only frame assembly and splitting;
 //! `vy-server` and `vy-app` do the reading and writing.
 

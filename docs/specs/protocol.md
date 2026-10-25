@@ -1,3 +1,12 @@
+---
+title: "通信プロトコル仕様 (MessagePack RPC)"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0002", "0010", "0018"]
+tags: ["protocol", "rpc", "msgpack", "network"]
+---
+
 # 通信プロトコル仕様 (MessagePack RPC)
 
 Vy
@@ -18,11 +27,11 @@ RustのMessagePack (`rmp-serde`)** を用いた高速バイナリRPCで通信を
 
 ローカル接続では、クライアントが `vy-server`
 を子プロセスで起動し、標準入出力でこのフレームを流します。リモート接続では、SSH
-の標準入出力を使います。どちらも同じ形式です（[ADR 0002](./adr/0002-process-model.md)）。
+の標準入出力を使います。どちらも同じ形式です（[ADR 0002](../adr/0002-process-model.md)）。
 
 リモート接続は `ssh -T [-p port] [user@]host -- <serverPath> --stdio` で起動します。
 接続先には導入済みの `vy-server` を使い、バイナリの自動転送は行いません
-（[ADR 0010](./adr/0010-remote-connection.md)）。接続先は
+（[ADR 0010](../adr/0010-remote-connection.md)）。接続先は
 `~/.config/vy/connections.json` のプロファイルで選びます。
 
 `vy-server` を起動するときの引数は `--stdio`（既定）と `--version`
@@ -112,7 +121,7 @@ client.notify::<BufferDidChange>(DidChangeParams { .. });
 ```
 
 サーバーは `PaneOpen::METHOD` で分岐し、`decode_params` と `ok` で型付きの
-params / 応答を扱います。詳細は [ADR 0018](./adr/0018-typed-rpc.md) にあります。
+params / 応答を扱います。詳細は [ADR 0018](../adr/0018-typed-rpc.md) にあります。
 
 ## 3. 接続の開始
 

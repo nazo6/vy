@@ -413,7 +413,7 @@ export type PluginContextReply = {
  * 
  *  This matches how JavaScript counts string positions. The core stores char indices
  *  internally and converts to this type at the boundary (see "Position representation"
- *  in `docs/architecture.md`).
+ *  in `docs/specs/architecture.md`).
  */
 export type Position = {
 	line: number,

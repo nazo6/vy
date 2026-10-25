@@ -1,3 +1,10 @@
+---
+title: "実装ロードマップと未決定事項"
+type: "guide"
+updated_at: 2026-10-25
+tags: ["roadmap", "milestones", "phases"]
+---
+
 # 実装ロードマップと未決定事項
 
 Vy
@@ -63,7 +70,7 @@ Phase 8 で扱います。
 - [x] ヘッドレスの `cargo test`:
   - `vy-core` のバッファとアンドゥ
   - `vy-server` の RPC の往復と、プロトコルの版が合わないときに接続を閉じること
-- [x] キーの一覧と実装状況を [`keymap.md`](./keymap.md) にまとめる
+- [x] キーの一覧と実装状況を [`keymap.md`](./specs/keymap.md) にまとめる
 
 ### Phase 2: TypeScript設定 & プラグイン実行基盤
 
@@ -144,7 +151,7 @@ Phase 8 で扱います。
   - [x] コマンドパレット（`space` リーダー、単語検索、選択、実行）
   - [x] コマンド記述子と `Invocation`
         の共通化（キーマップ、パレット、Ex、スクリプト）
-  - [x] `:` の Ex コマンドライン（[`commands.md`](./commands.md)）
+  - [x] `:` の Ex コマンドライン（[`commands.md`](./specs/commands.md)）
   - [x] ピッカー API（`ui.picker.show`）
 
 ### Phase 4: プラグイン拡充と実用拡張の基盤
@@ -211,7 +218,7 @@ Phase 8 で扱います。
 ### Phase 8: Webview・Notebook (最終段階)
 
 Webview は Web の文書そのものを表示するときだけ使います。操作を伴う UI は Phase
-3 の `ui` ビューで作ります（[`ui.md`](./ui.md)）。
+3 の `ui` ビューで作ります（[`ui.md`](./specs/ui.md)）。
 
 - [ ] `gpui-kit/crates/webview` の組み込み
 - [ ] Webview のフォーカス、キー入力、テーマの受け渡し
@@ -243,11 +250,11 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 - [x] パレットと Ex コマンドラインで IME の前編集を使えるようにする。どちらも
       キーイベントで文字を積むため、日本語の入力と検索ができません
       （`crates/vy-app/src/view/commands.rs`、`crates/vy-app/src/view/input.rs`、
-      [`keymap.md`](./keymap.md)）。
+      [`keymap.md`](./specs/keymap.md)）。
 - [ ] （保留・スキップ）`session.json` を実装する。文書ではウィンドウの大きさ、スクロール位置、
       フォーカスの履歴をクライアントが保存すると決めていますが、書くコードが
-      ありません。ウィンドウは 1000x700 で固定です（[`panes.md`](./panes.md)、
-      [`layout.md`](./layout.md)、`crates/vy-app/src/main.rs`）。今回の改善では保留とします。
+      ありません。ウィンドウは 1000x700 で固定です（[`panes.md`](./specs/panes.md)、
+      [`layout.md`](./specs/layout.md)、`crates/vy-app/src/main.rs`）。今回の改善では保留とします。
 
 ### P1: 表示と操作の質
 
@@ -257,13 +264,13 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       折り返すか、右側の項目にはみ出します（`crates/vy-app/src/ui/statusline.rs`）。
 - [x] 通知: 自動消去と重なりの扱い。`notifications.show` は `message` だけを受け取り、
       状態行に置くだけで消えません（`crates/vy-app/src/api/host/notifications.rs`、
-      [`api.md`](./api.md)）。
+      [`api.md`](./specs/api.md)）。
 - [x] テーマ: 起動時に `Theme::dark()` を固定しています。`Theme::light()` を設定から
       選べるようにし、切り替え時に再描画します（`crates/vy-app/src/main.rs`、
       `crates/vy-app/src/theme.rs`）。
 - [x] タブ: タブを 1 列として折り返しています。表示セル幅の計算と合わせて、
       `tabstop`（既定値を決める）で描くようにします（`crates/vy-app/src/text_layout.rs`、
-      [`keymap.md`](./keymap.md)）。
+      [`keymap.md`](./specs/keymap.md)）。
 - [x] ガター: 実測した文字幅とずれないようにし、1 行に複数のマークを描く。今は
       近似幅を使い、`marks.first()` で 1 つだけ描きます
       （`crates/vy-app/src/ui/pane.rs`）。
@@ -284,24 +291,24 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 - [x] 文字幅の測定結果をフォント設定ごとにキャッシュする。`font_character_width` は
       毎フレーム呼ばれます（`crates/vy-app/src/ui/pane.rs`）。
 - [x] アクセシビリティ: 読み上げ、キーボードだけでのフォーカス移動、フォーカス順
-      （[`ui.md`](./ui.md) の未決定事項）。`Esc` のフォーカス層も決めます
-      （[`keymap.md`](./keymap.md)）。
-- [x] ドキュメントを実装に追いつかせる: [`panes.md`](./panes.md) の実装状況は
-      `editor` ビューだけのまま、[`keymap.md`](./keymap.md) は Phase 2 のまま。
+      （[`ui.md`](./specs/ui.md) の未決定事項）。`Esc` のフォーカス層も決めます
+      （[`keymap.md`](./specs/keymap.md)）。
+- [x] ドキュメントを実装に追いつかせる: [`panes.md`](./specs/panes.md) の実装状況は
+      `editor` ビューだけのまま、[`keymap.md`](./specs/keymap.md) は Phase 2 のまま。
       `editor.wrap`、`:set wrap`、Settings パレットは README と
-      [`commands.md`](./commands.md) に載せた。
+      [`commands.md`](./specs/commands.md) に載せた。
 
 ### 機能追加として別に扱うもの
 
 次は改善ではなく機能追加なので、このバックログには入れません。予定は各文書にあります。
 
 - マウス操作（クリックでフォーカスとカーソル移動、ドラッグで選択、ポインタ下の
-  ペインのホイール）: [`keymap.md`](./keymap.md)
-- フローティングペイン: [`panes.md`](./panes.md)
-- ペインごとのステータスラインと、項目のクリック実行: [`ui.md`](./ui.md)
-- システムのクリップボードと `"+` / `"*`: [`keymap.md`](./keymap.md)
+  ペインのホイール）: [`keymap.md`](./specs/keymap.md)
+- フローティングペイン: [`panes.md`](./specs/panes.md)
+- ペインごとのステータスラインと、項目のクリック実行: [`ui.md`](./specs/ui.md)
+- システムのクリップボードと `"+` / `"*`: [`keymap.md`](./specs/keymap.md)
 - 未実装の編集キー（`Delete`、`Ctrl-w`、`Ctrl-r`、`Ctrl-e` / `Ctrl-y` など）:
-  [`keymap.md`](./keymap.md) の「編集・移動・検索（未実装）」
+  [`keymap.md`](./specs/keymap.md) の「編集・移動・検索（未実装）」
 
 次に着手するなら、未保存の確認、表示セル幅、パレットと Ex の IME、
 ホバーと横スクロールの状態の順です（`session.json` は保留）。前の 3 つは正しさに直結し、後ろの 2 つは
@@ -318,33 +325,33 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 | UI フレームワーク      | GPUI と gpui-kit を採用し、依存を `vy-app` に閉じる                                 | [ADR 0001](./adr/0001-ui-framework.md)                                             |
 | プロセスの構成         | クライアントとコアを常に別プロセスにし、ローカルは子プロセスと標準入出力でつなぐ    | [ADR 0002](./adr/0002-process-model.md)                                            |
 | 編集状態の所在         | 本文とアンドゥはコア、カーソルと選択はクライアント                                  | [ADR 0003](./adr/0003-editor-state.md) と [ADR 0004](./adr/0004-undo-in-core.md)   |
-| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                          | [`panes.md`](./panes.md)                                                           |
-| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                                | [`plugin-system.md`](./plugin-system.md)                                           |
-| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                    | [`plugin-system.md`](./plugin-system.md)                                           |
+| 画面の構成             | 固定のサイドバーやパネルを作らず、すべてをペインとして扱う                          | [`panes.md`](./specs/panes.md)                                                           |
+| プラグインの信頼モデル | マニフェストでケイパビリティを宣言し、初回に承認する                                | [`plugin-system.md`](./specs/plugin-system.md)                                           |
+| 設定の形式             | `init.ts` と `settings.json` の2種類。プロジェクト側は JSON のみ                    | [`plugin-system.md`](./specs/plugin-system.md)                                           |
 | API の形               | グローバル `vy` と async ファースト                                                 | [ADR 0019](./adr/0019-global-vy-api.md)                                            |
 | プラグインの形態       | ソース（相対 TS のみ、依存なし）とバンドル（単一 ESM、依存同梱）                    | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
 | プラグインのビルド     | esbuild などの JS ツールチェーンに任せ、Vy はロード時に検証する                     | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
-| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                              | [`layout.md`](./layout.md)                                                         |
-| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                          | [`protocol.md`](./protocol.md)                                                     |
-| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る               | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./ui.md)                   |
-| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す      | [`architecture.md`](./architecture.md) と [`protocol.md`](./protocol.md)           |
-| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                  | [`architecture.md`](./architecture.md)                                             |
-| フレームの形式         | 長さはリトルエンディアンの u32。上限 64 MiB。読み書きは各1本のスレッドに固定        | [`protocol.md`](./protocol.md)                                                     |
-| 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う  | [`architecture.md`](./architecture.md)                                             |
-| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する                | [`architecture.md`](./architecture.md)                                             |
-| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                            | [`protocol.md`](./protocol.md)                                                     |
+| ファイルの配置         | ユーザー設定、プロジェクト、プラグインのパッケージ規約                              | [`layout.md`](./specs/layout.md)                                                         |
+| 通信の拡張             | ハンドシェイク、取り消し、ストリーム、Blob                                          | [`protocol.md`](./specs/protocol.md)                                                     |
+| プラグイン UI          | ネイティブのウィジェット木を既定にし、Webview は Web 文書の表示に限る               | [ADR 0005](./adr/0005-native-plugin-ui.md) と [`ui.md`](./specs/ui.md)                   |
+| プロセスの起動         | `vy-app` が `vy-server --stdio` を起動し、ワークスペースは `initialize` で渡す      | [`architecture.md`](./specs/architecture.md) と [`protocol.md`](./specs/protocol.md)           |
+| 子プロセスの終了       | クライアントは落とさず通知だけ出す。自動では再起動せず、手動で行う                  | [`architecture.md`](./specs/architecture.md)                                             |
+| フレームの形式         | 長さはリトルエンディアンの u32。上限 64 MiB。読み書きは各1本のスレッドに固定        | [`protocol.md`](./specs/protocol.md)                                                     |
+| 実行基盤               | `vy-server` は tokio、`vy-core` は同期のまま。`vy-app` は専用スレッドで RPC を扱う  | [`architecture.md`](./specs/architecture.md)                                             |
+| 位置の内部表現         | コアは ropey の char index で持ち、境界で UTF-16 と UTF-8 に変換する                | [`architecture.md`](./specs/architecture.md)                                             |
+| アンドゥのまとめ       | モード変更、500ms の入力間隔、選択を伴うコマンドで区切る                            | [`protocol.md`](./specs/protocol.md)                                                     |
 | Phase 1 の対象 OS      | Linux と macOS。Windows は Phase 1 の対象外                                         | [`roadmap.md`](./roadmap.md)                                                       |
-| アンドゥの結果         | 履歴をバッチで保持し、undo は LIFO、redo は FIFO。`edits` はバッチの配列            | [`protocol.md`](./protocol.md)                                                     |
-| クライアントの RPC     | 書き込みは専用スレッド、受信はイベント駆動（16ms ポーリングをやめる）               | [`architecture.md`](./architecture.md)                                             |
-| キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す                | [`keymap.md`](./keymap.md)                                                         |
-| レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                            | [`keymap.md`](./keymap.md)                                                         |
-| 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                     | [`keymap.md`](./keymap.md)                                                         |
+| アンドゥの結果         | 履歴をバッチで保持し、undo は LIFO、redo は FIFO。`edits` はバッチの配列            | [`protocol.md`](./specs/protocol.md)                                                     |
+| クライアントの RPC     | 書き込みは専用スレッド、受信はイベント駆動（16ms ポーリングをやめる）               | [`architecture.md`](./specs/architecture.md)                                             |
+| キーマップの状態       | カウントとレジスタはキーマップのプレフィックス。コマンドへ引数で渡す                | [`keymap.md`](./specs/keymap.md)                                                         |
+| レジスタの種類         | 文字単位と行単位を持ち、`p` / `P` は行単位をそのまま貼る                            | [`keymap.md`](./specs/keymap.md)                                                         |
+| 単語の区切り           | 空白・単語文字（英数字と `_`）・句読点の 3 種類                                     | [`keymap.md`](./specs/keymap.md)                                                         |
 | JS の実行              | プラグインごとの専用ランタイム。API はグローバル `vy`。UI とは要求と応答で通信      | [ADR 0019](./adr/0019-global-vy-api.md)                                            |
-| TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./plugin-system.md)                                           |
+| TypeScript の変換      | Oxc で型だけを除去する。構文の変換はせず、位置付きのエラーを返す                    | [`plugin-system.md`](./specs/plugin-system.md)                                           |
 | モジュール解決         | ソース形態は相対 import のみ。外部依存はバンドルし、実行時に `node_modules` を解決しない | [ADR 0020](./adr/0020-plugin-source-and-bundles.md)                                |
-| `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./plugin-system.md)                                           |
-| 型定義の生成           | プロトコル境界の型は Specta で `bindings.ts` に生成（[ADR 0023](./adr/0023-specta-api-types.md)） | [`api.md`](./api.md)                                                               |
-| コマンドの入口         | パレットは発見、Ex は指定、キーは反復。メタデータは記述子に集約し、設定は状態として分離する | [ADR 0022](./adr/0022-command-surfaces.md) と [`commands.md`](./commands.md)      |
+| `init.ts` の信頼       | `init.ts` は常に信頼する。外部プラグインの承認は Phase 4                            | [`plugin-system.md`](./specs/plugin-system.md)                                           |
+| 型定義の生成           | プロトコル境界の型は Specta で `bindings.ts` に生成（[ADR 0023](./adr/0023-specta-api-types.md)） | [`api.md`](./specs/api.md)                                                               |
+| コマンドの入口         | パレットは発見、Ex は指定、キーは反復。メタデータは記述子に集約し、設定は状態として分離する | [ADR 0022](./adr/0022-command-surfaces.md) と [`commands.md`](./specs/commands.md)      |
 | リモート接続           | SSH の標準入出力を使い、接続先に導入済みの `vy-server` を起動する                   | [ADR 0010](./adr/0010-remote-connection.md)                                        |
 | 再接続                 | サーバーを起動し直し、レイアウトと未保存の本文をクライアントから再同期する          | [ADR 0010](./adr/0010-remote-connection.md)                                        |
 | 接続プロファイル       | `~/.config/vy/connections.json` に置き、`--connect` で選ぶ                          | [ADR 0010](./adr/0010-remote-connection.md)                                        |
@@ -369,7 +376,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
      では扱わず、Windows 対応と合わせて決めます。
 7. **コマンドの入口と設定の細部**
    - 最後のペインでの `:q`、プラグインの Ex 名、履歴の永続化、範囲の既定値などは
-     [`commands.md`](./commands.md) の「未決定事項」にまとめました。
+     [`commands.md`](./specs/commands.md) の「未決定事項」にまとめました。
 8. **Web API のプリミティブ**
    - `console`、`TextEncoder`、`setTimeout` などをどこまで提供するか。外部
      ライブラリの互換性に直結するため、ソース形態とバンドル形態の運用が固まって

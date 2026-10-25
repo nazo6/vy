@@ -2,7 +2,7 @@
 //!
 //! It carries MessagePack RPC over stdio. The only arguments are `--stdio` and
 //! `--version`. The workspace and the log destination come in the `initialize`
-//! params (`docs/protocol.md`).
+//! params (`docs/specs/protocol.md`).
 
 mod paths;
 mod session;

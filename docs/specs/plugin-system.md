@@ -1,3 +1,12 @@
+---
+title: "プラグインシステムと設定"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0011", "0019", "0020", "0021"]
+tags: ["plugin", "quickjs", "settings", "capabilities"]
+---
+
 # プラグインシステムと設定
 
 Vy は、クライアント側の TypeScript を入口にし、API
@@ -66,7 +75,7 @@ vy.commands.register(
 ```
 
 `vy` はホストがインストールするグローバルで、import は不要です
-（[ADR 0019](./adr/0019-global-vy-api.md)）。`vy-api` は型専用のパッケージで、
+（[ADR 0019](../adr/0019-global-vy-api.md)）。`vy-api` は型専用のパッケージで、
 `import type {} from "vy-api"` を1回置くと `vy` と `Vy.CommandMap` が見えます。
 `vy-api` から値を import することはできません。型定義は `packages/vy-api` が
 提供し、Rust の型から `packages/vy-api/types` を生成するため、プロトコルの変更と
@@ -286,7 +295,7 @@ ID とバージョンの組で `trusted.json`
 
 ### 3.4 モジュール解決と配布
 
-プラグインには2つの形態があります（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
+プラグインには2つの形態があります（[ADR 0020](../adr/0020-plugin-source-and-bundles.md)）。
 
 | 形態     | エントリ           | import   | 外部依存                     |
 | :------- | :----------------- | :------- | :--------------------------- |
@@ -335,7 +344,7 @@ TypeScript と JSX の構文も拒否します。サイズ上限は 4 MiB で、
 
 検索結果が数十万行に及ぶ場合、生のテキストをすべてクライアントへ送ると帯域とメモリを使い切ります。そのため、プラグインは接続先で動く
 `backend.ts`
-を併設できます（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。
+を併設できます（[ADR 0011](../adr/0011-backend-plugins-on-core.md)）。
 
 - `frontend.ts` は UI の登録（`ui`
   ビューのウィジェット木）、Webview、キー入力、設定を扱います。

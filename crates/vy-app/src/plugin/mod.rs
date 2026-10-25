@@ -1,7 +1,7 @@
 //! Plugin management, manifest parsing, discovery, and capability approval.
 //!
 //! Implements external plugin loading and the trust model defined in
-//! `docs/plugin-system.md` and `docs/layout.md`.
+//! `docs/specs/plugin-system.md` and `docs/specs/layout.md`.
 
 pub mod activation;
 pub mod bundle;

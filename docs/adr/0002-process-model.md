@@ -1,3 +1,13 @@
+---
+id: "0002"
+title: "クライアントとコアを常に別プロセスにする"
+type: "adr"
+status: "accepted"
+date: 2026-10-22
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0002: クライアントとコアを常に別プロセスにする
 
 - 状態: 採用
@@ -74,6 +84,6 @@ API が接続先によって違う経路を通ると、リモートでだけ壊�
 ## 関連する未決定事項
 
 - `vy-server` の起動引数とワークスペースの指定方法: `--stdio`
-  だけを引数にし、ワークスペースは `initialize` で渡すことにしました（[`protocol.md`](../protocol.md)）。
-- 子プロセスの終了: クライアントは通知だけを出し、自動では再起動しないことにしました（[`architecture.md`](../architecture.md)）。
+  だけを引数にし、ワークスペースは `initialize` で渡すことにしました（[`protocol.md`](../specs/protocol.md)）。
+- 子プロセスの終了: クライアントは通知だけを出し、自動では再起動しないことにしました（[`architecture.md`](../specs/architecture.md)）。
 - 標準入出力と Unix ソケット: 当面は標準入出力だけを使います。ソケットと名前付きパイプは、多重化を決めるときに扱います。

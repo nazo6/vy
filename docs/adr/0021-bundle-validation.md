@@ -1,3 +1,13 @@
+---
+id: "0021"
+title: "バンドル検証とエントリの制限"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0021: バンドル検証とエントリの制限
 
 - 状態: 採用

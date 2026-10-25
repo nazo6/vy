@@ -1,3 +1,13 @@
+---
+id: "0003"
+title: "編集状態をコアとクライアントに分ける"
+type: "adr"
+status: "accepted"
+date: 2026-10-22
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0003: 編集状態をコアとクライアントに分ける
 
 - 状態: 採用（アンドゥの所在は [ADR 0004](./0004-undo-in-core.md) で置き換え）

@@ -1,7 +1,13 @@
+---
+title: "開発方針"
+type: "guide"
+updated_at: 2026-10-25
+---
+
 # 開発方針
 
 このファイルは、リポジトリで作業するときの共通の決まりをまとめたものです。
-画面の設計は [`architecture.md`](./architecture.md)、実装の順序は
+画面の設計は [`specs/architecture.md`](./specs/architecture.md)、実装の順序は
 [`roadmap.md`](./roadmap.md) にあります。
 
 ## 1. 言語
@@ -42,7 +48,7 @@
 - 本文、version、アンドゥの履歴、診断、レイアウトはコア。
 - カーソル、選択、モード、スクロール、`ui` ビューの木はクライアント。
 - 位置は境界で UTF-16 に変換します。コアの内部は char index です
-  （[`architecture.md`](./architecture.md) の「位置の表現」）。
+  （[`specs/architecture.md`](./specs/architecture.md) の「位置の表現」）。
 
 クライアントとコアは、ローカル接続でも別プロセスです
 （[ADR 0002](./adr/0002-process-model.md)）。近道を作らず、常に RPC を通します。
@@ -139,3 +145,29 @@ pnpm docs:api
   フィールドやバリアント単位の説明も反映されます。
 - コメントは英語で書きます（§1）。生成 HTML の確認は `pnpm docs:api`
   が警告なしで終わることと、主要な API ページに説明と例が出ることです。
+
+## 7. ドキュメントの構成と運用
+
+ドキュメントは目的とライフサイクルによって置き場所を明確に分離します。詳細は [`docs/README.md`](./README.md) にあります。
+
+- **生きた仕様書 (Living Specs)**: `docs/specs/*.md`
+  現在のシステム仕様・アーキテクチャの唯一の正解（SSOT）です。確定した仕様のみを書き、常に最新にメンテナンスします。一覧は [`docs/specs/README.md`](./specs/README.md) にあります。
+- **アーキテクチャ決定記録 (ADR)**: `docs/adr/`
+  設計判断の歴史的記録です。一度採択された ADR は原則として変更せず、変更時は新しい ADR を追加します。
+- **提案・設計検討 (Proposals)**: `docs/proposals/`
+  新機能のアイデアや未決定事項の検討置き場です。合意された内容は ADR や仕様書へ反映されます。
+- **作業ログ (Worklogs)**: `docs/worklogs/`
+  リファクタリング、段階的移行、パフォーマンス検証などの計画と実施ログを記録します。
+
+### メタデータ (frontmatter)
+
+すべての Markdown ドキュメントの先頭には YAML frontmatter を付与します。
+
+```yaml
+---
+title: "ドキュメントタイトル"
+type: "spec" # "spec" | "adr" | "proposal" | "worklog" | "guide"
+updated_at: 2026-10-25
+---
+```
+

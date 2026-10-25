@@ -2,7 +2,7 @@
 //!
 //! The keymap owns the count (`5j`) and register (`"a`) prefixes. It walks the
 //! bindings in order, so later bindings (from `init.ts`) override earlier ones
-//! (the default keymap). See `docs/keymap.md`.
+//! (the default keymap). See `docs/specs/keymap.md`.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};

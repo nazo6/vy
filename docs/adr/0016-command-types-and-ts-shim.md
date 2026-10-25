@@ -1,3 +1,13 @@
+---
+id: "0016"
+title: "コマンド型を分離し、JS API の型を TS shim から生成する"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: ["0014", "0015"]
+superseded_by: null
+---
+
 # ADR 0016: コマンド型を分離し、JS API の型を TS shim から生成する
 
 - 状態: 採用（API の入口は [0019](./0019-global-vy-api.md) でグローバル `vy` に

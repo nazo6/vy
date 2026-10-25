@@ -5,7 +5,7 @@
 //! separate channels. A host request blocks the JavaScript thread until the UI
 //! answers, which is safe because the UI always answers through its task.
 //!
-//! See `docs/plugin-system.md` §2.2 and `docs/architecture.md`.
+//! See `docs/specs/plugin-system.md` §2.2 and `docs/specs/architecture.md`.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,3 +1,13 @@
+---
+id: "0018"
+title: "クライアント・コア間の RPC は型付き marker で送る"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0018: クライアント・コア間の RPC は型付き marker で送る
 
 - 状態: 採用
@@ -6,7 +16,7 @@
 ## 文脈
 
 クライアントとコアの間の RPC は、エンベロープではメソッド名を文字列、
-params と応答を `rmpv::Value` で運びます（[`protocol.md`](../protocol.md)）。
+params と応答を `rmpv::Value` で運びます（[`protocol.md`](../specs/protocol.md)）。
 この形はワイヤーとしては単純ですが、実装では次の問題がありました。
 
 - 呼び出し側が `client.request("pane/open", to_value(&PaneOpenParams { .. }))`

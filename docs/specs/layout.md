@@ -1,3 +1,12 @@
+---
+title: "ファイルとフォルダの構成"
+type: "spec"
+status: "active"
+updated_at: 2026-10-25
+related_adrs: ["0015", "0020"]
+tags: ["layout", "filesystem", "config-paths"]
+---
+
 # ファイルとフォルダの構成
 
 Vy
@@ -49,7 +58,7 @@ Vy
 `connections.json`
 には、リモート接続のプロファイルを置きます。`host`、`user`、`port`、`workspace`、
 `home`、`serverPath` を持ち、`vy-app --connect <name>` で選びます
-（[ADR 0010](./adr/0010-remote-connection.md)）。接続先の `vy-server`
+（[ADR 0010](../adr/0010-remote-connection.md)）。接続先の `vy-server`
 は導入済みのものを使い、自動では転送しません。
 
 OS ごとの既定の場所は次のとおりです。
@@ -199,7 +208,7 @@ docs/
 `dist/` だけを含めます。利用者の環境で `node_modules` を解決しません。ソース
 形態はソースのまま配布できますが、外部依存は使えません。
 
-プラグインには2つの形態があります（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
+プラグインには2つの形態があります（[ADR 0020](../adr/0020-plugin-source-and-bundles.md)）。
 
 - **ソース形態**: `main` が `frontend.ts` を指し、相対 import だけで書きます。
   外部依存は使えません。ビルドなしで動きます。
@@ -207,7 +216,7 @@ docs/
   同梱します。
 
 どちらも `vy` グローバルを使い、`vy-api` からの import は書きません
-（[ADR 0019](./adr/0019-global-vy-api.md)）。型は `env.d.ts` などで
+（[ADR 0019](../adr/0019-global-vy-api.md)）。型は `env.d.ts` などで
 `import type {} from "vy-api"` を1回読み込みます。
 
 バンドルは esbuild、tsup、rolldown-vite など一般の JS ツールチェーンで作ります。

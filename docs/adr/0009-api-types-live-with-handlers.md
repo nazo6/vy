@@ -1,3 +1,13 @@
+---
+id: "0009"
+title: "API の型はハンドラの隣に置き、生成は codegen に集める"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: ["0007", "0008"]
+superseded_by: null
+---
+
 # ADR 0009: API の型はハンドラの隣に置き、生成は codegen に集める
 
 - 状態: 採用（[0007](./0007-rust-typed-plugin-api.md) の決定 1 と

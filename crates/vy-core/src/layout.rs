@@ -1,7 +1,7 @@
 //! The layout tree of one window.
 //!
 //! The core owns the tree; clients only render the confirmed result
-//! (`docs/panes.md`). Panes are leaves, and a split is a binary node with a ratio.
+//! (`docs/specs/panes.md`). Panes are leaves, and a split is a binary node with a ratio.
 //! Floating panes and saved sessions are not implemented yet.
 
 use serde::{Deserialize, Serialize};
@@ -193,7 +193,7 @@ impl Layout {
     /// Adds a pane next to `target`, or makes it the root when the tree is empty.
     ///
     /// `before` puts the new pane in the first slot. When `target` is omitted, the
-    /// active pane is used, matching `panes.open` in `docs/panes.md`.
+    /// active pane is used, matching `panes.open` in `docs/specs/panes.md`.
     pub fn open(
         &mut self,
         pane: PaneId,

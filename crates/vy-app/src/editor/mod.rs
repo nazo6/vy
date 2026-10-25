@@ -2,8 +2,8 @@
 //!
 //! It holds the client's copy of the text, the cursor, the selection, and the mode.
 //! Commands come from the keymap (`keymap.rs`) and build the `buffer/did_change`
-//! payload for the core. See "Where state lives" in `docs/architecture.md` and the
-//! key flow in `docs/ui.md`.
+//! payload for the core. See "Where state lives" in `docs/specs/architecture.md` and the
+//! key flow in `docs/specs/ui.md`.
 //!
 //! Phase 1 covers Normal, Insert, and Select plus `h j k l w b e 0 $ G x d p P v i a .`
 //! and counts. Yank and text objects come with the keymap in Phase 2.

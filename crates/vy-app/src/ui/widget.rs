@@ -1,6 +1,6 @@
 //! Native widget tree rendering for `ui` views.
 //!
-//! Defined in `docs/ui.md` and `docs/adr/0005-native-plugin-ui.md`.
+//! Defined in `docs/specs/ui.md` and `docs/adr/0005-native-plugin-ui.md`.
 
 use gpui::{AnyElement, Context, IntoElement, div, prelude::*, px};
 use vy_app::widget::{ButtonVariant, ContainerKind, Gap, WidgetNode};

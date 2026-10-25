@@ -1,6 +1,6 @@
 //! Native widget tree models for custom `ui` views.
 //!
-//! Defined in `docs/ui.md` and `docs/adr/0005-native-plugin-ui.md`. The tree
+//! Defined in `docs/specs/ui.md` and `docs/adr/0005-native-plugin-ui.md`. The tree
 //! crosses the plugin boundary, so the renderer and the declarations share
 //! these types.
 

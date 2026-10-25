@@ -1,6 +1,6 @@
 //! Locations of user files.
 //!
-//! The layout follows `docs/layout.md`. Environment variables override the platform
+//! The layout follows `docs/specs/layout.md`. Environment variables override the platform
 //! defaults so tests and development builds can use a separate tree.
 
 use std::path::{Path, PathBuf};
@@ -96,7 +96,7 @@ fn app_dir(base: PathBuf) -> PathBuf {
 
 /// Appends [`APP_DIR`] to a platform cache directory.
 ///
-/// `docs/layout.md` puts the Windows cache one level deeper (`%LOCALAPPDATA%\vy\cache`).
+/// `docs/specs/layout.md` puts the Windows cache one level deeper (`%LOCALAPPDATA%\vy\cache`).
 fn app_cache_dir(base: PathBuf) -> PathBuf {
     let dir = app_dir(base);
     if cfg!(windows) {

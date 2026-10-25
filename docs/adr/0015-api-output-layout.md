@@ -1,3 +1,13 @@
+---
+id: "0015"
+title: "API の生成物は packages/vy-api にまとめる"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: ["0014"]
+superseded_by: null
+---
+
 # ADR 0015: API の生成物は `packages/vy-api` にまとめる
 
 - 状態: 採用（`overrides.d.ts` と `CommandId` は

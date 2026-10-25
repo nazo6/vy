@@ -2,7 +2,7 @@
 //!
 //! Each plugin declares its identity, entry points, capabilities, activation
 //! events, and contributed commands in `plugin.json` as specified in
-//! `docs/plugin-system.md` §3.1.
+//! `docs/specs/plugin-system.md` §3.1.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

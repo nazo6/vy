@@ -1,3 +1,13 @@
+---
+id: "0004"
+title: "アンドゥの履歴はコアが持つ"
+type: "adr"
+status: "accepted"
+date: 2026-10-22
+supersedes: ["0003"]
+superseded_by: null
+---
+
 # ADR 0004: アンドゥの履歴はコアが持つ
 
 - 状態: 採用

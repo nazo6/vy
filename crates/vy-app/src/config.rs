@@ -2,7 +2,7 @@
 //!
 //! Four layers are resolved, and later layers win: built-in defaults, the user
 //! `settings.json`, the project `.vy/settings.json`, and values set from `init.ts`
-//! (memory only). See `docs/plugin-system.md`.
+//! (memory only). See `docs/specs/plugin-system.md`.
 
 use std::collections::BTreeSet;
 use std::path::Path;

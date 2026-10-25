@@ -274,7 +274,7 @@ impl Default for Session {
     }
 }
 
-/// Returns the history result in the shape described by `docs/protocol.md`.
+/// Returns the history result in the shape described by `docs/specs/protocol.md`.
 fn applied_result(document_id: u64, applied: &Applied) -> vy_proto::HistoryResult {
     vy_proto::HistoryResult {
         document_id,

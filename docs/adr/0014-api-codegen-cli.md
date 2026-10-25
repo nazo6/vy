@@ -1,3 +1,13 @@
+---
+id: "0014"
+title: "API バインディングの生成を CLI に分離する"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0014: API バインディングの生成を CLI に分離する
 
 - 状態: 採用（出力レイアウトは [0015](./0015-api-output-layout.md)、

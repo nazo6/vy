@@ -1,3 +1,13 @@
+---
+id: "0011"
+title: "バックエンドプラグインはコアで動かし、バンドルをクライアントから送る"
+type: "adr"
+status: "accepted"
+date: 2026-10-24
+supersedes: []
+superseded_by: null
+---
+
 # ADR 0011: バックエンドプラグインはコアで動かし、バンドルをクライアントから送る
 
 - 状態: 採用（実装は Phase 6。backend の型を分ける時期は

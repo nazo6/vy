@@ -9,7 +9,7 @@ use super::operator::{Operator, TextObjectKind};
 ///
 /// The text and the change history stay with the document. Cursor, selection, mode,
 /// and pending operators are independent for each pane that shows the document
-/// (`docs/panes.md` and ADR 0003).
+/// (`docs/specs/panes.md` and ADR 0003).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewState {
     pub(super) mode: Mode,
