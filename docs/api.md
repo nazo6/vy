@@ -271,8 +271,8 @@ version と一致したときだけ確定します。
 
 `commands.register` は、ID とハンドラに加えてタイトル、カテゴリ、Ex 名、引数の
 仕様を受け取ります。`registerCommand` はタイトルを省略した糖衣です。
-`commands.getCommands` は、パレットと Ex が使うメタデータ（タイトル、カテゴリ、
-Ex 名、引数仕様、パレット掲載可否）を返します。形は
+`commands.getCommands` は `CommandInfo[]` を返します。各要素は `id`、`title`、
+`category`、`palette`、`exNames`、`args`、`range`、`bang` を持ちます。形は
 [`commands.md`](./commands.md) の「データモデル」と「プラグイン」にあります。
 
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、

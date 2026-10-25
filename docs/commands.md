@@ -155,12 +155,16 @@ Invocation
 - ペインのフォーカス移動と、ビューのスクロール。キーで反復する操作です。
 - 入口そのもの（`vy.ui.command_palette`、`vy.ui.ex_command_line`）。
 - 開発向けの `vy.script.eval`。Ex の `:ts` から使えます。
-- `vy.view.toggle_wrap`。`:set wrap` の糖衣で、設定と重複させません。
 - `vy.setting.set` / `toggle` / `reset`。Settings
   パレットの行が内部的に呼びます。
 
-`vy.editor.open` は現在 hidden ですが、引数プロンプトが入った時点で listed に
-します。パレットから開けない方が不自然だからです。
+`vy.editor.open` と `vy.view.open` / `close` / `toggle` は、引数が必須です。
+パレットが引数を聞けるようになる Phase 2 までは hidden にし、Ex からだけ実行
+できるようにしています。Ex 名と `ArgSpec` は Phase 1 で宣言済みです。
+
+`vy.view.toggle_wrap` は最終的には hidden・Ex 名なしにしますが、`:set wrap` が
+入る Phase 5 までは、暫定的に listed と `:wrap` を残します。折り返しを変える
+手段を途中で失わないためです。
 
 ### 4.2 表示
 
@@ -266,30 +270,32 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 
 ### 5.4 組み込みの Ex 名
 
-| Ex 名             | コマンド ID                                          | 状態                           | 備考                        |
-| :---------------- | :--------------------------------------------------- | :----------------------------- | :-------------------------- |
-| `:e` / `:edit`    | `vy.editor.open`                                     | 実装済み（`edit` は追加予定）  | 引数に URI またはパス       |
-| `:w` / `:write`   | `vy.document.save`                                   | 実装済み（`write` は追加予定） | 別名保存は未対応            |
-| `:b` / `:buffer`  | `vy.editor.switch_document`                          | 実装済み                       | 引数なしは文書ピッカー      |
-| `:sp`             | `vy.pane.split_down`                                 | 実装済み                       | 上下に分割                  |
-| `:vsp`            | `vy.pane.split_right`                                | 実装済み                       | 左右に分割                  |
-| `:split-left`     | `vy.pane.split_left`                                 | 追加予定                       | 左に分割                    |
-| `:split-up`       | `vy.pane.split_up`                                   | 追加予定                       | 上に分割                    |
-| `:close` / `:q`   | `vy.pane.close`                                      | 実装済み                       | 最後のペインは閉じられない  |
-| `:view`           | `vy.view.open`                                       | 追加予定                       | プラグインのビューを開く    |
-| `:view-close`     | `vy.view.close`                                      | 追加予定                       | ビューを閉じる              |
-| `:view-toggle`    | `vy.view.toggle`                                     | 追加予定                       | ビューの表示を切り替える    |
-| `:undo` / `:redo` | `vy.history.undo` / `vy.history.redo`                | 追加予定                       | アンドゥとリドゥ            |
-| `:reconnect`      | `vy.reconnect_server`                                | 実装済み                       | サーバーへ再接続            |
-| `:set`            | `vy.setting.set`（引数なしは `vy.ui.open_settings`） | 追加予定                       | 設定を変える。次節          |
-| `:settings`       | `vy.ui.open_settings`                                | 追加予定                       | Settings パレットを開く     |
-| `:ts`             | `vy.script.eval`                                     | 実装済み                       | TypeScript を評価（hidden） |
-| `:wq`             | `vy.document.write_quit`                             | 未実装                         | 保存と終了を1コマンドにする |
-| `:bn` / `:bp`     | `vy.document.next` / `previous`                      | 未実装                         | 文書一覧ができてから        |
-| `:noh`            | `vy.search.clear_highlight`                          | 未実装                         | 検索のハイライトを消す      |
+| Ex 名             | コマンド ID                                          | 状態                         | 備考                        |
+| :---------------- | :--------------------------------------------------- | :--------------------------- | :-------------------------- |
+| `:e` / `:edit`    | `vy.editor.open`                                     | 実装済み                     | 引数に URI またはパス       |
+| `:w` / `:write`   | `vy.document.save`                                   | 実装済み                     | 別名保存は未対応            |
+| `:b` / `:buffer`  | `vy.editor.switch_document`                          | 実装済み                     | 引数なしは文書ピッカー      |
+| `:sp`             | `vy.pane.split_down`                                 | 実装済み                     | 上下に分割                  |
+| `:vsp`            | `vy.pane.split_right`                                | 実装済み                     | 左右に分割                  |
+| `:split-left`     | `vy.pane.split_left`                                 | 実装済み                     | 左に分割                    |
+| `:split-up`       | `vy.pane.split_up`                                   | 実装済み                     | 上に分割                    |
+| `:close` / `:q`   | `vy.pane.close`                                      | 実装済み                     | 最後のペインは閉じられない  |
+| `:view`           | `vy.view.open`                                       | 実装済み                     | プラグインのビューを開く    |
+| `:view-close`     | `vy.view.close`                                      | 実装済み                     | ビューを閉じる              |
+| `:view-toggle`    | `vy.view.toggle`                                     | 実装済み                     | ビューの表示を切り替える    |
+| `:undo` / `:redo` | `vy.history.undo` / `vy.history.redo`                | 実装済み                     | アンドゥとリドゥ            |
+| `:reconnect`      | `vy.reconnect_server`                                | 実装済み                     | サーバーへ再接続            |
+| `:wrap`           | `vy.view.toggle_wrap`                                | 移行中（Phase 5 で削除）     | 折り返しの切り替え          |
+| `:set`            | `vy.setting.set`（引数なしは `vy.ui.open_settings`） | 追加予定                     | 設定を変える。次節          |
+| `:settings`       | `vy.ui.open_settings`                                | 追加予定                     | Settings パレットを開く     |
+| `:ts`             | `vy.script.eval`                                     | 実装済み                     | TypeScript を評価（hidden） |
+| `:wq`             | `vy.document.write_quit`                             | 未実装                       | 保存と終了を1コマンドにする |
+| `:bn` / `:bp`     | `vy.document.next` / `previous`                      | 未実装                       | 文書一覧ができてから        |
+| `:noh`            | `vy.search.clear_highlight`                          | 未実装                       | 検索のハイライトを消す      |
 
-`:wrap` は `:set wrap` に統合し、別名を削除します。`vy.view.toggle_wrap` は
-キーバインド用の糖衣として残しますが、パレットにも Ex 名にも出しません。
+`:wrap` は Phase 5 で `:set wrap` に統合して削除します。それまでは、設定を
+変える手段を失わないための移行期間として残します。`vy.view.toggle_wrap` も
+同じ間は listed です。
 
 `!` 付きの強制終了（`:q!`）、シェル実行（`:!`）、`:terminal` は初期版では
 扱いません。`:!` は `process:exec` の承認が必要になるため、Ex の権限経路が
@@ -494,32 +500,35 @@ Ex 専用の RPC は追加しません。文書とレイアウトの変更は既
 
 ## 10. 移行
 
-| 段階    | 内容                                                                   | 状態   |
-| :------ | :--------------------------------------------------------------------- | :----- |
-| Phase 0 | ADR とこの文書。既存ドキュメントの更新                                 | 完了   |
-| Phase 1 | メタデータの一元化、`EX_ALIASES` の削除、Ex 名の記述子化               | 未着手 |
-| Phase 2 | `ArgSpec` と型付き引数、range と `!` の検証                            | 未着手 |
-| Phase 3 | パレットのカテゴリ、順位、最近使ったコマンド                           | 未着手 |
-| Phase 4 | オーバーレイと入力行の統合、Ex の補完                                  | 未着手 |
-| Phase 5 | 設定のスコープと `:set`、Settings パレット、プラグイン API、コード生成 | 未着手 |
+| 段階    | 内容                                                                                       | 状態 |
+| :------ | :----------------------------------------------------------------------------------------- | :--- |
+| Phase 0 | ADR とこの文書。既存ドキュメントの更新                                                     | 完了 |
+| Phase 1 | メタデータの一元化、`EX_ALIASES` の削除、Ex 名の記述子化、`getCommands` のメタデータ      | 完了 |
+| Phase 2 | `ArgSpec` に基づく型付き引数、range と `!` の検証                                          | 未着手 |
+| Phase 3 | パレットのカテゴリ、順位、最近使ったコマンド                                               | 未着手 |
+| Phase 4 | オーバーレイと入力行の統合、Ex の補完                                                      | 未着手 |
+| Phase 5 | 設定のスコープと `:set`、Settings パレット、プラグイン API、コード生成                     | 未着手 |
 
 ## 11. 実装状況
 
-| 項目                                                                  | 状態                |
-| :-------------------------------------------------------------------- | :------------------ |
-| コマンドパレットの基本操作（検索、選択、実行）                        | 実装済み            |
-| 共通の `CommandDescriptor` / `Invocation` / 実行キュー                | 実装済み            |
-| `:` のオーバーレイ、`name[!] [args]` の解析、接頭辞解決               | 実装済み            |
-| Ex の履歴                                                             | 実装済み            |
-| 記述子へのメタデータ一元化                                            | 未実装（Phase 1）   |
-| パレットのカテゴリ、掲載規則、Ex 名の表示                             | 未実装（Phase 1–3） |
-| 引数の宣言と、パレット・Ex・スクリプトでの共通検証                    | 未実装（Phase 2）   |
-| range の解析と拒否                                                    | 未実装（Phase 2）   |
-| 設定のスコープ、`:set`、Settings パレット                             | 未実装（Phase 5）   |
-| Ex とパレットの IME（前編集）                                         | 実装済み            |
-| Ex の補完                                                             | 未実装（Phase 4）   |
-| プラグインの Ex 名とカテゴリ                                          | 未実装（Phase 5）   |
-| `commands.getCommands` のメタデータ（`ViewCommand` の欠落修正を含む） | 未実装（Phase 1）   |
+| 項目                                                                  | 状態              |
+| :-------------------------------------------------------------------- | :---------------- |
+| コマンドパレットの基本操作（検索、選択、実行）                        | 実装済み          |
+| 共通の `CommandDescriptor` / `Invocation` / 実行キュー                | 実装済み          |
+| `:` のオーバーレイ、`name[!] [args]` の解析、接頭辞解決               | 実装済み          |
+| Ex の履歴                                                             | 実装済み          |
+| 記述子へのメタデータ一元化と `EX_ALIASES` の削除                      | 実装済み          |
+| Ex 名の記述子化（一意な接頭辞の解決を含む）                           | 実装済み          |
+| パレットの掲載規則（キー専用と引数必須を隠す）                        | 実装済み          |
+| パレットのカテゴリ見出しと Ex 名の表示                                | 未実装（Phase 3） |
+| 引数の宣言（`ArgSpec`）                                               | 実装済み          |
+| 引数の検証と、パレットの引数プロンプト                                | 未実装（Phase 2） |
+| range の解析と拒否                                                    | 未実装（Phase 2） |
+| 設定のスコープ、`:set`、Settings パレット                             | 未実装（Phase 5） |
+| Ex とパレットの IME（前編集）                                         | 実装済み          |
+| Ex の補完                                                             | 未実装（Phase 4） |
+| プラグインの Ex 名とカテゴリ                                          | 未実装（Phase 5） |
+| `commands.getCommands` のメタデータ（`ViewCommand` の欠落修正を含む） | 実装済み          |
 
 ## 12. 未決定事項
 

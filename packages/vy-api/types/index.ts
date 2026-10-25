@@ -2,8 +2,12 @@
 // Regenerate with `pnpm generate:api`.
 
 export * from "./ActiveDocumentChange";
+export * from "./ArgKind";
 export * from "./BuiltinCommandMap";
 export * from "./ButtonVariant";
+export * from "./CommandArgInfo";
+export * from "./CommandCategory";
+export * from "./CommandInfo";
 export * from "./CommandsExecuteParams";
 export * from "./CommandsRegisterParams";
 export * from "./ConfigChange";
@@ -60,6 +64,7 @@ export * from "./LogLevel";
 export * from "./LogWriteParams";
 export * from "./Mode";
 export * from "./NotificationsShowParams";
+export * from "./PaletteVisibility";
 export * from "./PickerItem";
 export * from "./PickerShowParams";
 export * from "./PickerShowReply";
@@ -76,6 +81,7 @@ export * from "./ProcessSpawnReply";
 export * from "./ProcessStdinParams";
 export * from "./ProcessStdinReply";
 export * from "./Range";
+export * from "./RangeSpec";
 export * from "./RemoteInfo";
 export * from "./Selection";
 export * from "./SelectionChange";

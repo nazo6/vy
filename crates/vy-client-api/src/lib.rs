@@ -116,7 +116,9 @@ mod tests {
             Ok(Reply::Value(()))
         }
 
-        fn get_commands(&mut self) -> Result<Reply<Vec<String>>, CallError> {
+        fn get_commands(
+            &mut self,
+        ) -> Result<Reply<Vec<namespaces::commands::CommandInfo>>, CallError> {
             Ok(Reply::Value(Vec::new()))
         }
     }

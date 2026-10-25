@@ -11,6 +11,8 @@ export interface SettingsMap {
   "ui.lineHeight": number;
   /** Line number style: absolute, relative, or off. */
   "ui.lineNumbers": string;
+  /** Color theme: dark or light. */
+  "ui.theme": string;
   /** Idle time in milliseconds before an undo transaction is closed. */
   "editor.transactionIdleMs": number;
   /** Time in milliseconds allowed between keys of one sequence. */

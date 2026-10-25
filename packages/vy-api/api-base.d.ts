@@ -3,6 +3,7 @@
 
 import type {
   ActiveDocumentChange,
+  CommandInfo,
   ConfigChange,
   ConfigGetParams,
   ConfigInspectParams,
@@ -82,8 +83,8 @@ export interface Disposable {
 
 /** Registers command handlers and runs commands by id. */
 export interface CommandsApi {
-  /** Lists the ids of every registered command. */
-  getCommands(): Promise<Array<string>>;
+  /** Lists the metadata of every registered command. */
+  getCommands(): Promise<Array<CommandInfo>>;
 }
 
 /** Reads and writes settings. */

@@ -9,7 +9,8 @@ use serde_json::Value as JsonValue;
 use vy_core::Range;
 
 pub use vy_client_api::command::{
-    BuiltinCommand, DocumentCommand, PaneCommand, UiCommand, ViewCommand,
+    Arg, ArgKind, ArgSpec, BuiltinCommand, CommandCategory, CommandMeta, DocumentCommand,
+    PaletteVisibility, PaneCommand, RangeSpec, UiCommand, ViewCommand,
 };
 
 /// Who registered a command. Registrations from `init.ts` are dropped on reload.
@@ -67,24 +68,35 @@ pub struct CommandDescriptor {
     pub id: String,
     pub title: String,
     pub source: CommandSource,
-    pub aliases: Vec<String>,
-    pub hidden: bool,
-    pub accepts_args: bool,
-    pub accepts_range: bool,
-    pub accepts_bang: bool,
+    pub category: CommandCategory,
+    pub palette: PaletteVisibility,
+    pub ex_names: Vec<String>,
+    pub args: ArgSpec,
+    pub range: RangeSpec,
+    pub bang: bool,
 }
 
 impl CommandDescriptor {
-    fn new(id: impl Into<String>, title: impl Into<String>, source: CommandSource) -> Self {
+    fn from_meta(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        source: CommandSource,
+        meta: CommandMeta,
+    ) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
             source,
-            aliases: Vec::new(),
-            hidden: false,
-            accepts_args: false,
-            accepts_range: false,
-            accepts_bang: false,
+            category: meta.category,
+            palette: meta.palette,
+            ex_names: meta
+                .ex_names
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect(),
+            args: meta.args,
+            range: meta.range,
+            bang: meta.bang,
         }
     }
 }
@@ -226,60 +238,6 @@ pub fn parse_ex_line(input: &str) -> Result<ExCommandLine, ExParseError> {
     })
 }
 
-/// An Ex name and the command it calls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExAlias {
-    pub name: &'static str,
-    pub id: &'static str,
-}
-
-pub const EX_ALIASES: &[ExAlias] = &[
-    ExAlias {
-        name: "sp",
-        id: "vy.pane.split_down",
-    },
-    ExAlias {
-        name: "vsp",
-        id: "vy.pane.split_right",
-    },
-    ExAlias {
-        name: "close",
-        id: "vy.pane.close",
-    },
-    ExAlias {
-        name: "q",
-        id: "vy.pane.close",
-    },
-    ExAlias {
-        name: "e",
-        id: "vy.editor.open",
-    },
-    ExAlias {
-        name: "w",
-        id: "vy.document.save",
-    },
-    ExAlias {
-        name: "b",
-        id: "vy.editor.switch_document",
-    },
-    ExAlias {
-        name: "buffer",
-        id: "vy.editor.switch_document",
-    },
-    ExAlias {
-        name: "ts",
-        id: "vy.script.eval",
-    },
-    ExAlias {
-        name: "reconnect",
-        id: "vy.reconnect_server",
-    },
-    ExAlias {
-        name: "wrap",
-        id: "vy.view.toggle_wrap",
-    },
-];
-
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExResolveError {
     #[error("unknown Ex command: {0}")]
@@ -291,23 +249,39 @@ pub enum ExResolveError {
     },
 }
 
-/// Resolves an exact name or a unique prefix to a command id.
-pub fn resolve_ex_name(name: &str) -> Result<&'static str, ExResolveError> {
-    if let Some(alias) = EX_ALIASES.iter().find(|alias| alias.name == name) {
-        return Ok(alias.id);
+/// Resolves an exact Ex name or a unique prefix to a command descriptor.
+pub fn resolve_ex_name<'a>(
+    name: &str,
+    commands: &'a [CommandDescriptor],
+) -> Result<&'a CommandDescriptor, ExResolveError> {
+    if let Some(command) = commands
+        .iter()
+        .find(|command| command.ex_names.iter().any(|ex_name| ex_name == name))
+    {
+        return Ok(command);
     }
 
-    let candidates: Vec<&ExAlias> = EX_ALIASES
+    let mut candidates: Vec<(&str, &CommandDescriptor)> = commands
         .iter()
-        .filter(|alias| alias.name.starts_with(name))
+        .flat_map(|command| {
+            command
+                .ex_names
+                .iter()
+                .map(move |ex_name| (ex_name.as_str(), command))
+        })
+        .filter(|(ex_name, _)| ex_name.starts_with(name))
         .collect();
+    candidates.sort_by_key(|(ex_name, _)| *ex_name);
 
     match candidates.as_slice() {
         [] => Err(ExResolveError::Unknown(name.to_string())),
-        [alias] => Ok(alias.id),
-        aliases => Err(ExResolveError::Ambiguous {
+        [(_, command)] => Ok(command),
+        _ => Err(ExResolveError::Ambiguous {
             name: name.to_string(),
-            candidates: aliases.iter().map(|alias| alias.name.to_string()).collect(),
+            candidates: candidates
+                .iter()
+                .map(|(ex_name, _)| (*ex_name).to_string())
+                .collect(),
         }),
     }
 }
@@ -472,42 +446,43 @@ impl CommandRegistry {
         let mut descriptors = Vec::new();
 
         for command in BuiltinCommand::all() {
-            descriptors.push(CommandDescriptor::new(
+            descriptors.push(CommandDescriptor::from_meta(
                 command.id(),
                 display_title(command.id()),
                 CommandSource::Builtin,
+                command.meta(),
             ));
         }
         for command in PaneCommand::all() {
-            descriptors.push(CommandDescriptor::new(
+            descriptors.push(CommandDescriptor::from_meta(
                 command.id(),
                 display_title(command.id()),
                 CommandSource::Pane,
+                command.meta(),
             ));
         }
         for command in DocumentCommand::all() {
-            let mut descriptor =
-                CommandDescriptor::new(command.id(), command.title(), CommandSource::Builtin);
-            descriptor.hidden = *command == DocumentCommand::Open;
-            descriptor.accepts_args =
-                matches!(command, DocumentCommand::Open | DocumentCommand::Switch);
-            descriptors.push(descriptor);
+            descriptors.push(CommandDescriptor::from_meta(
+                command.id(),
+                command.title(),
+                CommandSource::Builtin,
+                command.meta(),
+            ));
         }
         for command in UiCommand::all() {
-            let mut descriptor =
-                CommandDescriptor::new(command.id(), command.title(), CommandSource::Ui);
-            descriptor.hidden = matches!(
-                command,
-                UiCommand::CommandPalette | UiCommand::ExCommandLine | UiCommand::ScriptEval
-            );
-            descriptor.accepts_args = *command == UiCommand::ScriptEval;
-            descriptors.push(descriptor);
+            descriptors.push(CommandDescriptor::from_meta(
+                command.id(),
+                command.title(),
+                CommandSource::Ui,
+                command.meta(),
+            ));
         }
         for command in ViewCommand::all() {
-            descriptors.push(CommandDescriptor::new(
+            descriptors.push(CommandDescriptor::from_meta(
                 command.id(),
                 display_title(command.id()),
                 CommandSource::Builtin,
+                command.meta(),
             ));
         }
         for id in self.script_commands() {
@@ -520,7 +495,12 @@ impl CommandRegistry {
                 .get(&id)
                 .cloned()
                 .unwrap_or_else(|| display_title(&id));
-            descriptors.push(CommandDescriptor::new(id.clone(), title, source));
+            descriptors.push(CommandDescriptor::from_meta(
+                id,
+                title,
+                source,
+                CommandMeta::listed(CommandCategory::Plugin, &[]),
+            ));
         }
 
         descriptors
@@ -577,10 +557,18 @@ mod tests {
         assert!(descriptors.iter().any(|command| {
             command.id == "vy.ui.command_palette"
                 && command.source == CommandSource::Ui
-                && command.hidden
+                && command.palette == PaletteVisibility::Hidden
         }));
         assert!(descriptors.iter().any(|command| {
-            command.id == "user.hello" && command.source == CommandSource::Init
+            command.id == "vy.view.scroll_left"
+                && command.source == CommandSource::Builtin
+                && command.category == CommandCategory::View
+        }));
+        assert!(descriptors.iter().any(|command| {
+            command.id == "user.hello"
+                && command.source == CommandSource::Init
+                && command.category == CommandCategory::Plugin
+                && command.palette == PaletteVisibility::Listed
         }));
     }
 
@@ -654,41 +642,123 @@ mod tests {
 
     #[test]
     fn resolves_exact_names_and_unique_prefixes() {
-        assert_eq!(resolve_ex_name("sp"), Ok("vy.pane.split_down"));
-        assert_eq!(resolve_ex_name("s"), Ok("vy.pane.split_down"));
-        assert_eq!(resolve_ex_name("vsp"), Ok("vy.pane.split_right"));
-        assert_eq!(resolve_ex_name("close"), Ok("vy.pane.close"));
-        assert_eq!(resolve_ex_name("q"), Ok("vy.pane.close"));
-        assert_eq!(resolve_ex_name("e"), Ok("vy.editor.open"));
-        assert_eq!(resolve_ex_name("w"), Ok("vy.document.save"));
-        assert_eq!(resolve_ex_name("b"), Ok("vy.editor.switch_document"));
-        assert_eq!(resolve_ex_name("buffer"), Ok("vy.editor.switch_document"));
-        assert_eq!(resolve_ex_name("ts"), Ok("vy.script.eval"));
-        assert_eq!(resolve_ex_name("reconnect"), Ok("vy.reconnect_server"));
-        assert_eq!(resolve_ex_name("wrap"), Ok("vy.view.toggle_wrap"));
+        let commands = CommandRegistry::new().descriptors();
+        let resolve =
+            |name: &str| resolve_ex_name(name, &commands).map(|command| command.id.as_str());
+
+        assert_eq!(resolve("sp"), Ok("vy.pane.split_down"));
+        assert_eq!(resolve("vsp"), Ok("vy.pane.split_right"));
+        assert_eq!(resolve("split-left"), Ok("vy.pane.split_left"));
+        assert_eq!(resolve("split-up"), Ok("vy.pane.split_up"));
+        assert_eq!(resolve("close"), Ok("vy.pane.close"));
+        assert_eq!(resolve("q"), Ok("vy.pane.close"));
+        assert_eq!(resolve("e"), Ok("vy.editor.open"));
+        assert_eq!(resolve("edit"), Ok("vy.editor.open"));
+        assert_eq!(resolve("w"), Ok("vy.document.save"));
+        assert_eq!(resolve("write"), Ok("vy.document.save"));
+        assert_eq!(resolve("b"), Ok("vy.editor.switch_document"));
+        assert_eq!(resolve("buffer"), Ok("vy.editor.switch_document"));
+        assert_eq!(resolve("ts"), Ok("vy.script.eval"));
+        assert_eq!(resolve("reconnect"), Ok("vy.reconnect_server"));
+        assert_eq!(resolve("view"), Ok("vy.view.open"));
+        assert_eq!(resolve("view-close"), Ok("vy.view.close"));
+        assert_eq!(resolve("view-toggle"), Ok("vy.view.toggle"));
+        assert_eq!(resolve("undo"), Ok("vy.history.undo"));
+        assert_eq!(resolve("redo"), Ok("vy.history.redo"));
         assert_eq!(
-            resolve_ex_name("zz"),
+            resolve("zz"),
             Err(ExResolveError::Unknown("zz".to_string()))
         );
+        // Transitional until `:set wrap` replaces it in Phase 5.
+        assert_eq!(resolve("wrap"), Ok("vy.view.toggle_wrap"));
+
+        match resolve("s") {
+            Err(ExResolveError::Ambiguous { candidates, .. }) => {
+                assert_eq!(candidates, vec!["sp", "split-left", "split-up"]);
+            }
+            other => panic!("expected an ambiguous Ex command, got {other:?}"),
+        }
+        match resolve("v") {
+            Err(ExResolveError::Ambiguous { candidates, .. }) => {
+                assert_eq!(candidates, vec!["view", "view-close", "view-toggle", "vsp"]);
+            }
+            other => panic!("expected an ambiguous Ex command, got {other:?}"),
+        }
+        assert!(matches!(resolve(""), Err(ExResolveError::Ambiguous { .. })));
+    }
+
+    #[test]
+    fn declares_palette_metadata_for_every_builtin_command() {
+        let commands = CommandRegistry::new().descriptors();
+        let find = |id: &str| commands.iter().find(|command| command.id == id).unwrap();
+
+        for command in &commands {
+            assert!(!command.title.is_empty(), "{} has no title", command.id);
+        }
+
+        assert_eq!(find("vy.motion.left").palette, PaletteVisibility::Hidden);
+        assert_eq!(find("vy.edit.delete").palette, PaletteVisibility::Hidden);
         assert_eq!(
-            resolve_ex_name(""),
-            Err(ExResolveError::Ambiguous {
-                name: String::new(),
-                candidates: vec![
-                    "sp".to_string(),
-                    "vsp".to_string(),
-                    "close".to_string(),
-                    "q".to_string(),
-                    "e".to_string(),
-                    "w".to_string(),
-                    "b".to_string(),
-                    "buffer".to_string(),
-                    "ts".to_string(),
-                    "reconnect".to_string(),
-                    "wrap".to_string(),
-                ],
-            })
+            find("vy.view.scroll_left").palette,
+            PaletteVisibility::Hidden
         );
+        assert_eq!(
+            find("vy.view.toggle_wrap").palette,
+            PaletteVisibility::Listed
+        );
+        assert_eq!(
+            find("vy.ui.command_palette").palette,
+            PaletteVisibility::Hidden
+        );
+        assert_eq!(find("vy.editor.open").palette, PaletteVisibility::Hidden);
+        assert_eq!(find("vy.view.open").palette, PaletteVisibility::Hidden);
+        assert_eq!(find("vy.document.save").palette, PaletteVisibility::Listed);
+        assert_eq!(
+            find("vy.pane.split_right").palette,
+            PaletteVisibility::Listed
+        );
+        assert_eq!(find("vy.history.undo").palette, PaletteVisibility::Listed);
+    }
+
+    #[test]
+    fn ex_names_are_unique_and_valid() {
+        let commands = CommandRegistry::new().descriptors();
+        let mut seen = Vec::new();
+
+        for command in &commands {
+            for name in &command.ex_names {
+                assert!(
+                    name.chars().all(|character| character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || character == '-'),
+                    "invalid Ex name: {name}"
+                );
+                assert!(!seen.contains(name), "duplicate Ex name: {name}");
+                seen.push(name.clone());
+            }
+        }
+
+        assert!(seen.contains(&"sp".to_string()));
+        assert!(seen.contains(&"undo".to_string()));
+    }
+
+    #[test]
+    fn declares_arguments_on_commands_that_need_them() {
+        let commands = CommandRegistry::new().descriptors();
+        let find = |id: &str| commands.iter().find(|command| command.id == id).unwrap();
+
+        let open = find("vy.editor.open");
+        assert_eq!(open.args.args().len(), 1);
+        assert_eq!(open.args.args()[0].kind, ArgKind::Path);
+        assert!(open.args.args()[0].rest);
+
+        assert!(find("vy.document.save").args.is_none());
+
+        let view = find("vy.view.open");
+        assert_eq!(view.args.args().len(), 2);
+        assert_eq!(view.args.args()[1].kind, ArgKind::Choice);
+
+        assert!(find("vy.pane.close").bang);
     }
 
     #[test]

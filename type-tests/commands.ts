@@ -24,3 +24,12 @@ vy.commands.registerCommand("test.add", (args: string) => args);
 
 // @ts-expect-error built-in command ids cannot be registered
 vy.commands.registerCommand("vy.history.undo", () => {});
+
+vy.commands.getCommands().then((commands) => {
+    for (const command of commands) {
+        command.id satisfies string;
+        command.category satisfies string;
+        command.exNames satisfies Array<string>;
+        command.args satisfies Array<{ name: string; kind: string }>;
+    }
+});

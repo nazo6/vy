@@ -186,11 +186,12 @@ mod tests {
             id: id.to_string(),
             title: title.to_string(),
             source: crate::commands::CommandSource::Builtin,
-            aliases: Vec::new(),
-            hidden: false,
-            accepts_args: false,
-            accepts_range: false,
-            accepts_bang: false,
+            category: crate::commands::CommandCategory::Edit,
+            palette: crate::commands::PaletteVisibility::Listed,
+            ex_names: Vec::new(),
+            args: crate::commands::ArgSpec::None,
+            range: crate::commands::RangeSpec::None,
+            bang: false,
         }
     }
 

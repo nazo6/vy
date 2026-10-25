@@ -1,12 +1,14 @@
 //! Client implementation of the `commands` host trait.
 
 use vy_client_api::namespaces::commands::{
-    CommandsApi, CommandsExecuteParams, CommandsRegisterParams,
+    CommandArgInfo, CommandInfo, CommandsApi, CommandsExecuteParams, CommandsRegisterParams,
 };
 use vy_host_api::{CallError, Reply};
 
 use super::ClientHost;
-use crate::commands::{BuiltinCommand, CommandArgs, DocumentCommand, PaneCommand, UiCommand};
+use crate::commands::{
+    BuiltinCommand, CommandArgs, CommandDescriptor, DocumentCommand, PaneCommand, UiCommand,
+};
 use crate::plugin_host::HostAction;
 
 impl CommandsApi for ClientHost<'_, '_, '_> {
@@ -54,29 +56,38 @@ impl CommandsApi for ClientHost<'_, '_, '_> {
         Ok(Reply::Value(()))
     }
 
-    fn get_commands(&mut self) -> Result<Reply<Vec<String>>, CallError> {
-        let mut ids: Vec<String> = BuiltinCommand::all()
+    fn get_commands(&mut self) -> Result<Reply<Vec<CommandInfo>>, CallError> {
+        let mut descriptors = self.call.context.commands.descriptors();
+        descriptors.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(Reply::Value(descriptors.iter().map(command_info).collect()))
+    }
+}
+
+fn command_info(command: &CommandDescriptor) -> CommandInfo {
+    CommandInfo {
+        id: command.id.clone(),
+        title: command.title.clone(),
+        category: command.category,
+        palette: command.palette,
+        ex_names: command.ex_names.clone(),
+        args: command
+            .args
+            .args()
             .iter()
-            .map(|command| command.id().to_string())
-            .chain(
-                PaneCommand::all()
+            .map(|arg| CommandArgInfo {
+                name: arg.name.to_string(),
+                kind: arg.kind,
+                choices: arg
+                    .choices
                     .iter()
-                    .map(|command| command.id().to_string()),
-            )
-            .chain(
-                DocumentCommand::all()
-                    .iter()
-                    .map(|command| command.id().to_string()),
-            )
-            .chain(
-                UiCommand::all()
-                    .iter()
-                    .map(|command| command.id().to_string()),
-            )
-            .chain(self.call.context.commands.script_commands())
-            .collect();
-        ids.sort();
-        Ok(Reply::Value(ids))
+                    .map(|choice| (*choice).to_string())
+                    .collect(),
+                required: arg.required,
+                rest: arg.rest,
+            })
+            .collect(),
+        range: command.range,
+        bang: command.bang,
     }
 }
 

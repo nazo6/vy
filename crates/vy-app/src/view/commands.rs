@@ -2,8 +2,8 @@
 
 use gpui::ScrollStrategy;
 use vy_app::commands::{
-    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, Owner, PaneCommand, UiCommand,
-    ViewCommand, parse_ex_line, resolve_ex_name,
+    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, Owner, PaletteVisibility,
+    PaneCommand, UiCommand, ViewCommand, parse_ex_line, resolve_ex_name,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
@@ -339,7 +339,7 @@ impl EditorView {
                 .commands
                 .descriptors()
                 .into_iter()
-                .filter(|command| !command.hidden)
+                .filter(|command| command.palette == PaletteVisibility::Listed)
                 .map(|cmd| PickerItem::from(&cmd))
                 .collect(),
             PaletteMode::Documents => {
@@ -483,13 +483,19 @@ impl EditorView {
                 return;
             }
         };
-        let id = match resolve_ex_name(&parsed.name) {
-            Ok(id) => id,
+        let descriptors = self.commands.descriptors();
+        let command = match resolve_ex_name(&parsed.name, &descriptors) {
+            Ok(command) => command,
             Err(error) => {
                 self.status = format!("{error}").into();
                 return;
             }
         };
+        if parsed.bang && !command.bang {
+            self.status = format!("Ex command `{}` does not accept `!`", parsed.name).into();
+            return;
+        }
+        let id = command.id.clone();
 
         let bang_str = if parsed.bang { "!" } else { "" };
         self.status = format!(":{}{}", parsed.name, bang_str).into();
