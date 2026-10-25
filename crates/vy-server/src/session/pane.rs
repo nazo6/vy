@@ -171,6 +171,27 @@ impl Session {
     /// Closes a pane. The layout collapses the split that becomes empty.
     pub(super) fn close_pane(&mut self, id: u64, params: vy_proto::PaneCloseParams) -> Outcome {
         let pane_id = params.pane_id;
+        let force = params.force;
+
+        if !force
+            && let Some(pane) = self.panes.get(&pane_id)
+            && let Some(document_id) = pane.document_id
+        {
+            let still_used = self
+                .panes
+                .iter()
+                .any(|(pid, p)| *pid != pane_id && p.document_id == Some(document_id));
+            if !still_used
+                && let Some(document) = self.documents.get(&document_id)
+                && document.is_dirty()
+            {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidRequest,
+                    "No write since last change (add ! to override)",
+                ));
+            }
+        }
 
         if let Err(error) = self.layout.close(pane_id) {
             return Outcome::one(RpcMessage::err(

@@ -40,6 +40,7 @@ dirs = "5"
 semver = "1"
 serde_json = "1"
 sha2 = "0.10"
+unicode-width = "0.2"
 # TypeScript types for the plugin API
 ts-rs = "12"
 

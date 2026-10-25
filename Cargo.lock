@@ -6480,6 +6480,7 @@ dependencies = [
  "sha2",
  "strum",
  "thiserror 2.0.21",
+ "unicode-width",
  "usage-rs",
  "vy-api-schema",
  "vy-capabilities",

@@ -226,12 +226,12 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 
 ### P0: 正しさと安全性
 
-- [ ] 未保存の文書を閉じるときに確認する。`vy.pane.close` はそのまま
+- [x] 未保存の文書を閉じるときに確認する。`vy.pane.close` はそのまま
       `pane/close` を送り、コアは最後のペインと一緒に文書を破棄します。ウィンドウを
       閉じたときの確認もありません（`crates/vy-app/src/view/commands.rs` の
       `close_active_pane`、`crates/vy-server/src/session/pane.rs` の `close_pane`）。
       `:q!` も未実装です。
-- [ ] 列を UTF-16 コード単位ではなく表示セルで数える。折り返しの幅、横スクロール、
+- [x] 列を UTF-16 コード単位ではなく表示セルで数える。折り返しの幅、横スクロール、
       ホバーの x 座標が 1 文字 = 1 セルの前提で、全角文字やタブでは実際の描画幅と
       合いません（`crates/vy-app/src/text_layout.rs` の `chunk_line` と
       `scroll_to_show_horizontal`、`crates/vy-app/src/ui/pane.rs`、
@@ -261,7 +261,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 - [ ] テーマ: 起動時に `Theme::dark()` を固定しています。`Theme::light()` を設定から
       選べるようにし、切り替え時に再描画します（`crates/vy-app/src/main.rs`、
       `crates/vy-app/src/theme.rs`）。
-- [ ] タブ: タブを 1 列として折り返しています。表示セル幅の計算と合わせて、
+- [x] タブ: タブを 1 列として折り返しています。表示セル幅の計算と合わせて、
       `tabstop`（既定値を決める）で描くようにします（`crates/vy-app/src/text_layout.rs`、
       [`keymap.md`](./keymap.md)）。
 - [ ] ガター: 実測した文字幅とずれないようにし、1 行に複数のマークを描く。今は
@@ -269,7 +269,7 @@ Webview は Web の文書そのものを表示するときだけ使います。�
       （`crates/vy-app/src/ui/pane.rs`）。
 - [ ] ホバー: 折り返しのサブ行と全角幅を考慮した位置に出す
       （`crates/vy-app/src/view/render.rs`）。
-- [ ] 横スクロール: 行の長さで上限を決め、文書の切り替えや再同期で 0 に戻す。
+- [x] 横スクロール: 行の長さで上限を決め、文書の切り替えや再同期で 0 に戻す。
       `reset_views_for_document` は `scroll_top` だけ戻します
       （`crates/vy-app/src/text_layout.rs`、`crates/vy-app/src/view/mod.rs`）。
 

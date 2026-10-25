@@ -427,6 +427,128 @@ fn focuses_and_closes_panes_through_the_layout_tree() {
 }
 
 #[test]
+fn rejects_closing_unsaved_document_without_force() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, first) = open_untitled(&mut session);
+
+    // Make the buffer dirty by applying a change
+    session.handle(insert_change(document_id, 0, "hello"));
+
+    // Open a second pane with a different document
+    let outcome = request(
+        &mut session,
+        4,
+        "pane/open",
+        object([
+            ("uri", Value::from("vy:untitled-2")),
+            (
+                "placement",
+                object([
+                    ("target", Value::from(first)),
+                    ("direction", Value::from("below")),
+                ]),
+            ),
+        ]),
+    );
+    let _second = get(ok_value(&outcome.messages[0]), "pane_id")
+        .and_then(Value::as_u64)
+        .expect("pane_id");
+
+    // Attempting to close the dirty pane without force fails
+    let outcome = request(
+        &mut session,
+        5,
+        "pane/close",
+        object([
+            ("pane_id", Value::from(first)),
+            ("force", Value::from(false)),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+    let msg = match &outcome.messages[0] {
+        RpcMessage::Response {
+            result: RpcResult::Err { message, .. },
+            ..
+        } => message.as_str(),
+        _ => "",
+    };
+    assert!(msg.contains("No write since last change"));
+
+    // Closing with force succeeds
+    let outcome = request(
+        &mut session,
+        6,
+        "pane/close",
+        object([
+            ("pane_id", Value::from(first)),
+            ("force", Value::from(true)),
+        ]),
+    );
+    assert_eq!(
+        get(ok_value(&outcome.messages[0]), "pane_id").and_then(Value::as_u64),
+        Some(first)
+    );
+}
+
+#[test]
+fn allows_closing_shared_dirty_document_without_force() {
+    let mut session = Session::new();
+    initialize(&mut session);
+    let (document_id, first) = open_untitled(&mut session);
+
+    // Make the buffer dirty
+    session.handle(insert_change(document_id, 0, "dirty"));
+
+    // Open another pane referencing the SAME document
+    let outcome = request(
+        &mut session,
+        3,
+        "pane/open",
+        object([
+            ("uri", Value::from("vy:untitled")),
+            (
+                "placement",
+                object([
+                    ("target", Value::from(first)),
+                    ("direction", Value::from("right")),
+                ]),
+            ),
+        ]),
+    );
+    let second = get(ok_value(&outcome.messages[0]), "pane_id")
+        .and_then(Value::as_u64)
+        .expect("pane_id");
+
+    // Closing the first pane without force succeeds because the document is still open in second
+    let outcome = request(
+        &mut session,
+        4,
+        "pane/close",
+        object([
+            ("pane_id", Value::from(first)),
+            ("force", Value::from(false)),
+        ]),
+    );
+    assert_eq!(
+        get(ok_value(&outcome.messages[0]), "pane_id").and_then(Value::as_u64),
+        Some(first)
+    );
+
+    // But closing the last remaining pane without force now fails
+    let outcome = request(
+        &mut session,
+        5,
+        "pane/close",
+        object([
+            ("pane_id", Value::from(second)),
+            ("force", Value::from(false)),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+}
+
+#[test]
 fn returns_the_layout_with_its_panes() {
     let mut session = Session::new();
     initialize(&mut session);

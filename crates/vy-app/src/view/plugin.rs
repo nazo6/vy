@@ -493,7 +493,10 @@ impl EditorView {
             }
             HostAction::Undo => self.send_history::<vy_proto::BufferUndo>(Pending::Undo),
             HostAction::Redo => self.send_history::<vy_proto::BufferRedo>(Pending::Redo),
-            HostAction::Pane(command) => self.run_pane_command(command),
+            HostAction::Pane(command) => {
+                let invocation = Invocation::palette(command.id());
+                self.run_pane_command(command, &invocation);
+            }
             HostAction::Document { command, args } => {
                 let invocation = args
                     .map(|a| Invocation::script(command.id(), a))

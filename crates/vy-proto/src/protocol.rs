@@ -94,6 +94,8 @@ pub struct PaneFocusResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaneCloseParams {
     pub pane_id: u64,
+    #[serde(default)]
+    pub force: bool,
 }
 
 /// Response from `pane/close`.

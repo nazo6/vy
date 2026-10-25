@@ -413,6 +413,8 @@ impl EditorView {
                 pane.preedit.clear();
                 pane.preedit_selection = None;
                 pane.scroll_top = 0;
+                pane.scroll_left = 0;
+                pane.scroll_sub_line = 0;
             }
         }
     }

@@ -25,13 +25,13 @@ use vy_proto::{
 use super::{EditorView, Pending};
 
 impl EditorView {
-    pub(super) fn run_pane_command(&mut self, command: PaneCommand) {
+    pub(super) fn run_pane_command(&mut self, command: PaneCommand, invocation: &Invocation) {
         match command {
             PaneCommand::SplitLeft => self.open_split("left"),
             PaneCommand::SplitRight => self.open_split("right"),
             PaneCommand::SplitUp => self.open_split("above"),
             PaneCommand::SplitDown => self.open_split("below"),
-            PaneCommand::Close => self.close_active_pane(),
+            PaneCommand::Close => self.close_active_pane(invocation.bang),
             PaneCommand::FocusLeft => self.focus_direction("left"),
             PaneCommand::FocusDown => self.focus_direction("down"),
             PaneCommand::FocusUp => self.focus_direction("up"),
@@ -214,14 +214,28 @@ impl EditorView {
             }
             ViewCommand::ScrollLeft => {
                 let delta = count.unwrap_or(4) as isize;
+                let max_width = self.max_line_display_width();
                 if let Some(pane) = self.active_pane_state_mut() {
-                    pane.scroll_left = vy_app::text_layout::scroll_cols(pane.scroll_left, -delta);
+                    let cols = pane.viewport_cols;
+                    pane.scroll_left = vy_app::text_layout::scroll_cols_clamped(
+                        pane.scroll_left,
+                        -delta,
+                        cols,
+                        max_width,
+                    );
                 }
             }
             ViewCommand::ScrollRight => {
                 let delta = count.unwrap_or(4) as isize;
+                let max_width = self.max_line_display_width();
                 if let Some(pane) = self.active_pane_state_mut() {
-                    pane.scroll_left = vy_app::text_layout::scroll_cols(pane.scroll_left, delta);
+                    let cols = pane.viewport_cols;
+                    pane.scroll_left = vy_app::text_layout::scroll_cols_clamped(
+                        pane.scroll_left,
+                        delta,
+                        cols,
+                        max_width,
+                    );
                 }
             }
             ViewCommand::ToggleWrap => {
@@ -268,11 +282,28 @@ impl EditorView {
         self.status = format!("splitting pane {target} {direction}").into();
     }
 
-    pub(super) fn close_active_pane(&mut self) {
+    pub(super) fn max_line_display_width(&self) -> usize {
+        let Some(document) = self.active_document() else {
+            return 0;
+        };
+        (0..document.editor.line_count())
+            .filter_map(|line_idx| document.editor.line(line_idx))
+            .map(|text| {
+                vy_app::text_layout::str_display_width(
+                    &text,
+                    0,
+                    vy_app::text_layout::DEFAULT_TAB_STOP,
+                )
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub(super) fn close_active_pane(&mut self, force: bool) {
         let Some(pane_id) = self.active_pane else {
             return;
         };
-        self.request::<PaneClose>(PaneCloseParams { pane_id }, Pending::Close);
+        self.request::<PaneClose>(PaneCloseParams { pane_id, force }, Pending::Close);
     }
 
     pub(super) fn focus_direction(&mut self, direction: &str) {
@@ -452,10 +483,6 @@ impl EditorView {
                 return;
             }
         };
-        if parsed.bang {
-            self.status = format!("{}: `!` is not supported yet", parsed.name).into();
-            return;
-        }
         let id = match resolve_ex_name(&parsed.name) {
             Ok(id) => id,
             Err(error) => {
@@ -464,8 +491,9 @@ impl EditorView {
             }
         };
 
-        self.status = format!(":{}", parsed.name).into();
-        self.enqueue_command(Invocation::ex(id, parsed.args));
+        let bang_str = if parsed.bang { "!" } else { "" };
+        self.status = format!(":{}{}", parsed.name, bang_str).into();
+        self.enqueue_command(Invocation::ex(id, parsed.args).with_bang(parsed.bang));
     }
 
     pub(super) fn show_next_approval_prompt(&mut self) {
@@ -644,7 +672,7 @@ impl EditorView {
             return false;
         }
         if let Some(command) = PaneCommand::parse(&id) {
-            self.run_pane_command(command);
+            self.run_pane_command(command, &invocation);
             return false;
         }
         if let Some(command) = DocumentCommand::parse(&id) {
@@ -803,7 +831,13 @@ impl EditorView {
     pub(super) fn close_view_pane(&mut self, view_id: &str) {
         if let Some((pane_id, _)) = self.panes.iter().find(|(_, p)| p.view_type == view_id) {
             let pid = *pane_id;
-            self.request::<PaneClose>(PaneCloseParams { pane_id: pid }, Pending::Close);
+            self.request::<PaneClose>(
+                PaneCloseParams {
+                    pane_id: pid,
+                    force: true,
+                },
+                Pending::Close,
+            );
         }
     }
 

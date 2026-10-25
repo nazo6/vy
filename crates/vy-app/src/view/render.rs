@@ -109,8 +109,13 @@ impl EditorView {
 
         if !is_wrap {
             let next_top = scroll_to_show(cursor_line, pane.scroll_top, rows, line_count);
-            let next_left =
-                scroll_to_show_horizontal(cursor.character as usize, pane.scroll_left, cols);
+            let text = document.editor.line(cursor_line).unwrap_or_default();
+            let display_col = vy_app::text_layout::utf16_to_display_col(
+                &text,
+                cursor.character as usize,
+                vy_app::text_layout::DEFAULT_TAB_STOP,
+            );
+            let next_left = scroll_to_show_horizontal(display_col, pane.scroll_left, cols);
             if let Some(pane) = self.active_pane_state_mut() {
                 pane.scroll_top = next_top;
                 pane.scroll_left = next_left;

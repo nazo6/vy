@@ -204,6 +204,9 @@ impl EditorView {
                     // settings from `init.ts` still have to apply.
                     self.ensure_init_evaluated();
                 }
+                Pending::Close => {
+                    self.status = message.into();
+                }
                 _ => {
                     self.status = format!("{code}: {message}").into();
                 }

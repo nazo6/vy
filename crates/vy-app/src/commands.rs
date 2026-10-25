@@ -175,6 +175,11 @@ impl Invocation {
             _ => None,
         }
     }
+
+    pub fn with_bang(mut self, bang: bool) -> Self {
+        self.bang = bang;
+        self
+    }
 }
 
 /// One parsed Ex command line, without the leading `:`.
@@ -589,8 +594,9 @@ mod tests {
         assert_eq!(invocation.source, InvocationSource::Keymap);
         assert_eq!(invocation.keymap_args(), args);
 
-        let invocation = Invocation::ex("vy.pane.close", "");
+        let invocation = Invocation::ex("vy.pane.close", "").with_bang(true);
         assert_eq!(invocation.source, InvocationSource::Ex);
+        assert!(invocation.bang);
         assert_eq!(invocation.args, InvocationArgs::Ex { raw: String::new() });
     }
 
