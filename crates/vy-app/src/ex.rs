@@ -1,11 +1,13 @@
 //! Ex command line state and history management.
 
+use crate::overlay::{Completion, TextInput};
+
 /// State of an active Ex command line prompt.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ExState {
-    pub input: String,
-    pub preedit: String,
+    pub input: TextInput,
     pub history_index: Option<usize>,
+    pub completion: Completion,
 }
 
 impl ExState {
@@ -13,28 +15,37 @@ impl ExState {
         Self::default()
     }
 
+    /// The committed command line.
+    pub fn value(&self) -> &str {
+        self.input.value()
+    }
+
     /// Appends a typed character to the input line.
     pub fn push_char(&mut self, character: char) {
-        self.input.push(character);
+        self.input.push_char(character);
         self.history_index = None;
+        self.completion.reset();
     }
 
     /// Appends committed text to the input line.
     pub fn push_str(&mut self, text: &str) {
         self.input.push_str(text);
         self.history_index = None;
+        self.completion.reset();
     }
 
     /// Removes the last character from the input line.
     pub fn pop_char(&mut self) {
-        self.input.pop();
+        self.input.pop_char();
         self.history_index = None;
+        self.completion.reset();
     }
 
     /// Clears the input line.
     pub fn clear(&mut self) {
         self.input.clear();
         self.history_index = None;
+        self.completion.reset();
     }
 }
 
@@ -71,7 +82,8 @@ impl ExHistory {
             None => return,
         };
         state.history_index = Some(index);
-        state.input = self.entries[index].clone();
+        state.input.set_value(self.entries[index].clone());
+        state.completion.reset();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -105,21 +117,21 @@ mod tests {
 
         let mut state = ExState::new();
         history.navigate(&mut state, -1);
-        assert_eq!(state.input, "q");
+        assert_eq!(state.value(), "q");
         assert_eq!(state.history_index, Some(1));
 
         history.navigate(&mut state, -1);
-        assert_eq!(state.input, "w");
+        assert_eq!(state.value(), "w");
         assert_eq!(state.history_index, Some(0));
 
         // Clamps at the oldest entry
         history.navigate(&mut state, -1);
-        assert_eq!(state.input, "w");
+        assert_eq!(state.value(), "w");
         assert_eq!(state.history_index, Some(0));
 
         // Moves back forward
         history.navigate(&mut state, 1);
-        assert_eq!(state.input, "q");
+        assert_eq!(state.value(), "q");
         assert_eq!(state.history_index, Some(1));
     }
 
@@ -127,8 +139,21 @@ mod tests {
     fn appends_text_with_push_str() {
         let mut state = ExState::new();
         state.push_str("edit");
-        assert_eq!(state.input, "edit");
+        assert_eq!(state.value(), "edit");
         state.push_str(" main.rs");
-        assert_eq!(state.input, "edit main.rs");
+        assert_eq!(state.value(), "edit main.rs");
+    }
+
+    #[test]
+    fn typing_discards_completion_candidates() {
+        let mut state = ExState::new();
+        state
+            .completion
+            .set("wr", vec!["wrap".into(), "write".into()]);
+        assert!(!state.completion.is_empty());
+
+        state.push_char('i');
+        assert!(state.completion.is_empty());
+        assert_eq!(state.value(), "i");
     }
 }

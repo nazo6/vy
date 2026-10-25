@@ -24,7 +24,14 @@ pub fn convert_key(keystroke: &Keystroke) -> Option<Key> {
         "enter" => return Some(Key::Enter),
         "backspace" => return Some(Key::Backspace),
         "delete" => return Some(Key::Delete),
-        "tab" => return Some(Key::Tab),
+        "tab" => {
+            return Some(if keystroke.modifiers.shift {
+                Key::BackTab
+            } else {
+                Key::Tab
+            });
+        }
+        "backtab" => return Some(Key::BackTab),
         "left" => return Some(Key::Left),
         "right" => return Some(Key::Right),
         "up" => return Some(Key::Up),

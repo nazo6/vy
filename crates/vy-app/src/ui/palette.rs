@@ -4,12 +4,13 @@ use std::rc::Rc;
 
 use gpui::{AnyElement, Entity, IntoElement, div, prelude::*, px, size};
 use gpui_base::{FocusTrapElement, v_virtual_list};
+use vy_app::overlay::Overlay;
 use vy_app::palette::{
     PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteMode, PaletteRow, PickerItem,
     filtered_picker_indices, palette_rows, shows_palette_headings,
 };
 
-use super::ex::input_caret;
+use super::input::render_input_text;
 use crate::theme::Theme;
 use crate::view::EditorView;
 
@@ -89,8 +90,56 @@ pub fn render_picker_row(theme: &Theme, item: &PickerItem, is_selected: bool) ->
     }
 }
 
-/// Renders the floating modal picker / command palette with virtual scrolling.
-pub fn render_palette(
+/// Labels around the floating overlay list.
+struct OverlayLabels {
+    count: String,
+    empty: &'static str,
+    hint: &'static str,
+}
+
+fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
+    match overlay {
+        Overlay::Palette(palette) => match &palette.mode {
+            PaletteMode::Commands => OverlayLabels {
+                count: format!("{filtered_count} commands"),
+                empty: "no matching commands",
+                hint: "Enter run  ·  : for named commands  ·  Esc close  ·  Up/Down move",
+            },
+            PaletteMode::Documents => OverlayLabels {
+                count: format!("{filtered_count} documents"),
+                empty: "no matching documents",
+                hint: "Enter switch  ·  Esc close  ·  Up/Down move",
+            },
+            PaletteMode::Custom { .. } => OverlayLabels {
+                count: format!("{filtered_count} items"),
+                empty: "no matching items",
+                hint: "Enter select  ·  Esc close  ·  Up/Down move",
+            },
+        },
+        Overlay::Prompt(prompt) => OverlayLabels {
+            count: format!("{} / {}", prompt.index + 1, prompt.required().len()),
+            empty: match prompt.current_arg() {
+                Some(arg) if arg.choices.is_empty() => "type a value and press Enter",
+                Some(_) => "no matching choices",
+                None => "argument",
+            },
+            hint: "Enter confirm  ·  Esc back",
+        },
+        Overlay::Approval(approval) => OverlayLabels {
+            count: format!("{} permission(s)", approval.missing.len()),
+            empty: "no matching options",
+            hint: "Enter choose  ·  Esc deny  ·  Up/Down move",
+        },
+        Overlay::Ex(_) => OverlayLabels {
+            count: String::new(),
+            empty: "",
+            hint: "",
+        },
+    }
+}
+
+/// Renders the floating modal overlay (palette, argument prompt, or approval).
+pub fn render_overlay(
     theme: &Theme,
     view: &EditorView,
     entity: Entity<EditorView>,
@@ -98,45 +147,24 @@ pub fn render_palette(
     font_size: f32,
     caret_width: f32,
 ) -> gpui::Div {
-    let Some(palette) = view.palette.as_ref() else {
+    let Some(overlay) = view
+        .overlay
+        .as_ref()
+        .filter(|overlay| overlay.is_floating())
+    else {
         return div();
     };
 
-    let focus_handle = &view.palette_focus_handle;
+    let focus_handle = &view.overlay_focus_handle;
     let scroll_handle = &view.palette_scroll_handle;
+    let input = overlay.input();
+    let selected = overlay.selected().unwrap_or(0);
+    let prefix = overlay.prefix();
 
-    let filtered = filtered_picker_indices(items, &palette.query);
+    let filtered = filtered_picker_indices(items, input.value());
     let filtered_count = filtered.len();
-    let rows = palette_rows(items, &filtered, shows_palette_headings(&palette.query));
-
-    let count_label = match &palette.mode {
-        PaletteMode::Commands => format!("{filtered_count} commands"),
-        PaletteMode::Documents => format!("{filtered_count} documents"),
-        PaletteMode::Arguments { spec, index, .. } => {
-            let required = spec.args().iter().filter(|arg| arg.required).count();
-            format!("{} / {required}", index + 1)
-        }
-        PaletteMode::Custom { .. } => format!("{filtered_count} items"),
-        PaletteMode::Approval { missing, .. } => format!("{} permission(s)", missing.len()),
-    };
-
-    let prefix = match &palette.mode {
-        PaletteMode::Custom {
-            placeholder: Some(p),
-            ..
-        } => format!("{p} > "),
-        PaletteMode::Approval { plugin_name, .. } => format!("Approve {plugin_name}? > "),
-        PaletteMode::Arguments {
-            title, spec, index, ..
-        } => {
-            let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
-            match required.get(*index) {
-                Some(arg) => format!("{title} · {} > ", arg.name),
-                None => format!("{title} > "),
-            }
-        }
-        _ => "> ".to_string(),
-    };
+    let rows = palette_rows(items, &filtered, shows_palette_headings(input.value()));
+    let labels = overlay_labels(overlay, filtered_count);
 
     let query = div()
         .flex()
@@ -152,46 +180,23 @@ pub fn render_palette(
                 .items_center()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .child(format!("{prefix}{}", palette.query))
-                .when(!palette.preedit.is_empty(), |el| {
-                    el.child(
-                        div()
-                            .border_b_1()
-                            .border_color(theme.foreground.default)
-                            .child(palette.preedit.clone()),
-                    )
-                })
-                .child(input_caret(theme, font_size, caret_width)),
+                .child(prefix)
+                .child(render_input_text(theme, input, font_size, caret_width)),
         )
         .child(
             div()
                 .flex_shrink_0()
                 .text_xs()
                 .text_color(theme.foreground.muted)
-                .child(count_label),
+                .child(labels.count),
         );
-
-    let empty_label = match &palette.mode {
-        PaletteMode::Commands => "no matching commands",
-        PaletteMode::Documents => "no matching documents",
-        PaletteMode::Arguments { spec, index, .. } => {
-            let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
-            match required.get(*index) {
-                Some(arg) if arg.choices.is_empty() => "type a value and press Enter",
-                Some(_) => "no matching choices",
-                None => "argument",
-            }
-        }
-        PaletteMode::Custom { .. } => "no matching items",
-        PaletteMode::Approval { .. } => "no matching options",
-    };
 
     let rows_element: AnyElement = if filtered.is_empty() {
         div()
             .px_2()
             .py_2()
             .text_color(theme.foreground.muted)
-            .child(empty_label)
+            .child(labels.empty)
             .into_any_element()
     } else {
         let item_sizes = Rc::new(
@@ -202,7 +207,7 @@ pub fn render_palette(
         let theme_clone = theme.clone();
         let items_clone = items.to_vec();
         let rows_clone = rows.clone();
-        let selected_item = filtered.get(palette.selected).copied();
+        let selected_item = filtered.get(selected).copied();
 
         v_virtual_list(
             entity,
@@ -230,23 +235,13 @@ pub fn render_palette(
         .into_any_element()
     };
 
-    let hint_label = match &palette.mode {
-        PaletteMode::Commands => {
-            "Enter run  ·  : for named commands  ·  Esc close  ·  Up/Down move"
-        }
-        PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
-        PaletteMode::Arguments { .. } => "Enter confirm  ·  Esc back",
-        PaletteMode::Custom { .. } => "Enter select  ·  Esc close  ·  Up/Down move",
-        PaletteMode::Approval { .. } => "Enter choose  ·  Esc deny  ·  Up/Down move",
-    };
-
     let hint = div()
         .px_2()
         .pt_1()
         .text_xs()
         .text_color(theme.foreground.muted)
         .whitespace_nowrap()
-        .child(hint_label);
+        .child(labels.hint);
 
     div()
         .absolute()
@@ -270,6 +265,6 @@ pub fn render_palette(
                 .child(query)
                 .child(rows_element)
                 .child(hint)
-                .focus_trap("palette-modal-trap", focus_handle),
+                .focus_trap("overlay-modal-trap", focus_handle),
         )
 }

@@ -12,6 +12,7 @@ pub mod editor;
 pub mod ex;
 pub mod geometry;
 pub mod keymap;
+pub mod overlay;
 pub mod palette;
 pub mod paths;
 pub mod plugin;

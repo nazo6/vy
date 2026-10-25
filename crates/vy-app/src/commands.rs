@@ -648,6 +648,21 @@ pub fn resolve_ex_name<'a>(
     }
 }
 
+/// Ex names that extend `typed`, sorted and deduplicated for completion.
+///
+/// The exact name is not returned: completing it would not change the input.
+pub fn ex_name_candidates(typed: &str, commands: &[CommandDescriptor]) -> Vec<String> {
+    let mut candidates: Vec<String> = commands
+        .iter()
+        .flat_map(|command| command.ex_names.iter())
+        .filter(|ex_name| ex_name.starts_with(typed) && ex_name.as_str() != typed)
+        .cloned()
+        .collect();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
 /// Turns a command id into a short label for the command palette.
 pub fn display_title(id: &str) -> String {
     let tail = id.strip_prefix("vy.").unwrap_or(id);
@@ -1128,6 +1143,32 @@ mod tests {
             other => panic!("expected an ambiguous Ex command, got {other:?}"),
         }
         assert!(matches!(resolve(""), Err(ExResolveError::Ambiguous { .. })));
+    }
+
+    #[test]
+    fn completes_ex_names_by_prefix() {
+        let commands = CommandRegistry::new().descriptors();
+
+        assert_eq!(
+            ex_name_candidates("wr", &commands),
+            vec!["wrap".to_string(), "write".to_string()]
+        );
+        assert_eq!(
+            ex_name_candidates("split-", &commands),
+            vec!["split-left".to_string(), "split-up".to_string()]
+        );
+        assert_eq!(
+            ex_name_candidates("v", &commands),
+            vec![
+                "view".to_string(),
+                "view-close".to_string(),
+                "view-toggle".to_string(),
+                "vsp".to_string(),
+            ]
+        );
+        // An exact name has nothing left to complete.
+        assert!(ex_name_candidates("write", &commands).is_empty());
+        assert!(ex_name_candidates("zz", &commands).is_empty());
     }
 
     #[test]

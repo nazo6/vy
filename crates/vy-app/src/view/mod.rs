@@ -20,9 +20,9 @@ use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
 use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState};
-use vy_app::ex::{ExHistory, ExState};
+use vy_app::ex::ExHistory;
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
-use vy_app::palette::{PaletteMode, PaletteState};
+use vy_app::overlay::{ApprovalState, Overlay};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
@@ -107,21 +107,18 @@ pub struct EditorView {
     documents: HashMap<u64, DocumentState>,
     /// Used when no pane has a document yet, so drawing has a valid editor.
     fallback: DocumentState,
-    /// Open command palette, if any.
-    pub(crate) palette: Option<PaletteState>,
+    /// Modal overlay currently open (palette, Ex line, prompt, or approval).
+    pub(crate) overlay: Option<Overlay>,
     /// Commands run from the palette, most recent first. Session-local.
     recent_commands: Vec<String>,
-    /// Open Ex command line, if any.
-    ex: Option<ExState>,
     ex_history: ExHistory,
     /// Commands waiting to run. Only one command runs at a time.
     command_queue: VecDeque<Invocation>,
     /// The script command that is currently running, if any.
     running_command: Option<String>,
     pub focus_handle: FocusHandle,
-    pub palette_focus_handle: FocusHandle,
+    pub overlay_focus_handle: FocusHandle,
     pub palette_scroll_handle: VirtualListScrollHandle,
-    pub ex_focus_handle: FocusHandle,
     pub focus_stack: FocusStack,
     status: SharedString,
     frame_log: bool,
@@ -181,13 +178,13 @@ impl EditorView {
             eprintln!("vy: plugins: {warning}");
         }
 
-        let initial_palette = plugin_manager.next_approval_request().map(|req| {
-            PaletteState::with_mode(vy_app::palette::PaletteMode::Approval {
-                plugin_id: req.plugin_id.clone(),
-                plugin_name: req.plugin_name.clone(),
-                plugin_version: req.plugin_version.clone(),
-                missing: req.missing_capabilities.clone(),
-            })
+        let initial_overlay = plugin_manager.next_approval_request().map(|req| {
+            Overlay::Approval(ApprovalState::new(
+                req.plugin_id.clone(),
+                req.plugin_name.clone(),
+                req.plugin_version.clone(),
+                req.missing_capabilities.clone(),
+            ))
         });
 
         let uri = document_uri(
@@ -241,16 +238,14 @@ impl EditorView {
             panes: HashMap::new(),
             documents: HashMap::new(),
             fallback,
-            palette: initial_palette,
+            overlay: initial_overlay,
             recent_commands: Vec::new(),
-            ex: None,
             ex_history: ExHistory::new(),
             command_queue: VecDeque::new(),
             running_command: None,
             focus_handle: cx.focus_handle(),
-            palette_focus_handle: cx.focus_handle(),
+            overlay_focus_handle: cx.focus_handle(),
             palette_scroll_handle: VirtualListScrollHandle::new(),
-            ex_focus_handle: cx.focus_handle(),
             focus_stack: FocusStack::new(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -565,29 +560,18 @@ impl EditorView {
         true
     }
 
-    /// Synchronizes window focus with active modal overlays via the focus stack.
+    /// Synchronizes window focus with the modal overlay via the focus stack.
     pub(super) fn sync_modal_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let target = if self.palette.is_some() {
-            Some(self.palette_focus_handle.clone())
-        } else if self.ex.is_some() {
-            Some(self.ex_focus_handle.clone())
-        } else {
-            None
-        };
-        match target {
-            Some(target) if self.focus_stack.is_empty() => {
+        if self.overlay.is_some() {
+            let target = self.overlay_focus_handle.clone();
+            if self.focus_stack.is_empty() {
                 let previous = self.focus_handle.clone();
                 self.focus_stack.push(previous, &target, window, cx);
+            } else if !target.is_focused(window) {
+                target.focus(window, cx);
             }
-            Some(target) => {
-                if !target.is_focused(window) {
-                    target.focus(window, cx);
-                }
-            }
-            None if !self.focus_stack.is_empty() => {
-                self.focus_stack.pop(window, cx);
-            }
-            None => {}
+        } else if !self.focus_stack.is_empty() {
+            self.focus_stack.pop(window, cx);
         }
     }
 
@@ -595,21 +579,7 @@ impl EditorView {
         self.cursor_visible = true;
         let key = ui::key::convert_key(&event.keystroke);
 
-        if self.ex.is_some() {
-            if let Some(key) = key {
-                if matches!(key, Key::Char(_)) {
-                    // Printable text reaches input handler via replace_text_in_range
-                    return;
-                }
-                self.handle_ex_key(key);
-            }
-            self.sync_modal_focus(window, cx);
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
-
-        if self.palette.is_some() {
+        if self.overlay.is_some() {
             if let Some(key) = key {
                 if self.opens_ex_from_palette(key) {
                     self.open_ex();
@@ -622,7 +592,7 @@ impl EditorView {
                     // Printable text reaches input handler via replace_text_in_range
                     return;
                 }
-                self.handle_palette_key(key);
+                self.handle_overlay_key(key);
             }
             self.sync_modal_focus(window, cx);
             cx.stop_propagation();
@@ -645,7 +615,10 @@ impl EditorView {
         // input handler, or the same letter would also be inserted after the mode change.
         // `Enter`, `Tab`, and `Backspace` are editable keys too: macOS sends them to the
         // input method as text, so they are handled here only.
-        if matches!(key, Key::Char(_) | Key::Enter | Key::Tab | Key::Backspace) {
+        if matches!(
+            key,
+            Key::Char(_) | Key::Enter | Key::Tab | Key::BackTab | Key::Backspace
+        ) {
             cx.stop_propagation();
         }
 
@@ -660,10 +633,11 @@ impl EditorView {
         if !matches!(key, Key::Char(':')) {
             return false;
         }
-        self.palette.as_ref().is_some_and(|palette| {
-            palette.query.is_empty()
-                && palette.preedit.is_empty()
-                && matches!(palette.mode, PaletteMode::Commands)
+        self.overlay.as_ref().is_some_and(|overlay| {
+            overlay.palette().is_some_and(|palette| {
+                palette.input.is_empty()
+                    && matches!(palette.mode, vy_app::palette::PaletteMode::Commands)
+            })
         })
     }
 
@@ -672,8 +646,7 @@ impl EditorView {
         self.activate_active_view();
         let before = self.active_view();
         let before_version = self.editor().version();
-        let before_palette = self.palette.is_some();
-        let before_ex = self.ex.is_some();
+        let before_overlay = self.overlay.is_some();
 
         let selection = self.editor().selection();
         let context = KeyContext {
@@ -701,8 +674,7 @@ impl EditorView {
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
         let changed = before != self.active_view()
             || before_version != self.editor().version()
-            || before_palette != self.palette.is_some()
-            || before_ex != self.ex.is_some();
+            || before_overlay != self.overlay.is_some();
 
         self.ensure_cursor_visible();
         changed

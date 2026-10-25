@@ -4,11 +4,13 @@ use gpui::ScrollStrategy;
 use vy_app::commands::{
     ArgKind, BuiltinCommand, CommandSource, DocumentCommand, ExAddress, ExRange, Invocation,
     InvocationSource, LineRange, Owner, PaletteVisibility, PaneCommand, RangeSpec, UiCommand,
-    ViewCommand, argument_error, parse_ex_args, parse_ex_line, resolve_ex_name, validate_json_args,
+    ViewCommand, argument_error, ex_name_candidates, parse_ex_args, parse_ex_line, resolve_ex_name,
+    validate_json_args,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
+use vy_app::overlay::{ApprovalState, Overlay, PromptState};
 use vy_app::palette::{
     PaletteMode, PaletteState, PickerItem, RECENT_GROUP, approval_picker_items,
     filtered_picker_indices, move_palette_selection, palette_row_index, push_recent_command,
@@ -320,14 +322,39 @@ impl EditorView {
         self.request::<PaneFocus>(PaneFocusParams { pane_id: next }, Pending::Focus);
     }
 
-    pub(super) fn palette_items(&self) -> Vec<PickerItem> {
-        let Some(palette) = self.palette.as_ref() else {
+    /// Rows shown in the floating overlay, if it has a list.
+    pub(super) fn overlay_items(&self) -> Vec<PickerItem> {
+        match self.overlay.as_ref() {
+            Some(Overlay::Palette(palette)) => self.palette_mode_items(&palette.mode),
+            Some(Overlay::Prompt(prompt)) => self.prompt_items(prompt),
+            Some(Overlay::Approval(approval)) => approval_picker_items(
+                &approval.plugin_id,
+                &approval.plugin_name,
+                &approval.missing,
+            ),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Choices for the argument the prompt is collecting.
+    fn prompt_items(&self, prompt: &PromptState) -> Vec<PickerItem> {
+        let Some(arg) = prompt.current_arg() else {
             return Vec::new();
         };
-        let browsing = shows_palette_headings(&palette.query);
+        if arg.kind != ArgKind::Choice {
+            return Vec::new();
+        }
+        arg.choices
+            .iter()
+            .map(|choice| PickerItem::new(*choice, *choice))
+            .collect()
+    }
 
-        match palette.mode {
-            PaletteMode::Commands => self.command_palette_items(browsing),
+    fn palette_mode_items(&self, mode: &PaletteMode) -> Vec<PickerItem> {
+        match mode {
+            PaletteMode::Commands => {
+                self.command_palette_items(self.overlay_input_value().trim().is_empty())
+            }
             PaletteMode::Documents => {
                 let mut docs: Vec<&DocumentState> = self.documents.values().collect();
                 docs.sort_by_key(|doc| doc.id);
@@ -346,24 +373,7 @@ impl EditorView {
                     })
                     .collect()
             }
-            PaletteMode::Arguments { spec, index, .. } => {
-                let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
-                match required.get(index) {
-                    Some(arg) if arg.kind == ArgKind::Choice => arg
-                        .choices
-                        .iter()
-                        .map(|choice| PickerItem::new(*choice, *choice))
-                        .collect(),
-                    _ => Vec::new(),
-                }
-            }
-            PaletteMode::Custom { ref items, .. } => items.clone(),
-            PaletteMode::Approval {
-                ref plugin_id,
-                ref plugin_name,
-                ref missing,
-                ..
-            } => approval_picker_items(plugin_id, plugin_name, missing),
+            PaletteMode::Custom { items, .. } => items.clone(),
         }
     }
 
@@ -397,44 +407,61 @@ impl EditorView {
         recent.into_iter().chain(items).collect()
     }
 
-    fn palette_query(&self) -> &str {
-        self.palette
+    fn overlay_input_value(&self) -> &str {
+        self.overlay
             .as_ref()
-            .map(|palette| palette.query.as_str())
+            .map(|overlay| overlay.input().value())
             .unwrap_or("")
     }
 
-    pub(super) fn palette_filtered_len(&self) -> usize {
-        let Some(palette) = self.palette.as_ref() else {
+    pub(super) fn overlay_filtered_len(&self) -> usize {
+        if self.overlay.is_none() {
             return 0;
-        };
-        filtered_picker_indices(&self.palette_items(), &palette.query).len()
+        }
+        filtered_picker_indices(&self.overlay_items(), self.overlay_input_value()).len()
     }
 
-    pub(super) fn palette_selected_id(&self) -> Option<String> {
-        let palette = self.palette.as_ref()?;
-        let items = self.palette_items();
-        let filtered = filtered_picker_indices(&items, &palette.query);
-        let index = palette.selected.min(filtered.len().saturating_sub(1));
+    pub(super) fn overlay_selected_id(&self) -> Option<String> {
+        let selected = self.overlay.as_ref()?.selected()?;
+        let items = self.overlay_items();
+        let filtered = filtered_picker_indices(&items, self.overlay_input_value());
+        let index = selected.min(filtered.len().saturating_sub(1));
         filtered.get(index).map(|index| items[*index].id.clone())
     }
 
-    pub(super) fn open_palette(&mut self) {
-        self.clear_preedit();
-        self.ex = None;
-        self.palette = Some(PaletteState::with_mode(PaletteMode::Commands));
+    /// Moves the selected row of the active overlay's list.
+    fn move_overlay_selection(&mut self, delta: isize) {
+        let len = self.overlay_filtered_len();
+        let items = self.overlay_items();
+        let input = self.overlay_input_value().to_string();
+        let filtered = filtered_picker_indices(&items, &input);
+        let headings = shows_palette_headings(&input);
+        let Some(overlay) = self.overlay.as_mut() else {
+            return;
+        };
+        let Some(selected) = overlay.selected_mut() else {
+            return;
+        };
+        *selected = move_palette_selection(*selected, delta, len);
+        let row = palette_row_index(&items, &filtered, headings, *selected);
         self.palette_scroll_handle
-            .scroll_to_item(0, ScrollStrategy::Top);
-        self.status = "command palette".into();
+            .scroll_to_item(row, ScrollStrategy::Nearest);
+    }
+
+    pub(super) fn open_palette(&mut self) {
+        self.open_palette_mode(PaletteMode::Commands, "command palette");
     }
 
     pub(super) fn open_document_picker(&mut self) {
+        self.open_palette_mode(PaletteMode::Documents, "switch document");
+    }
+
+    fn open_palette_mode(&mut self, mode: PaletteMode, status: &str) {
         self.clear_preedit();
-        self.ex = None;
-        self.palette = Some(PaletteState::with_mode(PaletteMode::Documents));
+        self.overlay = Some(Overlay::Palette(PaletteState::with_mode(mode)));
         self.palette_scroll_handle
             .scroll_to_item(0, ScrollStrategy::Top);
-        self.status = "switch document".into();
+        self.status = status.into();
     }
 
     pub(super) fn open_custom_picker(
@@ -444,29 +471,26 @@ impl EditorView {
         placeholder: Option<String>,
         request: vy_js::HostRequest,
     ) {
-        self.clear_preedit();
-        self.ex = None;
         let status_text = placeholder.clone().unwrap_or_else(|| "select item".into());
-        self.palette = Some(PaletteState::with_mode(PaletteMode::Custom {
-            id,
-            items,
-            placeholder,
-            reply: Some(request),
-        }));
-        self.palette_scroll_handle
-            .scroll_to_item(0, ScrollStrategy::Top);
-        self.status = status_text.into();
+        self.open_palette_mode(
+            PaletteMode::Custom {
+                id,
+                items,
+                placeholder,
+                reply: Some(request),
+            },
+            &status_text,
+        );
     }
 
     pub(super) fn open_ex(&mut self) {
         self.clear_preedit();
-        self.palette = None;
-        self.ex = Some(ExState::default());
+        self.overlay = Some(Overlay::Ex(ExState::default()));
         self.status = "ex command".into();
     }
 
     /// Starts collecting the required arguments of a palette command.
-    fn begin_palette_command(&mut self, id: String) {
+    fn begin_palette_command(&mut self, id: String, palette: PaletteState) {
         let Some(descriptor) = self
             .commands
             .descriptors()
@@ -494,46 +518,30 @@ impl EditorView {
             .find(|arg| arg.required)
             .map(|arg| arg.name)
             .unwrap_or("");
-        self.palette = Some(PaletteState::with_mode(PaletteMode::Arguments {
-            command_id: id,
-            title: title.clone(),
-            spec: descriptor.args,
-            values: serde_json::Map::new(),
-            index: 0,
-        }));
+        self.overlay = Some(Overlay::Prompt(PromptState::new(
+            id,
+            title.clone(),
+            descriptor.args,
+            palette,
+        )));
         self.palette_scroll_handle
             .scroll_to_item(0, ScrollStrategy::Top);
         self.status = format!("{title}: {arg_name}").into();
     }
 
     /// Stores the current argument and either asks for the next one or runs the command.
-    fn confirm_palette_argument(&mut self) {
-        let Some(palette) = self.palette.as_ref() else {
+    fn confirm_prompt_argument(&mut self) {
+        let Some(Overlay::Prompt(prompt)) = self.overlay.as_ref() else {
             return;
         };
-        let PaletteMode::Arguments {
-            command_id,
-            title,
-            spec,
-            values,
-            index,
-        } = &palette.mode
-        else {
+        let Some(arg) = prompt.current_arg() else {
             return;
         };
-        let command_id = command_id.clone();
-        let title = title.clone();
-        let spec = *spec;
-        let mut values = values.clone();
-        let index = *index;
-        let query = palette.query.trim().to_string();
-
-        let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
-        let Some(arg) = required.get(index).copied() else {
-            return;
-        };
+        let command_id = prompt.command_id.clone();
+        let title = prompt.title.clone();
+        let spec = prompt.spec;
         let value = if arg.kind == ArgKind::Choice {
-            match self.palette_selected_id() {
+            match self.overlay_selected_id() {
                 Some(value) => value,
                 None => {
                     self.status = format!("missing argument: {}", arg.name).into();
@@ -541,39 +549,35 @@ impl EditorView {
                 }
             }
         } else {
-            query
+            prompt.input.value().trim().to_string()
         };
         if value.is_empty() {
             self.status = format!("missing argument: {}", arg.name).into();
             return;
         }
-        values.insert(arg.name.to_string(), serde_json::Value::String(value));
 
-        let next_index = index + 1;
-        if next_index < required.len() {
-            if let Some(palette) = self.palette.as_mut() {
-                palette.query.clear();
-                palette.preedit.clear();
-                palette.selected = 0;
-                if let PaletteMode::Arguments {
-                    values: current,
-                    index,
-                    ..
-                } = &mut palette.mode
-                {
-                    *current = values;
-                    *index = next_index;
-                }
-            }
-            self.status = format!("{title}: {}", required[next_index].name).into();
+        let Some(Overlay::Prompt(prompt)) = self.overlay.as_mut() else {
+            return;
+        };
+        prompt
+            .values
+            .insert(arg.name.to_string(), serde_json::Value::String(value));
+        let next_index = prompt.index + 1;
+        if next_index < prompt.required().len() {
+            let next_name = prompt.required()[next_index].name;
+            prompt.index = next_index;
+            prompt.input.clear();
+            prompt.selected = 0;
+            self.status = format!("{title}: {next_name}").into();
             self.palette_scroll_handle
                 .scroll_to_item(0, ScrollStrategy::Top);
             return;
         }
 
-        match validate_json_args(spec, &serde_json::Value::Object(values)) {
+        let values = serde_json::Value::Object(prompt.values.clone());
+        match validate_json_args(spec, &values) {
             Ok(values) => {
-                self.palette = None;
+                self.overlay = None;
                 self.enqueue_command(Invocation::palette_with_args(command_id, values));
             }
             Err(error) => {
@@ -585,14 +589,14 @@ impl EditorView {
     pub(super) fn handle_ex_key(&mut self, key: Key) {
         match key {
             Key::Esc => {
-                self.ex = None;
+                self.overlay = None;
                 return;
             }
             Key::Enter => {
-                let Some(state) = self.ex.take() else {
+                let Some(Overlay::Ex(ex)) = self.overlay.take() else {
                     return;
                 };
-                let line = state.input.trim().to_string();
+                let line = ex.input.value().trim().to_string();
                 if line.is_empty() {
                     return;
                 }
@@ -601,28 +605,70 @@ impl EditorView {
                 return;
             }
             Key::Up | Key::Ctrl('p') => {
-                if let Some(state) = self.ex.as_mut() {
-                    self.ex_history.navigate(state, -1);
+                if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
+                    self.ex_history.navigate(ex, -1);
                 }
                 return;
             }
             Key::Down | Key::Ctrl('n') => {
-                if let Some(state) = self.ex.as_mut() {
-                    self.ex_history.navigate(state, 1);
+                if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
+                    self.ex_history.navigate(ex, 1);
                 }
+                return;
+            }
+            Key::Tab => {
+                self.complete_ex_name(false);
+                return;
+            }
+            Key::BackTab => {
+                self.complete_ex_name(true);
                 return;
             }
             _ => {}
         }
 
-        let Some(state) = self.ex.as_mut() else {
+        let Some(overlay) = self.overlay.as_mut() else {
             return;
         };
         match key {
-            Key::Backspace => state.pop_char(),
-            Key::Ctrl('u') => state.clear(),
-            Key::Char(character) => state.push_char(character),
+            Key::Backspace => overlay.pop_char(),
+            Key::Ctrl('u') => overlay.clear(),
+            Key::Char(character) => overlay.push_char(character),
             _ => {}
+        }
+    }
+
+    /// Cycles Ex command-name completion for the first word of the input.
+    fn complete_ex_name(&mut self, backwards: bool) {
+        if self.overlay_input_value().trim().is_empty() {
+            return;
+        }
+        let descriptors = self.commands.descriptors();
+        let Some(Overlay::Ex(ex)) = self.overlay.as_mut() else {
+            return;
+        };
+        let typed = ex.input.value().to_string();
+        // Arguments are not completed yet; leave the word alone.
+        if typed.contains(char::is_whitespace) {
+            ex.completion.reset();
+            return;
+        }
+        if ex.completion.is_active_for(&typed) {
+            ex.completion.cycle(if backwards { -1 } else { 1 });
+        } else {
+            let candidates = ex_name_candidates(&typed, &descriptors);
+            if candidates.is_empty() {
+                ex.completion.reset();
+                return;
+            }
+            ex.completion.set(typed, candidates);
+            if backwards {
+                ex.completion.select_last();
+            }
+        }
+        if let Some(candidate) = ex.completion.selected().map(str::to_string) {
+            ex.input.set_value(candidate);
+            ex.history_index = None;
         }
     }
 
@@ -725,64 +771,49 @@ impl EditorView {
 
     pub(super) fn show_next_approval_prompt(&mut self) {
         if let Some(req) = self.plugin_manager.next_approval_request() {
-            self.palette = Some(PaletteState::with_mode(PaletteMode::Approval {
-                plugin_id: req.plugin_id.clone(),
-                plugin_name: req.plugin_name.clone(),
-                plugin_version: req.plugin_version.clone(),
-                missing: req.missing_capabilities.clone(),
-            }));
+            self.overlay = Some(Overlay::Approval(ApprovalState::new(
+                req.plugin_id.clone(),
+                req.plugin_name.clone(),
+                req.plugin_version.clone(),
+                req.missing_capabilities.clone(),
+            )));
         }
     }
 
-    pub(super) fn handle_palette_key(&mut self, key: Key) -> bool {
+    /// Dispatches one key to the active overlay.
+    pub(super) fn handle_overlay_key(&mut self, key: Key) {
+        match self.overlay.as_ref() {
+            Some(Overlay::Palette(_)) => self.handle_palette_key(key),
+            Some(Overlay::Ex(_)) => self.handle_ex_key(key),
+            Some(Overlay::Prompt(_)) => self.handle_prompt_key(key),
+            Some(Overlay::Approval(_)) => self.handle_approval_key(key),
+            None => {}
+        }
+    }
+
+    fn handle_palette_key(&mut self, key: Key) {
         match key {
             Key::Esc => {
-                if matches!(
-                    self.palette.as_ref().map(|palette| &palette.mode),
-                    Some(PaletteMode::Arguments { .. })
-                ) {
-                    self.palette = Some(PaletteState::with_mode(PaletteMode::Commands));
-                    self.palette_scroll_handle
-                        .scroll_to_item(0, ScrollStrategy::Top);
-                    return true;
+                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
+                    return;
+                };
+                if let PaletteMode::Custom {
+                    reply: Some(request),
+                    ..
+                } = palette.mode
+                {
+                    request.respond_value(serde_json::Value::Null);
                 }
-                let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
-                match mode {
-                    PaletteMode::Custom {
-                        reply: Some(req), ..
-                    } => {
-                        req.respond_value(serde_json::Value::Null);
-                    }
-                    PaletteMode::Approval {
-                        plugin_id,
-                        plugin_name,
-                        ..
-                    } => {
-                        self.plugin_manager.deny(&plugin_id);
-                        self.status =
-                            format!("Denied capabilities for plugin {plugin_name}").into();
-                        self.show_next_approval_prompt();
-                    }
-                    _ => {}
-                }
-                return true;
             }
             Key::Enter => {
-                if matches!(
-                    self.palette.as_ref().map(|palette| &palette.mode),
-                    Some(PaletteMode::Arguments { .. })
-                ) {
-                    self.confirm_palette_argument();
-                    return true;
-                }
-                let Some(id) = self.palette_selected_id() else {
-                    return true;
+                let Some(id) = self.overlay_selected_id() else {
+                    return;
                 };
-                let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
-                match mode {
-                    PaletteMode::Commands => {
-                        self.begin_palette_command(id);
-                    }
+                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
+                    return;
+                };
+                match palette.mode {
+                    PaletteMode::Commands => self.begin_palette_command(id, palette),
                     PaletteMode::Documents => {
                         self.request::<EditorOpen>(
                             EditorOpenParams {
@@ -793,88 +824,114 @@ impl EditorView {
                         );
                     }
                     PaletteMode::Custom { reply, .. } => {
-                        if let Some(req) = reply {
-                            req.respond_value(serde_json::json!({ "selectedId": id }));
+                        if let Some(request) = reply {
+                            request.respond_value(serde_json::json!({ "selectedId": id }));
                         }
                     }
-                    PaletteMode::Approval {
-                        plugin_id,
-                        plugin_name,
-                        plugin_version,
-                        missing,
-                    } => {
-                        if id == "trust" {
-                            if let Err(err) = self.plugin_manager.approve(&plugin_id) {
-                                self.status = format!("Error approving plugin: {err}").into();
-                            } else {
-                                self.status =
-                                    format!("Approved and enabled plugin {plugin_name}").into();
-                                self.on_plugin_approved(&plugin_id);
-                            }
-                            self.show_next_approval_prompt();
-                        } else if id == "deny" {
-                            self.plugin_manager.deny(&plugin_id);
-                            self.status =
-                                format!("Denied capabilities for plugin {plugin_name}").into();
-                            self.show_next_approval_prompt();
-                        } else {
-                            // User selected an info row; keep approval dialog open
-                            self.palette = Some(PaletteState::with_mode(PaletteMode::Approval {
-                                plugin_id,
-                                plugin_name,
-                                plugin_version,
-                                missing,
-                            }));
-                        }
-                    }
-                    PaletteMode::Arguments { .. } => {}
                 }
-                return true;
             }
-            _ => {}
-        }
-
-        let len = self.palette_filtered_len();
-        match key {
-            Key::Up | Key::Ctrl('p') | Key::Down | Key::Ctrl('n') => {
-                let delta = if matches!(key, Key::Up | Key::Ctrl('p')) {
-                    -1
-                } else {
-                    1
-                };
-                let items = self.palette_items();
-                let query = self.palette_query().to_string();
-                let filtered = filtered_picker_indices(&items, &query);
-                let headings = shows_palette_headings(&query);
-                let Some(palette) = self.palette.as_mut() else {
-                    return false;
-                };
-                palette.selected = move_palette_selection(palette.selected, delta, len);
-                let row = palette_row_index(&items, &filtered, headings, palette.selected);
-                self.palette_scroll_handle
-                    .scroll_to_item(row, ScrollStrategy::Nearest);
-            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
             Key::Backspace => {
-                let Some(palette) = self.palette.as_mut() else {
-                    return false;
-                };
-                palette.query.pop();
-                palette.selected = 0;
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
                 self.palette_scroll_handle
                     .scroll_to_item(0, ScrollStrategy::Top);
             }
             Key::Char(character) => {
-                let Some(palette) = self.palette.as_mut() else {
-                    return false;
-                };
-                palette.query.push(character);
-                palette.selected = 0;
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
                 self.palette_scroll_handle
                     .scroll_to_item(0, ScrollStrategy::Top);
             }
             _ => {}
         }
-        true
+    }
+
+    fn handle_prompt_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                let Some(Overlay::Prompt(prompt)) = self.overlay.take() else {
+                    return;
+                };
+                self.overlay = Some(Overlay::Palette(prompt.back));
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            Key::Enter => self.confirm_prompt_argument(),
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_approval_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
+                    return;
+                };
+                self.plugin_manager.deny(&approval.plugin_id);
+                self.status =
+                    format!("Denied capabilities for plugin {}", approval.plugin_name).into();
+                self.show_next_approval_prompt();
+            }
+            Key::Enter => {
+                let Some(id) = self.overlay_selected_id() else {
+                    return;
+                };
+                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
+                    return;
+                };
+                if id == "trust" {
+                    if let Err(err) = self.plugin_manager.approve(&approval.plugin_id) {
+                        self.status = format!("Error approving plugin: {err}").into();
+                    } else {
+                        self.status =
+                            format!("Approved and enabled plugin {}", approval.plugin_name).into();
+                        self.on_plugin_approved(&approval.plugin_id);
+                    }
+                    self.show_next_approval_prompt();
+                } else if id == "deny" {
+                    self.plugin_manager.deny(&approval.plugin_id);
+                    self.status =
+                        format!("Denied capabilities for plugin {}", approval.plugin_name).into();
+                    self.show_next_approval_prompt();
+                } else {
+                    // The user selected an info row; keep the dialog open.
+                    self.overlay = Some(Overlay::Approval(approval));
+                }
+            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Queues a command and starts it when the previous command is done.

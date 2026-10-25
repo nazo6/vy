@@ -2,6 +2,7 @@
 
 pub mod color;
 pub mod ex;
+pub mod input;
 pub mod key;
 pub mod palette;
 pub mod pane;

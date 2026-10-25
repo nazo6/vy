@@ -5,7 +5,7 @@ use gpui::{
     SharedString, TextRun, UTF16Selection, Window, point, px, size,
 };
 use vy_app::editor::{Action, Mode};
-use vy_app::palette::PaletteMode;
+use vy_app::overlay::Overlay;
 use vy_app::text_layout::{byte_to_utf16, utf16_to_byte};
 
 use super::EditorView;
@@ -14,17 +14,15 @@ use crate::theme::ActiveTheme;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActiveInput {
     Editor,
-    Palette,
-    Ex,
+    /// Palette, Ex line, argument prompt, or approval.
+    Overlay,
     None,
 }
 
 impl EditorView {
     fn active_input_target(&self) -> ActiveInput {
-        if self.palette.is_some() {
-            ActiveInput::Palette
-        } else if self.ex.is_some() {
-            ActiveInput::Ex
+        if self.overlay.is_some() {
+            ActiveInput::Overlay
         } else if self
             .active_view()
             .map(|view| view.mode() == Mode::Insert)
@@ -127,20 +125,9 @@ impl EntityInputHandler for EditorView {
         _cx: &mut Context<Self>,
     ) -> Option<String> {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                let palette = self.palette.as_ref()?;
-                let full = format!("{}{}", palette.query, palette.preedit);
-                let len = full.encode_utf16().count();
-                let end = range_utf16.end.min(len);
-                let start = range_utf16.start.min(end);
-                adjusted_range.replace(start..end);
-                let start_b = utf16_to_byte(&full, start as u32);
-                let end_b = utf16_to_byte(&full, end as u32);
-                Some(full[start_b..end_b].to_string())
-            }
-            ActiveInput::Ex => {
-                let ex = self.ex.as_ref()?;
-                let full = format!("{}{}", ex.input, ex.preedit);
+            ActiveInput::Overlay => {
+                let input = self.overlay.as_ref()?.input();
+                let full = input.full();
                 let len = full.encode_utf16().count();
                 let end = range_utf16.end.min(len);
                 let start = range_utf16.start.min(end);
@@ -168,21 +155,12 @@ impl EntityInputHandler for EditorView {
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                let palette = self.palette.as_ref()?;
-                let query_len = palette.query.encode_utf16().count();
-                let preedit_len = palette.preedit.encode_utf16().count();
+            ActiveInput::Overlay => {
+                let input = self.overlay.as_ref()?.input();
+                let value_len = input.value().encode_utf16().count();
+                let preedit_len = input.preedit().encode_utf16().count();
                 Some(UTF16Selection {
-                    range: query_len..query_len + preedit_len,
-                    reversed: false,
-                })
-            }
-            ActiveInput::Ex => {
-                let ex = self.ex.as_ref()?;
-                let input_len = ex.input.encode_utf16().count();
-                let preedit_len = ex.preedit.encode_utf16().count();
-                Some(UTF16Selection {
-                    range: input_len..input_len + preedit_len,
+                    range: value_len..value_len + preedit_len,
                     reversed: false,
                 })
             }
@@ -221,22 +199,13 @@ impl EntityInputHandler for EditorView {
         _cx: &mut Context<Self>,
     ) -> Option<std::ops::Range<usize>> {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                let palette = self.palette.as_ref()?;
-                if palette.preedit.is_empty() {
+            ActiveInput::Overlay => {
+                let input = self.overlay.as_ref()?.input();
+                if input.preedit().is_empty() {
                     return None;
                 }
-                let start = palette.query.encode_utf16().count();
-                let len = palette.preedit.encode_utf16().count();
-                Some(start..start + len)
-            }
-            ActiveInput::Ex => {
-                let ex = self.ex.as_ref()?;
-                if ex.preedit.is_empty() {
-                    return None;
-                }
-                let start = ex.input.encode_utf16().count();
-                let len = ex.preedit.encode_utf16().count();
+                let start = input.value().encode_utf16().count();
+                let len = input.preedit().encode_utf16().count();
                 Some(start..start + len)
             }
             ActiveInput::Editor => {
@@ -252,15 +221,9 @@ impl EntityInputHandler for EditorView {
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                if let Some(palette) = self.palette.as_mut() {
-                    palette.preedit.clear();
-                    cx.notify();
-                }
-            }
-            ActiveInput::Ex => {
-                if let Some(ex) = self.ex.as_mut() {
-                    ex.preedit.clear();
+            ActiveInput::Overlay => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.clear_preedit();
                     cx.notify();
                 }
             }
@@ -282,23 +245,14 @@ impl EntityInputHandler for EditorView {
         cx: &mut Context<Self>,
     ) {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                if let Some(palette) = self.palette.as_mut() {
-                    palette.preedit.clear();
+            ActiveInput::Overlay => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.clear_preedit();
                     if !text.is_empty() {
-                        palette.push_str(text);
+                        overlay.push_str(text);
                     }
                     self.palette_scroll_handle
                         .scroll_to_item(0, ScrollStrategy::Top);
-                    cx.notify();
-                }
-            }
-            ActiveInput::Ex => {
-                if let Some(ex) = self.ex.as_mut() {
-                    ex.preedit.clear();
-                    if !text.is_empty() {
-                        ex.push_str(text);
-                    }
                     cx.notify();
                 }
             }
@@ -327,17 +281,9 @@ impl EntityInputHandler for EditorView {
         cx: &mut Context<Self>,
     ) {
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                if let Some(palette) = self.palette.as_mut() {
-                    palette.preedit.clear();
-                    palette.preedit.push_str(new_text);
-                    cx.notify();
-                }
-            }
-            ActiveInput::Ex => {
-                if let Some(ex) = self.ex.as_mut() {
-                    ex.preedit.clear();
-                    ex.preedit.push_str(new_text);
+            ActiveInput::Overlay => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.set_preedit(new_text);
                     cx.notify();
                 }
             }
@@ -374,15 +320,10 @@ impl EntityInputHandler for EditorView {
         let text_color = cx.theme().editor.text.into();
 
         match self.active_input_target() {
-            ActiveInput::Palette => {
-                let palette = self.palette.as_ref()?;
-                let prefix = match &palette.mode {
-                    PaletteMode::Approval { plugin_name, .. } => {
-                        format!("Approve {plugin_name}? > ")
-                    }
-                    _ => "> ".to_string(),
-                };
-                let full_prefix = format!("{prefix}{}", palette.query);
+            ActiveInput::Overlay => {
+                let overlay = self.overlay.as_ref()?;
+                let prefix = overlay.prefix();
+                let full_prefix = format!("{prefix}{}", overlay.input().value());
                 let mut width = px(0.);
                 if !full_prefix.is_empty() {
                     let run = TextRun {
@@ -401,46 +342,26 @@ impl EntityInputHandler for EditorView {
                     );
                     width = shaped.x_for_index(full_prefix.len());
                 }
-                let palette_w =
-                    px(vy_app::palette::PALETTE_MAX_WIDTH
+                if matches!(overlay, Overlay::Ex(_)) {
+                    let origin_x = element_bounds.origin.x + px(8.0) + width;
+                    let origin_y = element_bounds.bottom();
+                    Some(Bounds::new(
+                        point(origin_x, origin_y),
+                        size(px(2.), px(self.line_height())),
+                    ))
+                } else {
+                    let palette_w = px(vy_app::palette::PALETTE_MAX_WIDTH
                         .min(f32::from(element_bounds.size.width)));
-                let origin_x = element_bounds.origin.x
-                    + (element_bounds.size.width - palette_w) / 2.0
-                    + px(16.0)
-                    + width;
-                let origin_y = element_bounds.origin.y + px(20.0);
-                Some(Bounds::new(
-                    point(origin_x, origin_y),
-                    size(px(2.), px(self.line_height())),
-                ))
-            }
-            ActiveInput::Ex => {
-                let ex = self.ex.as_ref()?;
-                let full_prefix = format!(":{}", ex.input);
-                let mut width = px(0.);
-                if !full_prefix.is_empty() {
-                    let run = TextRun {
-                        len: full_prefix.len(),
-                        font: gpui::font(font_family),
-                        color: text_color,
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    };
-                    let shaped = window.text_system().shape_line(
-                        SharedString::from(full_prefix.clone()),
-                        font_size,
-                        &[run],
-                        None,
-                    );
-                    width = shaped.x_for_index(full_prefix.len());
+                    let origin_x = element_bounds.origin.x
+                        + (element_bounds.size.width - palette_w) / 2.0
+                        + px(16.0)
+                        + width;
+                    let origin_y = element_bounds.origin.y + px(20.0);
+                    Some(Bounds::new(
+                        point(origin_x, origin_y),
+                        size(px(2.), px(self.line_height())),
+                    ))
                 }
-                let origin_x = element_bounds.origin.x + px(8.0) + width;
-                let origin_y = element_bounds.bottom();
-                Some(Bounds::new(
-                    point(origin_x, origin_y),
-                    size(px(2.), px(self.line_height())),
-                ))
             }
             ActiveInput::Editor => {
                 self.activate_active_view();

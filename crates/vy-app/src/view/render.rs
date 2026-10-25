@@ -7,6 +7,7 @@ use gpui::{
     ParentElement, Render, Styled, Window, canvas, div, px,
 };
 
+use vy_app::overlay::Overlay;
 use vy_app::text_layout::{
     DEFAULT_TAB_STOP, chunk_line, clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal,
     utf16_to_display_col,
@@ -248,11 +249,12 @@ impl Render for EditorView {
         // Fit the viewport to the window before choosing which lines to draw.
         let chrome_height = ui::titlebar::TITLEBAR_HEIGHT
             + STATUSLINE_HEIGHT
-            + if self.ex.is_some() {
-                STATUSLINE_HEIGHT
-            } else {
-                0.0
-            };
+            + self
+                .overlay
+                .as_ref()
+                .and_then(Overlay::ex)
+                .map(|ex| STATUSLINE_HEIGHT + ui::ex::completion_height(ex))
+                .unwrap_or(0.0);
         let height = f32::from(window.viewport_size().height) - chrome_height;
         let width = f32::from(window.viewport_size().width);
         self.update_pane_viewports(width, height);
@@ -284,12 +286,7 @@ impl Render for EditorView {
                                     cx,
                                 );
                                 window.handle_input(
-                                    &view.palette_focus_handle,
-                                    ElementInputHandler::new(bounds, view_entity.clone()),
-                                    cx,
-                                );
-                                window.handle_input(
-                                    &view.ex_focus_handle,
+                                    &view.overlay_focus_handle,
                                     ElementInputHandler::new(bounds, view_entity.clone()),
                                     cx,
                                 );
@@ -324,13 +321,19 @@ impl Render for EditorView {
                     .overflow_hidden()
                     .child(content)
                     .children(
-                        self.palette
+                        self.overlay
                             .as_ref()
-                            .map(|_| self.render_palette(&theme, cx)),
+                            .filter(|overlay| overlay.is_floating())
+                            .map(|_| self.render_floating_overlay(&theme, cx)),
                     ),
             )
             .child(self.render_statusline(&theme))
-            .children(self.ex.as_ref().map(|_| self.render_ex(&theme)));
+            .children(
+                self.overlay
+                    .as_ref()
+                    .and_then(Overlay::ex)
+                    .map(|_| self.render_ex(&theme)),
+            );
 
         self.log_frame(started);
         element
@@ -395,19 +398,19 @@ impl EditorView {
     fn render_ex(&self, theme: &Theme) -> Div {
         ui::ex::render_ex(
             theme,
-            &self.ex_focus_handle,
-            self.ex.as_ref(),
+            &self.overlay_focus_handle,
+            self.overlay.as_ref().and_then(Overlay::ex),
             self.config.font_size(),
             CARET_WIDTH,
         )
     }
 
-    fn render_palette(&self, theme: &Theme, cx: &Context<Self>) -> Div {
-        ui::palette::render_palette(
+    fn render_floating_overlay(&self, theme: &Theme, cx: &Context<Self>) -> Div {
+        ui::palette::render_overlay(
             theme,
             self,
             cx.entity(),
-            &self.palette_items(),
+            &self.overlay_items(),
             self.config.font_size(),
             CARET_WIDTH,
         )
@@ -453,12 +456,7 @@ impl EditorView {
                                 cx,
                             );
                             window.handle_input(
-                                &view.palette_focus_handle,
-                                ElementInputHandler::new(bounds, view_entity.clone()),
-                                cx,
-                            );
-                            window.handle_input(
-                                &view.ex_focus_handle,
+                                &view.overlay_focus_handle,
                                 ElementInputHandler::new(bounds, view_entity.clone()),
                                 cx,
                             );
@@ -516,12 +514,7 @@ impl EditorView {
                         cx,
                     );
                     window.handle_input(
-                        &view.palette_focus_handle,
-                        ElementInputHandler::new(bounds, view_entity_paint.clone()),
-                        cx,
-                    );
-                    window.handle_input(
-                        &view.ex_focus_handle,
+                        &view.overlay_focus_handle,
                         ElementInputHandler::new(bounds, view_entity_paint.clone()),
                         cx,
                     );

@@ -1,8 +1,7 @@
 //! State and item filtering for the command palette.
 
-use serde_json::{Map, Value};
-
-use crate::commands::{ArgSpec, CommandDescriptor};
+use crate::commands::CommandDescriptor;
+use crate::overlay::TextInput;
 
 pub use vy_client_api::palette::PickerItem;
 
@@ -49,28 +48,12 @@ pub enum PaletteMode {
     Commands,
     /// Document / buffer picker for switching open documents.
     Documents,
-    /// Collects one required argument of a command after the palette selection.
-    Arguments {
-        command_id: String,
-        title: String,
-        spec: ArgSpec,
-        values: Map<String, Value>,
-        /// Index into the required arguments of `spec`.
-        index: usize,
-    },
     /// Custom picker triggered by a script or plugin via `ui.picker.show`.
     Custom {
         id: String,
         items: Vec<PickerItem>,
         placeholder: Option<String>,
         reply: Option<vy_js::HostRequest>,
-    },
-    /// Capability approval prompt for an external plugin.
-    Approval {
-        plugin_id: String,
-        plugin_name: String,
-        plugin_version: String,
-        missing: Vec<String>,
     },
 }
 
@@ -113,8 +96,7 @@ pub fn approval_picker_items(
 #[derive(Debug, Default)]
 pub struct PaletteState {
     pub mode: PaletteMode,
-    pub query: String,
-    pub preedit: String,
+    pub input: TextInput,
     pub selected: usize,
 }
 
@@ -126,9 +108,19 @@ impl PaletteState {
     pub fn with_mode(mode: PaletteMode) -> Self {
         Self {
             mode,
-            query: String::new(),
-            preedit: String::new(),
+            input: TextInput::default(),
             selected: 0,
+        }
+    }
+
+    /// Text drawn before the palette input.
+    pub fn prefix(&self) -> String {
+        match &self.mode {
+            PaletteMode::Custom {
+                placeholder: Some(placeholder),
+                ..
+            } => format!("{placeholder} > "),
+            _ => "> ".to_string(),
         }
     }
 
@@ -144,19 +136,19 @@ impl PaletteState {
 
     /// Appends a typed character to the query.
     pub fn push_char(&mut self, character: char) {
-        self.query.push(character);
+        self.input.push_char(character);
         self.reset_selection();
     }
 
     /// Appends committed text to the query.
     pub fn push_str(&mut self, text: &str) {
-        self.query.push_str(text);
+        self.input.push_str(text);
         self.reset_selection();
     }
 
     /// Removes the last character from the query.
     pub fn pop_char(&mut self) {
-        self.query.pop();
+        self.input.pop_char();
         self.reset_selection();
     }
 }
@@ -426,9 +418,9 @@ mod tests {
     fn appends_text_with_push_str() {
         let mut palette = PaletteState::new();
         palette.push_str("file");
-        assert_eq!(palette.query, "file");
+        assert_eq!(palette.input.value(), "file");
         palette.push_str(" open");
-        assert_eq!(palette.query, "file open");
+        assert_eq!(palette.input.value(), "file open");
     }
 
     #[test]
