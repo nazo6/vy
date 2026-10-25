@@ -29,6 +29,7 @@ use vy_host_api::{CallError, DocumentInfoReply, HostApi, Reply};
 use vy_proto::{DirEntry, ErrorCode, FileStat, ProcessExecParams, ProcessOutput};
 
 use super::Session;
+use super::atomic::atomic_write;
 use super::fs::uri_to_path;
 
 /// A core host used while validating the trait-based API.
@@ -291,7 +292,7 @@ impl FsApi for CoreHost<'_> {
             .bytes
             .unwrap_or_else(|| params.text.unwrap_or_default().into_bytes());
         let bytes_written = bytes.len() as u64;
-        std::fs::write(&path, bytes).map_err(|error| io_error(&path, error))?;
+        atomic_write(&path, &bytes).map_err(|error| io_error(&path, error))?;
         Ok(Reply::Value(FsWriteFileReply { bytes_written }))
     }
 

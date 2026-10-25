@@ -12,7 +12,7 @@ use vy_proto::{
     FsWriteFile, FsWriteFileParams, FsWriteFileResult, RpcMessage,
 };
 
-use super::{Outcome, Session, ok_response};
+use super::{Outcome, Session, atomic, ok_response};
 
 /// Converts a URI or file path into a local `PathBuf`.
 pub fn uri_to_path(uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
@@ -93,6 +93,35 @@ impl Session {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
+        // When the caller supplies an expected state, reject the write if
+        // the file on disk no longer matches it, unless forced. With no
+        // expected state the write is unconditional, as before.
+        if !params.force.unwrap_or(false)
+            && (params.expected_mtime_ms.is_some() || params.expected_size.is_some())
+        {
+            let current = atomic::file_state(&path);
+            let changed = match current {
+                None => true,
+                Some(state) => {
+                    params
+                        .expected_mtime_ms
+                        .is_some_and(|mtime| state.mtime_ms != Some(mtime))
+                        || params
+                            .expected_size
+                            .is_some_and(|size| state.size != size)
+                }
+            };
+            if changed {
+                return Outcome::one(RpcMessage::err(
+                    id,
+                    ErrorCode::InvalidState,
+                    format!(
+                        "file changed on disk since it was checked (pass force to overwrite): {}",
+                        path.display()
+                    ),
+                ));
+            }
+        }
         let bytes_to_write = if let Some(bytes) = params.bytes {
             bytes
         } else if let Some(text) = params.text {
@@ -101,7 +130,7 @@ impl Session {
             Vec::new()
         };
         let len = bytes_to_write.len() as u64;
-        match std::fs::write(&path, bytes_to_write) {
+        match atomic::atomic_write(&path, &bytes_to_write) {
             Ok(()) => ok_response::<FsWriteFile>(id, &FsWriteFileResult { bytes_written: len }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,

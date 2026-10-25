@@ -4,7 +4,7 @@ use vy_proto::{
     PaneFocusResult, PaneOpen, PaneOpenResult, PaneResize, PaneResizeResult, RpcMessage,
 };
 
-use super::{Outcome, Pane, Session, ok_message, ok_response};
+use super::{Outcome, Pane, Session, atomic, ok_message, ok_response};
 
 impl Session {
     /// Returns the document for a URI, opening it when needed.
@@ -54,11 +54,19 @@ impl Session {
 
         let document_id = self.next_document_id;
         self.next_document_id += 1;
-        let buffer = Buffer::new(document_id, uri, text);
+        let buffer = Buffer::new(document_id, uri.clone(), text);
         let version = buffer.version();
         let line_count = buffer.line_count();
         self.documents.insert(document_id, buffer);
         self.documents_by_uri.insert(key, document_id);
+        // Record the on-disk state now, even when the caller supplied text
+        // for a restore, so a later save can detect an external change.
+        if uri.scheme() == "file"
+            && let Some(path) = uri.file_path()
+        {
+            self.document_disk_state
+                .insert(document_id, atomic::file_state(&path));
+        }
         Ok((document_id, version, line_count, true))
     }
 
@@ -114,6 +122,7 @@ impl Session {
             if created {
                 self.documents.remove(&document_id);
                 self.documents_by_uri.retain(|_, id| *id != document_id);
+                self.document_disk_state.remove(&document_id);
             }
             return Outcome::one(RpcMessage::err(
                 id,
@@ -215,6 +224,7 @@ impl Session {
             if !still_used {
                 self.documents.remove(&document_id);
                 self.documents_by_uri.retain(|_, id| *id != document_id);
+                self.document_disk_state.remove(&document_id);
             }
         }
         self.persist_session();

@@ -48,6 +48,9 @@ impl FsApi for ClientHost<'_, '_, '_> {
                 uri: params.uri.to_string(),
                 bytes: params.bytes,
                 text: params.text,
+                expected_mtime_ms: None,
+                expected_size: None,
+                force: None,
             }),
             request: self.call.request.clone(),
         };

@@ -648,6 +648,135 @@ fn saves_a_file_back_to_disk() {
 }
 
 #[test]
+fn rejects_save_after_external_change_and_forces_with_flag() {
+    let mut session = Session::new();
+    initialize(&mut session);
+
+    let path = std::env::temp_dir().join(format!(
+        "vy-save-external-{}-{}.txt",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::write(&path, "old").expect("write fixture");
+    let uri = format!("file://{}", path.display());
+
+    let outcome = request(
+        &mut session,
+        2,
+        "pane/open",
+        object([("uri", Value::from(uri))]),
+    );
+    let document_id = get(ok_value(&outcome.messages[0]), "document_id")
+        .and_then(Value::as_u64)
+        .expect("document_id");
+
+    session.handle(insert_change(document_id, 0, "new"));
+
+    // An external write changes both size and mtime, so the plain save
+    // must be rejected and must not overwrite the external contents.
+    std::fs::write(&path, "external").expect("external write");
+    let outcome = request(
+        &mut session,
+        3,
+        "document/save",
+        object([("document_id", Value::from(document_id))]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidState));
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read"),
+        "external"
+    );
+
+    // A forced save overwrites, and a second plain save then succeeds
+    // because the recorded on-disk state was updated by the forced save.
+    let outcome = request(
+        &mut session,
+        4,
+        "document/save",
+        object([
+            ("document_id", Value::from(document_id)),
+            ("force", Value::from(true)),
+        ]),
+    );
+    let _ = ok_value(&outcome.messages[0]);
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), "newold");
+
+    session.handle(insert_change(document_id, 1, "!"));
+    let outcome = request(
+        &mut session,
+        5,
+        "document/save",
+        object([("document_id", Value::from(document_id))]),
+    );
+    let _ = ok_value(&outcome.messages[0]);
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), "!newold");
+
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn fs_write_file_rejects_stale_expected_state() {
+    let mut session = Session::new();
+    initialize(&mut session);
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "vy-fs-expected-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let file_path = temp_dir.join("file.txt");
+    let file_uri = format!("file://{}", file_path.display());
+    std::fs::write(&file_path, "original").expect("write fixture");
+
+    // A stale expected size is rejected and leaves the file untouched.
+    let outcome = request(
+        &mut session,
+        10,
+        "fs/write_file",
+        object([
+            ("uri", Value::from(file_uri.clone())),
+            ("text", Value::from("replacement")),
+            ("expected_size", Value::from(999u64)),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidState));
+    assert_eq!(
+        std::fs::read_to_string(&file_path).expect("read"),
+        "original"
+    );
+
+    // Forcing the same write succeeds and leaves no temporary file behind.
+    let outcome = request(
+        &mut session,
+        11,
+        "fs/write_file",
+        object([
+            ("uri", Value::from(file_uri.clone())),
+            ("text", Value::from("replacement")),
+            ("expected_size", Value::from(999u64)),
+            ("force", Value::from(true)),
+        ]),
+    );
+    let _ = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        std::fs::read_to_string(&file_path).expect("read"),
+        "replacement"
+    );
+    assert_eq!(
+        std::fs::read_dir(&temp_dir)
+            .expect("read dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".vy-tmp-"))
+            .count(),
+        0,
+        "no temporary file is left behind"
+    );
+
+    std::fs::remove_dir_all(&temp_dir).ok();
+}
+
+#[test]
 fn fs_and_process_operations() {
     let mut session = Session::new();
     initialize(&mut session);

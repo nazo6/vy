@@ -1,3 +1,4 @@
+mod atomic;
 mod buffer;
 mod fs;
 mod history;
@@ -46,6 +47,10 @@ pub struct Session {
     documents: HashMap<u64, Buffer>,
     /// Documents already open, keyed by URI. A second pane reuses the buffer.
     documents_by_uri: HashMap<String, DocumentId>,
+    /// On-disk state of each open file document when it was opened (or last
+    /// saved). `None` means the file did not exist at that point. Used to
+    /// detect external changes before a save; see `buffer::save_document`.
+    document_disk_state: HashMap<u64, Option<atomic::FileState>>,
     panes: HashMap<PaneId, Pane>,
     layout: Layout,
     processes: process::ProcessTable,
@@ -127,6 +132,7 @@ impl Session {
             workspace: None,
             documents: HashMap::new(),
             documents_by_uri: HashMap::new(),
+            document_disk_state: HashMap::new(),
             panes: HashMap::new(),
             layout: Layout::new(1),
             processes: HashMap::new(),

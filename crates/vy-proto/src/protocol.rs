@@ -142,6 +142,19 @@ pub struct DocumentIdParams {
     pub document_id: u64,
 }
 
+/// Parameters for `document/save`.
+///
+/// `force` is optional so older clients that send only `document_id` keep
+/// working; they get the same behaviour as `force` absent (no overwrite of a
+/// file that changed on disk since it was opened).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentSaveParams {
+    #[serde(alias = "buffer_id")]
+    pub document_id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force: Option<bool>,
+}
+
 /// Result of `document/save` acknowledging the saved document ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentSavedResult {
@@ -322,6 +335,12 @@ pub struct FsReadTextFileResult {
 }
 
 /// Parameters for `fs/write_file`.
+///
+/// The expected-state fields are optional: when neither is present the write
+/// is unconditional (the previous behaviour). When either is present and the
+/// file on disk no longer matches it, the write is rejected unless `force`
+/// is true, so a caller that previously stat'ed the file can detect an
+/// external change before overwriting it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FsWriteFileParams {
     pub uri: String,
@@ -329,6 +348,12 @@ pub struct FsWriteFileParams {
     pub bytes: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_mtime_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force: Option<bool>,
 }
 
 /// Result of `fs/write_file`.

@@ -1,15 +1,20 @@
 use vy_core::Uri;
 use vy_proto::{
     BufferResync, BufferSnapshot, DidChangeParams, DocumentIdParams, DocumentSave,
-    DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage, SnapshotResult, SyncRequest,
-    SyncRequestParams, SyncRequestResult, SyncedDocument,
+    DocumentSaveParams, DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage,
+    SnapshotResult, SyncRequest, SyncRequestParams, SyncRequestResult, SyncedDocument,
 };
 
-use super::{Outcome, Session, notification, ok_response};
+use super::{Outcome, Session, atomic, notification, ok_response};
 
 impl Session {
-    /// Writes a document back to its file.
-    pub(super) fn save_document(&mut self, id: u64, params: DocumentIdParams) -> Outcome {
+    /// Writes a document back to its file, atomically.
+    ///
+    /// Unless `force` is set, a save is rejected when the file on disk no
+    /// longer matches the state recorded when the document was opened (or
+    /// last saved), so an external change is never silently overwritten.
+    /// The client sends `force` for `:w!`.
+    pub(super) fn save_document(&mut self, id: u64, params: DocumentSaveParams) -> Outcome {
         let document_id = params.document_id;
 
         let Some(buffer) = self.documents.get(&document_id) else {
@@ -28,13 +33,30 @@ impl Session {
         };
         let text = buffer.text();
 
-        if let Err(error) = std::fs::write(&path, text) {
+        if !params.force.unwrap_or(false)
+            && let Some(recorded) = self.document_disk_state.get(&document_id).copied()
+            && atomic::file_state(&path) != recorded
+        {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidState,
+                format!(
+                    "file changed on disk since it was opened (use :w! to overwrite): {}",
+                    path.display()
+                ),
+            ));
+        }
+
+        if let Err(error) = atomic::atomic_write(&path, text.as_bytes()) {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,
                 format!("{}: {error}", path.display()),
             ));
         }
+
+        self.document_disk_state
+            .insert(document_id, atomic::file_state(&path));
 
         let Some(buffer) = self.documents.get_mut(&document_id) else {
             return Outcome::one(RpcMessage::err(
