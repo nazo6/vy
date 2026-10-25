@@ -1,17 +1,17 @@
 ---
+id: "0005"
 title: "純粋ロジックの状態モデル整理計画"
-type: "worklog"
+type: "proposal"
+status: "open"
 date: 2026-10-25
-phase: "Refactoring"
 tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 ---
 
-# [Worklog] 純粋ロジックの状態モデル整理計画
+# [Proposal] 純粋ロジックの状態モデル整理計画
 
 - **日付**: 2026-10-25
-- **関連フェーズ/タスク**: 品質改善バックログ（保守性 P2）、`command-surfaces` /
-  `pane/resize` の後始末
-- **状態**: 計画（未着手）
+- **関連タスク**: 品質改善（保守性 P2）、`command-surfaces` / `pane/resize` の後始末
+- **状態**: open（未着手）
 - **目的**: `vy-app` の GPUI
   非依存ロジックに散在する「暗黙のフラグ集合」と「視覚行計算の重複実装」を、明示的な状態型と単一実装へ置き換える。挙動は変えず、今後の機能追加（マウス操作、`tabstop`
   設定、折り返し改善、LSP 座標変換）で触る箇所を減らす。
@@ -335,10 +335,15 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ## 7. 対象外
 
+実行時・基盤・セキュリティ側の負債は
+[`0006-runtime-safety-and-infrastructure.md`](./0006-runtime-safety-and-infrastructure.md)
+で扱う。本提案の対象外は次のとおり。
+
 - レジスタのワークスペース共有（別作業）
 - `editor.tabStop` 設定の追加（この計画では `VisualOptions` に `tab_stop`
   を通せる形にしておくだけ）
-- ファイル保存の原子性、ケイパビリティのパス正規化、ウィンドウ終了時の未保存保護（別作業）
+- ファイル保存の原子性、ケイパビリティのパス正規化、ウィンドウ終了時の未保存保護
+  （0006 で扱う）
 - GPUI のバージョン更新、レンダリング性能の追加最適化
 
 ## 8. 未確定事項
@@ -358,5 +363,5 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 - [`../specs/keymap.md`](../specs/keymap.md): キー入力の意味論と未実装キー
 - [`../specs/panes.md`](../specs/panes.md): 折り返し・スクロール・ペイン状態
 - [`../specs/ui.md`](../specs/ui.md): 入力ルーティングとオーバーレイ
-- [`./2026-10-editor-ui-improvements.md`](./2026-10-editor-ui-improvements.md):
+- [`../worklogs/2026-10-editor-ui-improvements.md`](../worklogs/2026-10-editor-ui-improvements.md):
   先行した表示・性能改善の記録

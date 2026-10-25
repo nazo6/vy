@@ -19,14 +19,15 @@ flowchart TD
     end
 
     subgraph Future["未来の検討 (Ideas / Open)"]
-        Proposals["提案・未決定事項\n(docs/proposals/)"]
+        Proposals["未着手の計画・未決定事項\n(docs/proposals/)"]
     end
 
     subgraph Operations["作業の記録 (Logs)"]
-        Worklogs["作業ログ・リファクタ\n(docs/worklogs/)"]
+        Worklogs["着手した作業の記録\n(docs/worklogs/)"]
     end
 
     Proposals -- "採択" --> ADR
+    Proposals -- "着手" --> Worklogs
     ADR -- "反映" --> Specs
     Worklogs -. "参照" .-> Specs
 ```
@@ -59,11 +60,11 @@ flowchart TD
 
 ### ④ 提案・設計検討 (Proposals)
 
-- [`proposals/`](./proposals/README.md): 未決定事項の議論、新機能の設計検討、RFC 置き場です。合意された内容は ADR や仕様書へ反映されます。
+- [`proposals/`](./proposals/README.md): 新機能のアイデア、未決定事項、**まだ着手していない計画**を置きます。合意された内容は ADR や仕様書へ反映されます。
 
 ### ⑤ 作業ログ (Worklogs)
 
-- [`worklogs/`](./worklogs/README.md): 大規模なリファクタリング、移行作業、性能改善などの計画と実施ログを記録します。
+- [`worklogs/`](./worklogs/README.md): **着手した**リファクタリング、移行作業、性能改善などの計画と実施ログを記録します。未着手の計画は proposals に置きます。
 
 ---
 
