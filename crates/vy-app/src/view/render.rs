@@ -247,6 +247,11 @@ impl Render for EditorView {
         self.apply_config_change(cx);
         self.char_width = ui::pane::font_character_width(&self.config, window);
 
+        // On Linux the compositor may hand the frame to the app; reserve the
+        // resize margin before laying anything out.
+        let frame = ui::window_frame::WindowFrame::new(window.window_decorations());
+        window.set_client_inset(frame.inset());
+
         // Fit the viewport to the window before choosing which lines to draw.
         let chrome_height = ui::titlebar::TITLEBAR_HEIGHT
             + STATUSLINE_HEIGHT
@@ -256,8 +261,9 @@ impl Render for EditorView {
                 .and_then(Overlay::ex)
                 .map(|ex| STATUSLINE_HEIGHT + ui::ex::completion_height(ex))
                 .unwrap_or(0.0);
-        let height = f32::from(window.viewport_size().height) - chrome_height;
-        let width = f32::from(window.viewport_size().width);
+        let height =
+            f32::from(window.viewport_size().height) - chrome_height - f32::from(frame.vertical());
+        let width = f32::from(window.viewport_size().width) - f32::from(frame.horizontal());
         self.update_pane_viewports(width, height);
         self.clamp_scroll();
         self.sync_modal_focus(window, cx);
@@ -337,7 +343,7 @@ impl Render for EditorView {
             );
 
         self.log_frame(started);
-        element
+        ui::window_frame::apply(frame, theme.titlebar.background, element)
     }
 }
 
@@ -663,10 +669,8 @@ impl EditorView {
             title,
             is_dirty,
             window,
-            |_event, window| {
-                window.start_window_move();
-            },
-            |_event, window| {
+            self.titlebar_press.clone(),
+            |window| {
                 #[cfg(target_os = "macos")]
                 window.titlebar_double_click();
                 #[cfg(not(target_os = "macos"))]

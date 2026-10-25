@@ -1,7 +1,9 @@
 //! Main editor view coordinating panes, input, RPC, and rendering.
 
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::focus::FocusStack;
@@ -14,7 +16,9 @@ mod plugin;
 mod render;
 mod rpc;
 
-use gpui::{Context, FocusHandle, KeyDownEvent, ScrollWheelEvent, SharedString, Window, px};
+use gpui::{
+    Context, FocusHandle, KeyDownEvent, Pixels, Point, ScrollWheelEvent, SharedString, Window, px,
+};
 use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
@@ -133,6 +137,10 @@ pub struct EditorView {
     pub(crate) char_width: f32,
     /// Hover popup currently displayed, if any.
     hover: Option<HoverState>,
+    /// Where the pointer went down on the titlebar. A window move starts only
+    /// once the pointer leaves this point, so that double clicks still reach
+    /// the titlebar instead of being swallowed by the compositor's move grab.
+    titlebar_press: Rc<Cell<Option<Point<Pixels>>>>,
     last_reported_document_id: Option<u64>,
     last_reported_selections: Option<Vec<vy_core::Selection>>,
     pub(super) pending_view_for_next_open: Option<String>,
@@ -257,6 +265,7 @@ impl EditorView {
             statusline: Statusline::new(),
             gutter: GutterRegistry::new(),
             hover: None,
+            titlebar_press: Rc::new(Cell::new(None)),
             last_reported_document_id: None,
             last_reported_selections: None,
             pending_view_for_next_open: None,

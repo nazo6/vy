@@ -51,6 +51,12 @@ fn main() {
                         appears_transparent: true,
                         traffic_light_position: Some(point(px(9.0), px(8.0))),
                     }),
+                    // `appears_transparent` is macOS/Windows only: Linux
+                    // compositors need the window to request client-side
+                    // decorations instead. They may still refuse the request,
+                    // in which case the window keeps server-side decorations.
+                    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                    window_decorations: Some(gpui::WindowDecorations::Client),
                     ..Default::default()
                 },
                 move |_window, cx| cx.new(|cx| EditorView::new(cx, view_startup.clone())),
