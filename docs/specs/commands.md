@@ -291,13 +291,13 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | Ex 名             | コマンド ID                                         | 状態     | 備考                        |
 | :---------------- | :-------------------------------------------------- | :------- | :-------------------------- |
 | `:e` / `:edit`    | `vy.editor.open`                                    | 実装済み | 引数に URI またはパス       |
-| `:w` / `:write`   | `vy.document.save`                                  | 実装済み | 別名保存は未対応            |
+| `:w` / `:write`   | `vy.document.save`                                  | 実装済み | 別名保存は未対応。`:w!` は上書き |
 | `:b` / `:buffer`  | `vy.editor.switch_document`                         | 実装済み | 引数なしは文書ピッカー      |
 | `:sp`             | `vy.pane.split_down`                                | 実装済み | 上下に分割                  |
 | `:vsp`            | `vy.pane.split_right`                               | 実装済み | 左右に分割                  |
 | `:split-left`     | `vy.pane.split_left`                                | 実装済み | 左に分割                    |
 | `:split-up`       | `vy.pane.split_up`                                  | 実装済み | 上に分割                    |
-| `:close` / `:q`   | `vy.pane.close`                                     | 実装済み | 最後のペインは閉じられない  |
+| `:close` / `:q`   | `vy.pane.close`                                     | 実装済み | 最後のペインでは終了する        |
 | `:view`           | `vy.view.open`                                      | 実装済み | プラグインのビューを開く    |
 | `:view-close`     | `vy.view.close`                                     | 実装済み | ビューを閉じる              |
 | `:view-toggle`    | `vy.view.toggle`                                    | 実装済み | ビューの表示を切り替える    |
@@ -307,16 +307,22 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | `:setglobal`      | `vy.setting.ex_set_global`                          | 実装済み | メモリ層の既定値を変える    |
 | `:settings`       | `vy.ui.open_settings`                               | 実装済み | Settings パレットを開く     |
 | `:ts`             | `vy.script.eval`                                    | 実装済み | TypeScript を評価（hidden） |
-| `:wq`             | `vy.document.write_quit`                            | 未実装   | 保存と終了を1コマンドにする |
+| `:wq`             | `vy.document.write_quit`                            | 実装済み | 保存して終了する                |
+| `:wqa`            | `vy.document.write_quit_all`                        | 実装済み | 全保存して終了する              |
+| `:qa`             | `vy.app.quit_all`                                   | 実装済み | 未保存があれば確認する          |
 | `:bn` / `:bp`     | `vy.document.next` / `previous`                     | 未実装   | 文書一覧ができてから        |
 | `:noh`            | `vy.search.clear_highlight`                         | 未実装   | 検索のハイライトを消す      |
+
+終了時に未保存の文書がある場合は、保存 / 破棄 / キャンセルの確認モーダルを出します。
+保存を選ぶとすべての未保存文書を保存してから終了し、破棄を選ぶと保存せずに終了します。
+`:q!` と `:qa!` はこの確認を迂回し、未保存の変更を捨てて終了します。
 
 `:wrap` は `:set wrap` に統合したため、Ex 名としては存在しません。
 `vy.view.toggle_wrap` はキーマップ用の糖衣として残しています。
 
-`!` 付きの強制終了（`:q!`）、シェル実行（`:!`）、`:terminal` は初期版では
-扱いません。`:!` は `process:exec` の承認が必要になるため、Ex の権限経路が
-固まってから追加します。
+シェル実行（`:!`）、`:terminal` は初期版では扱いません。`:!` は
+`process:exec` の承認が必要になるため、Ex の権限経路が固まってから追加します。
+なお、`:q!` と `:qa!` は未保存の変更を捨てて終了します。
 
 ### 5.5 補完と履歴
 
