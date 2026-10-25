@@ -9,10 +9,10 @@ Phase に分けます。
 
 - 入口はグローバル `vy` にします（`vy.editor.open(...)`）。`vy-api` という
   仮想モジュールは持ちません。型は `packages/vy-api` が ambient 宣言として
-  提供し、`import type {} from "vy-api"` を1回読み込むと `vy` と
-  `Vy.CommandMap` が見えます（[ADR 0019](./adr/0019-global-vy-api.md)）。
-- 以下の表では名前空間のパスだけを書きます。呼び出しは `vy.commands.execute(...)`
-  のように `vy.` を付けます。
+  提供し、`import type {} from "vy-api"` を1回読み込むと `vy` と `Vy.CommandMap`
+  が見えます（[ADR 0019](./adr/0019-global-vy-api.md)）。
+- 以下の表では名前空間のパスだけを書きます。呼び出しは
+  `vy.commands.execute(...)` のように `vy.` を付けます。
 - 状態の読み取りも Promise
   を返します。リモート接続でも同じ書き方にするためです。同期の get
   は用意しません。
@@ -26,7 +26,10 @@ Phase に分けます。
   は、マニフェストの宣言と初回の承認を必要とします。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
-- 境界の型は Rust を正とします。params / reply / イベント payload 型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は `vy-app` の対応するモジュールに置きます。`packages/vy-api`（生成された型は `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
+- 境界の型は Rust を正とします。params / reply / イベント payload
+  型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は
+  `vy-app` の対応するモジュールに置きます。`packages/vy-api`（生成された型は
+  `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](./adr/0009-api-types-live-with-handlers.md)）。
 
 ## 2. 表記の約束
 
@@ -248,22 +251,29 @@ version と一致したときだけ確定します。
 
 ## 10. コマンドとキーバインド
 
-| API                                     | 実行場所 | ケイパビリティ | 優先度 |
-| :-------------------------------------- | :------- | :------------- | :----- |
-| `commands.registerCommand(id, handler)` | local    | なし           | P0     |
-| `commands.execute({ id, args? })`       | both     | なし           | P0     |
-| `commands.getCommands()`                | local    | なし           | P1     |
-| `keymap.bind({ keys, command, when? })` | local    | なし           | P0     |
-| `keymap.unbind({ keys })`               | local    | なし           | P0     |
-| `keymap.setContext({ key, value })`     | local    | なし           | P0     |
-| `keymap.registerMode(definition)`       | local    | なし           | P2     |
-| `keymap.sequenceTimeout`                | local    | なし           | P2     |
+| API                                      | 実行場所 | ケイパビリティ | 優先度     |
+| :--------------------------------------- | :------- | :------------- | :--------- |
+| `commands.registerCommand(id, handler)`  | local    | なし           | P0         |
+| `commands.register(descriptor, handler)` | local    | なし           | P1（予定） |
+| `commands.execute({ id, args? })`        | both     | なし           | P0         |
+| `commands.getCommands()`                 | local    | なし           | P1         |
+| `keymap.bind({ keys, command, when? })`  | local    | なし           | P0         |
+| `keymap.unbind({ keys })`                | local    | なし           | P0         |
+| `keymap.setContext({ key, value })`      | local    | なし           | P0         |
+| `keymap.registerMode(definition)`        | local    | なし           | P2         |
+| `keymap.sequenceTimeout`                 | local    | なし           | P2         |
 
 コマンド ID は `<pluginId>.<name>` の形にします。組み込みのコマンドは `vy.`
 で始めます。各セグメントには英小文字、数字、`-`、`_` を使えます。
-`commands.registerCommand` は独自コマンド用で、`vy.` で始まる ID は登録できません。
-`keymap.bind` の `command` は組み込み ID か独自コマンド ID です。`when` には
-コンテキスト式を書きます。
+`commands.registerCommand` は独自コマンド用で、`vy.` で始まる ID
+は登録できません。 `keymap.bind` の `command` は組み込み ID か独自コマンド ID
+です。`when` には コンテキスト式を書きます。
+
+`commands.register` は、ID とハンドラに加えてタイトル、カテゴリ、Ex 名、引数の
+仕様を受け取ります。`registerCommand` はタイトルを省略した糖衣です。
+`commands.getCommands` は、パレットと Ex が使うメタデータ（タイトル、カテゴリ、
+Ex 名、引数仕様、パレット掲載可否）を返します。形は
+[`commands.md`](./commands.md) の「データモデル」と「プラグイン」にあります。
 
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
 `vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、
@@ -272,8 +282,9 @@ Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_lef
 
 `:` の Ex コマンドはクライアントが別名からコマンド ID に解決し、パレットと同じ
 実行層へ渡します。`commands.execute` はコマンド ID だけを受け付け、Ex 名は解決
-しません。文法、範囲、`!`、補完は [`ex-commands.md`](./ex-commands.md)
-にあります。
+しません。文法、範囲、`!`、補完、コマンドのメタデータは
+[`commands.md`](./commands.md) にあります。引数の形はコマンドごとに宣言し、
+パレット、Ex、`commands.execute`、キーマップで同じ検証を通します。
 
 ```typescript
 vy.keymap.bind({
@@ -320,17 +331,20 @@ await vy.commands.execute({
 | `config.onDidChange(key, listener)` | local    | なし           | P0     |
 | `config.define(schema)`             | local    | なし           | P1     |
 
-設定は4層で解決します。下の層ほど優先します。
+設定は5層で解決します。下の層ほど優先します。
 
 1. 組み込みの既定値
 2. `~/.config/vy/settings.json`
 3. `<workspace>/.vy/settings.json`
-4. `init.ts` から呼んだ `config.set`
+4. `init.ts` から呼んだ `config.set`（メモリ層）
+5. ウィンドウの上書き（`window` スコープの設定だけ。`:set` と Settings
+   パレット）
 
-`init.ts`
-からの設定はメモリ上だけに反映し、ファイルには書きません。`config.inspect`
-は各層の値と、どれが有効かを返します。`config.define` はプラグインの設定項目を
-JSON Schema として登録し、設定画面の生成と検証に使います。
+`init.ts` からの設定と `:set` はメモリ上だけに反映し、ファイルには書きません。
+`config.inspect` は各層の値と、どれが有効かを返します。`config.define`
+はプラグインの設定項目を JSON Schema
+として登録し、設定画面の生成と検証に使います。スコープと `:set` の 文法は
+[`commands.md`](./commands.md) の「設定」にあります。
 
 ## 12. 通知、進捗、ログ
 
@@ -504,58 +518,62 @@ Webview は最終手段です。Notebook の出力、HTML
 
 ### 18.1 ライフサイクルとチャネル
 
-| API                                         | 呼べる側   | 優先度 |
-| :------------------------------------------ | :--------- | :----- |
-| `activate(ctx)`、`deactivate()`             | backend    | P1     |
-| `ctx.pluginId`、`ctx.version`               | backend    | P1     |
-| `ctx.capabilities.has()`                    | backend    | P1     |
-| `ctx.log`、`ctx.subscriptions`              | backend    | P1     |
-| `ctx.platform`                              | backend    | P1     |
-| `backend.connect(channel)`                  | frontend   | P1     |
-| `backend.registerHandler(channel, handler)` | backend    | P1     |
-| `channel.postMessage(message)`              | both       | P1     |
-| `channel.onMessage(listener)`               | both       | P1     |
-| `channel.request(message, options?)`        | frontend   | P1     |
-| `channel.onDidClose(listener)`              | frontend   | P1     |
-| `channel.dispose()`                         | both       | P1     |
-| `req.postMessage(message)`、`req.signal`    | backend    | P1     |
+| API                                         | 呼べる側 | 優先度 |
+| :------------------------------------------ | :------- | :----- |
+| `activate(ctx)`、`deactivate()`             | backend  | P1     |
+| `ctx.pluginId`、`ctx.version`               | backend  | P1     |
+| `ctx.capabilities.has()`                    | backend  | P1     |
+| `ctx.log`、`ctx.subscriptions`              | backend  | P1     |
+| `ctx.platform`                              | backend  | P1     |
+| `backend.connect(channel)`                  | frontend | P1     |
+| `backend.registerHandler(channel, handler)` | backend  | P1     |
+| `channel.postMessage(message)`              | both     | P1     |
+| `channel.onMessage(listener)`               | both     | P1     |
+| `channel.request(message, options?)`        | frontend | P1     |
+| `channel.onDidClose(listener)`              | frontend | P1     |
+| `channel.dispose()`                         | both     | P1     |
+| `req.postMessage(message)`、`req.signal`    | backend  | P1     |
 
 チャネルは文字列で識別します。同じ名前のチャネルを2つのプラグインが登録した場合は、後の登録をエラーにします。
-`request` は handler の戻り値を返します。ストリーミングは `req.postMessage` を使います。
-チャネルごとに順序を保証し、1つのメッセージの上限を超えた場合は
+`request` は handler の戻り値を返します。ストリーミングは `req.postMessage`
+を使います。 チャネルごとに順序を保証し、1つのメッセージの上限を超えた場合は
 `ResourceLimit` で閉じます。
 
 ### 18.2 コアの名前空間
 
-| 名前空間       | バックエンドで使える API                                                                 | 優先度 |
-| :------------- | :--------------------------------------------------------------------------------------- | :----- |
+| 名前空間       | バックエンドで使える API                                                                                                                     | 優先度 |
+| :------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :----- |
 | `workspace`    | `folders`、`rootUri`、`name`、`textDocuments`、`openTextDocument`、`findFiles`、`grep`、`createFileSystemWatcher`、`onDidChangeTextDocument` | P1     |
-| 文書           | `uri`、`version`、`languageId`、`lineCount`、`getText`、`lineAt`、`isDirty`、`eol`      | P1     |
-| `fs`           | `readFile`、`readTextFile`、`writeFile`、`readDir`、`stat`、`exists`、`createDir`、`remove`、`rename`、`copy` | P1     |
-| `process`      | `spawn`、`exec`、標準出力 / 標準エラー、stdin、kill、終了                               | P1     |
-| `config`       | `get`、`onDidChange`                                                                     | P1     |
-| `log`          | `createChannel`                                                                          | P1     |
-| `cancellation` | `createSource`                                                                           | P1     |
-| `workspace`    | `applyEdit`                                                                              | P2     |
-| `diagnostics`  | `set`、`clear`                                                                           | P2     |
-| `net`          | `fetch`                                                                                  | P2     |
-| `languages`    | `registerFormatter`、`registerCompletionProvider`                                        | P2     |
-| `lsp`          | `getClient`                                                                              | P2     |
-| `fs`           | `watch`                                                                                  | P2     |
+| 文書           | `uri`、`version`、`languageId`、`lineCount`、`getText`、`lineAt`、`isDirty`、`eol`                                                           | P1     |
+| `fs`           | `readFile`、`readTextFile`、`writeFile`、`readDir`、`stat`、`exists`、`createDir`、`remove`、`rename`、`copy`                                | P1     |
+| `process`      | `spawn`、`exec`、標準出力 / 標準エラー、stdin、kill、終了                                                                                    | P1     |
+| `config`       | `get`、`onDidChange`                                                                                                                         | P1     |
+| `log`          | `createChannel`                                                                                                                              | P1     |
+| `cancellation` | `createSource`                                                                                                                               | P1     |
+| `workspace`    | `applyEdit`                                                                                                                                  | P2     |
+| `diagnostics`  | `set`、`clear`                                                                                                                               | P2     |
+| `net`          | `fetch`                                                                                                                                      | P2     |
+| `languages`    | `registerFormatter`、`registerCompletionProvider`                                                                                            | P2     |
+| `lsp`          | `getClient`                                                                                                                                  | P2     |
+| `fs`           | `watch`                                                                                                                                      | P2     |
 
 `backend.ts` には次の API を出しません。
 
-- UI: `ui`、`views`、`panes`、`windows`、`webview`、`notifications`、`progress`、`keymap`、
+- UI:
+  `ui`、`views`、`panes`、`windows`、`webview`、`notifications`、`progress`、`keymap`、
   `commands.registerCommand`
-- クライアント状態: `editor.activeDocument`、`editor.mode`、`editor.selections`、
+- クライアント状態:
+  `editor.activeDocument`、`editor.mode`、`editor.selections`、
   `editor.setMode`、`editor.open`、`editor.reveal`
 - クライアント側の資源: `localFs`、`localProcess`、`clipboard`、`openExternal`、
   `workspace.state`
 - 設定の書き込み: `config.set`、`config.define`
-- `remote.*`: バックエンドは常にコア側なので、接続の有無ではなく `ctx.platform` を使う
+- `remote.*`: バックエンドは常にコア側なので、接続の有無ではなく `ctx.platform`
+  を使う
 
-バックエンドの API は暗黙のアクティブ文書を使いません。URI と範囲を明示的に受け取ります。
-文書の変更イベントは差分で送り、初回だけ `openTextDocument(uri)` でスナップショットを取ります。
+バックエンドの API は暗黙のアクティブ文書を使いません。URI
+と範囲を明示的に受け取ります。 文書の変更イベントは差分で送り、初回だけ
+`openTextDocument(uri)` でスナップショットを取ります。
 
 ## 19. 型
 
@@ -611,21 +629,21 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 Phase 2 では `vy` から呼べる範囲を次のとおり実装しました。型は
 [`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)、
 [`packages/vy-api/api-base.d.ts`](../packages/vy-api/api-base.d.ts)、
-[`packages/vy-api/types`](../packages/vy-api/types) に生成され、引数の形は
-§2.1 のとおりです。表の名前は `vy.` を省いています。
+[`packages/vy-api/types`](../packages/vy-api/types) に生成され、引数の形は §2.1
+のとおりです。表の名前は `vy.` を省いています。
 
-| 名前空間                            | 実装済み                                                                                                |
-| :---------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| `commands`                          | `registerCommand`、`execute`、`getCommands`                                                             |
-| `keymap`                            | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
-| `config`                            | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
-| `editor`                            | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
-| `document`                          | `getText`、`lineAt`、`positionAt`、`offsetAt`                                                          |
-| `workspace`                         | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
-| `notifications`                     | `show`                                                                                                  |
-| `log`                               | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
-| `remote`                            | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
-| `context`                           | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
+| 名前空間        | 実装済み                                                                                                |
+| :-------------- | :------------------------------------------------------------------------------------------------------ |
+| `commands`      | `registerCommand`、`execute`、`getCommands`                                                             |
+| `keymap`        | `bind`（`options.when` と `options.mode`）、`unbind`、`setContext`                                      |
+| `config`        | `get`、`set`（オブジェクト形式と `(key, value)` 形式）、`inspect`、`onDidChange`                        |
+| `editor`        | `activeDocument`、`documents`、`mode`、`setMode`、`selections`、`setSelections`、`edit`、`undo`、`redo` |
+| `document`      | `getText`、`lineAt`、`positionAt`、`offsetAt`                                                           |
+| `workspace`     | `rootUri`、`name`、`trusted`、`folders`、`textDocuments`                                                |
+| `notifications` | `show`                                                                                                  |
+| `log`           | `createChannel`（`info`、`warn`、`error`。`~/.cache/vy/logs/init.log` に書く）                          |
+| `remote`        | `isRemote`、`name`、`os`、`pathSeparator`                                                               |
+| `context`       | `pluginId`、`version`、`capabilities.has`、`log`                                                        |
 
 スロットは `ui.statusline`、`ui.gutter`、`ui.hover`、`ui.picker.show`
 とウィジェット木のビルダーだけを提供します。プロバイダの登録（`ui.picker.registerSource`、`ui.gutter.registerProvider`、`ui.hover.registerProvider`）は、ホストから

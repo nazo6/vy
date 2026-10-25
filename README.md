@@ -46,8 +46,9 @@
     の位置づけ
 - [**キーマップ一覧と実装状況 (`docs/keymap.md`)**](./docs/keymap.md)
   - モードごとのキー、実装済みの範囲、これから入れるキー、キーマップ API の予定
-- [**Ex コマンド (`docs/ex-commands.md`)**](./docs/ex-commands.md)
-  - `:` のコマンドライン、パレットとの共通実行層、範囲・別名・補完の設計
+- [**コマンドと設定 (`docs/commands.md`)**](./docs/commands.md)
+  - パレット、Ex コマンドライン、キーマップの役割分担と、設定のスコープ・`:set`
+    の設計
 - [**ファイルとフォルダの構成 (`docs/layout.md`)**](./docs/layout.md)
   - ユーザー設定、プロジェクト、プラグインのパッケージ、リポジトリの構成
 - [**通信プロトコル仕様 (`docs/protocol.md`)**](./docs/protocol.md)
@@ -87,19 +88,19 @@ cargo run -p vy-app -- README.md
 
 ### 操作（Phase 1–3）
 
-| モード | キー                                                                                             |
-| :----- | :----------------------------------------------------------------------------------------------- |
-| Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾                           |
-| Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク                           |
-| Normal | `v` 選択モード、`V` 行選択、`Ctrl-v` 矩形選択、`i` `a` `I` `A` `o` `O` 挿入、`u` / `Ctrl-r` 履歴 |
-| Normal | `Ctrl-d` / `Ctrl-u` 半ページ送り、`zz` / `zt` / `zb` カーソル行位置合わせ                        |
-| Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置                   |
-| Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                                           |
-| Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる                     |
-| Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                                   |
-| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` / `:q!` 閉じる、`:wrap` 折り返し切替） |
-| Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                                     |
-| Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ            |
+| モード | キー                                                                                                          |
+| :----- | :------------------------------------------------------------------------------------------------------------ |
+| Normal | `h j k l` 移動、`w b e` 単語、`0 $` 行頭と行末、`g g` / `G` 先頭と末尾                                        |
+| Normal | `x` 削除、`d` 演算子（`dw` `dd` `diw` など）、`y` ヤンク、`Y` 行ヤンク                                        |
+| Normal | `v` 選択モード、`V` 行選択、`Ctrl-v` 矩形選択、`i` `a` `I` `A` `o` `O` 挿入、`u` / `Ctrl-r` 履歴              |
+| Normal | `Ctrl-d` / `Ctrl-u` 半ページ送り、`zz` / `zt` / `zb` カーソル行位置合わせ                                     |
+| Normal | `p` `P` 貼り付け、`"a`–`"z` でレジスタを指定、`3j` `5x` のようにカウントを前置                                |
+| Normal | `.` 直前の変更の繰り返し、`g v` 直前に選んだ範囲の復元                                                        |
+| Normal | `Ctrl-w v` / `Ctrl-w s` 分割、`Ctrl-w h j k l` フォーカス、`Ctrl-w q` 閉じる                                  |
+| Normal | `Space` コマンドパレット（検索、`Enter` 実行、`Esc` で閉じる）                                                |
+| Normal | `:` Ex コマンドライン（`:e` 開く、`:w` 保存、`:sp` / `:vsp` 分割、`:q` / `:q!` 閉じる、`:wrap` 折り返し切替。`:set wrap` へ移行予定） |
+| Insert | 文字入力、`Enter` 改行、`Backspace` 削除、`Esc` で Normal へ                                                  |
+| Select | 移動で選択を伸ばす。`v` / `V` / `Ctrl-v` 切替、`d` で削除、`y` でコピーして Normal へ                         |
 
 テキストオブジェクトは `iw` / `aw` / `ip` / `ap`、`i"` / `a"`、`i(` / `a(`
 などに対応しています。
@@ -124,9 +125,11 @@ cargo run -p vy-app -- README.md
 }
 ```
 
-`ui.lineNumbers` は `absolute`、`relative`、`off`
-のいずれかです。`ui.theme` は `dark` または `light` です。`editor.wrap` はビューポート幅での行折り返しの有無（`:wrap` コマンドで切り替え可能）です。ファイルを保存すると再読み込みします。`~/.config/vy` の場所は
-`VY_CONFIG_HOME` で変更できます。
+`ui.lineNumbers` は `absolute`、`relative`、`off` のいずれかです。`ui.theme` は
+`dark` または `light` です。`editor.wrap`
+はビューポート幅での行折り返しの有無（`:wrap`
+コマンドで切り替え可能。`:set wrap` へ移行予定）です。ファイルを保存すると再読み込みします。`~/.config/vy`
+の場所は `VY_CONFIG_HOME` で変更できます。
 
 ### init.ts（Phase 2）
 
@@ -153,13 +156,14 @@ vy.commands.registerCommand("user.uppercase-document", async () => {
 
 `vy.keymap.bind("space u", "user.uppercase-document", { when: "normalMode" })`
 のようにキーを割り当てられます。`vy` はホストがインストールするグローバルで、
-`vy-api` からの import は書きません（[ADR 0019](./docs/adr/0019-global-vy-api.md)）。
+`vy-api` からの import
+は書きません（[ADR 0019](./docs/adr/0019-global-vy-api.md)）。
 `import type {} from "vy-api"` は型を有効にするための1行で、実行時には消えます。
-評価できる API は [`docs/api.md`](./docs/api.md)
-の「Phase 2 の実装状況」にまとめました。型定義は
+評価できる API は [`docs/api.md`](./docs/api.md) の「Phase 2
+の実装状況」にまとめました。型定義は
 [`packages/vy-api/index.d.ts`](./packages/vy-api/index.d.ts) にあり、プロトコル
-とプラグイン境界の型は [`packages/vy-api/types`](./packages/vy-api/types) に Rust
-から生成します。`examples/init.ts` も参照してください。
+とプラグイン境界の型は [`packages/vy-api/types`](./packages/vy-api/types) に
+Rust から生成します。`examples/init.ts` も参照してください。
 
 初期化は 1 秒、コマンド実行は 5 秒で打ち切り、メモリは 64 MiB に制限します。
 無限ループを書いてもアプリは落ちず、状態行にエラーが出ます。ログは

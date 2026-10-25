@@ -11,7 +11,9 @@ Vy は、クライアント側の TypeScript を入口にし、API
 
 設定は2種類に分けます。`init.ts`
 は条件式や関数を含む設定を書くスクリプトです。`settings.json`
-は値だけの設定で、UI から変更した内容もここに書きます。
+は値だけの恒久的な設定です。実行中に変えた値はメモリ層とウィンドウの上書きに
+入り、`settings.json` は書き換えません （[`commands.md`](./commands.md)
+の「設定」）。
 
 `init.ts`
 は起動時に1回評価し、そのあとはファイルの変更を監視して再評価します。再評価のときは、前回の登録をすべて破棄してから読み直します。コマンド
@@ -62,12 +64,16 @@ vy.commands.registerCommand("user.uppercase-selection", async () => {
 提供し、Rust の型から `packages/vy-api/types` を生成するため、プロトコルの変更と
 型定義がずれません。
 
+コマンドのタイトル、カテゴリ、Ex 名、引数の宣言は `commands.register`
+で行います。 `registerCommand` は ID とハンドラだけを渡す糖衣です。設計は
+[`commands.md`](./commands.md) の「プラグイン」にあります（実装は Phase 5）。
+
 ### 1.2 settings.json
 
 ```json
 {
   "ui.fontSize": 14,
-  "editor.lineNumbers": "relative",
+  "ui.lineNumbers": "relative",
   "lsp.rust-analyzer.command": "rust-analyzer",
   "example.hello.greeting": "こんにちは"
 }
@@ -191,13 +197,24 @@ version が手元より新しいときだけ表示を更新します。
   "permissions": ["fs:read:${workspace}/**"],
   "activationEvents": ["onCommand:example.hello.greet"],
   "contributes": {
-    "commands": [{ "id": "example.hello.greet", "title": "Hello" }],
+    "commands": [
+      {
+        "id": "example.hello.greet",
+        "title": "Hello",
+        "category": "Plugin",
+        "exNames": ["hello"]
+      }
+    ],
     "configuration": {
       "example.hello.greeting": { "type": "string", "default": "こんにちは" }
     }
   }
 }
 ```
+
+`category` と `exNames` は任意です。省略すると `Plugin` と Ex 名なしになります。
+Ex 名は信頼済みのプラグインだけが登録でき、組み込みと重複してはいけません
+（[`commands.md`](./commands.md) の「プラグイン」）。
 
 `permissions` と `contributes` は起動前に読みます。承認が済むまで `activate`
 を呼ばないためです。
@@ -261,16 +278,16 @@ ID とバージョンの組で `trusted.json`
 
 プラグインには2つの形態があります（[ADR 0020](./adr/0020-plugin-source-and-bundles.md)）。
 
-| 形態 | エントリ | import | 外部依存 |
-| :--- | :--- | :--- | :--- |
-| ソース | `frontend.ts` | 相対のみ | なし（型だけの import は可） |
-| バンドル | `dist/frontend.js` | なし | ビルド時に同梱 |
+| 形態     | エントリ           | import   | 外部依存                     |
+| :------- | :----------------- | :------- | :--------------------------- |
+| ソース   | `frontend.ts`      | 相対のみ | なし（型だけの import は可） |
+| バンドル | `dist/frontend.js` | なし     | ビルド時に同梱               |
 
 `vy` はグローバルなので、どちらの形態でも import は不要です。
 
 ソース形態では、プラグインのディレクトリをルートとして相対 import を解決します。
-`./` と `../` だけを許可し、`.ts`、`.js`、`.mjs`、ディレクトリなら
-`index.ts` / `index.js` を探します。JSX と `.tsx` は扱いません。ルート外への
+`./` と `../` だけを許可し、`.ts`、`.js`、`.mjs`、ディレクトリなら `index.ts` /
+`index.js` を探します。JSX と `.tsx` は扱いません。ルート外への
 脱出、`node_modules`、`node:*`、`.json`、WASM、`require` は許可しません。裸の
 specifier（`vy-api` を含む）は「バンドルしてください」とエラーにします。
 
@@ -298,8 +315,8 @@ QuickJS のモジュールは ESM として読み込みます。CommonJS の `re
 TypeScript と JSX の構文も拒否します。サイズ上限は 4 MiB で、サイズと SHA-256 を
 計算して `PluginEntry` に保存します。バンドルはリロード時にもう一度検証します。
 
-`engines.vy` はマニフェストの読み込み時に semver の範囲として解析し、現在の Vy と
-一致しないプラグインは警告を出して読み込みません。
+`engines.vy` はマニフェストの読み込み時に semver の範囲として解析し、現在の Vy
+と 一致しないプラグインは警告を出して読み込みません。
 
 配布は当面、ディレクトリを `plugins/` に置く方法だけにします。レジストリと
 `vy plugin install` は Phase 4 以降に回します。
@@ -307,7 +324,8 @@ TypeScript と JSX の構文も拒否します。サイズ上限は 4 MiB で、
 ## 4. バックエンドプラグイン
 
 検索結果が数十万行に及ぶ場合、生のテキストをすべてクライアントへ送ると帯域とメモリを使い切ります。そのため、プラグインは接続先で動く
-`backend.ts` を併設できます（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。
+`backend.ts`
+を併設できます（[ADR 0011](./adr/0011-backend-plugins-on-core.md)）。
 
 - `frontend.ts` は UI の登録（`ui`
   ビューのウィジェット木）、Webview、キー入力、設定を扱います。
@@ -329,9 +347,11 @@ worker.postMessage({ query: "main", maxResults: 100 });
 export function activate(ctx: BackendContext) {
   ctx.subscriptions.push(
     vy.backend.registerHandler("search", async (message, req) => {
-      for await (const chunk of vy.workspace.grep(message.query, {
-        signal: req.signal,
-      })) {
+      for await (
+        const chunk of vy.workspace.grep(message.query, {
+          signal: req.signal,
+        })
+      ) {
         req.postMessage(chunk);
       }
     }),
@@ -339,15 +359,16 @@ export function activate(ctx: BackendContext) {
 }
 ```
 
-バックエンドのコードは、クライアントが `plugin/load` で送ります。コアはハッシュと
+バックエンドのコードは、クライアントが `plugin/load`
+で送ります。コアはハッシュと
 サイズを検証し、メモリにキャッシュします。接続先にプラグインをインストールする必要は
 ありません。バンドルは1ファイルの JavaScript で、相対 import と `node_modules`
 は解決しません。
 
 バックエンドには、UI とクライアント状態の API を出しません。`fs`、`process`、
 `workspace`、文書の読み取り、`config.get`、`log`、`cancellation` を使えます。
-承認はクライアントの `trusted.json` で行い、検査はコアで行います。`${workspace}` と
-`${home}` は接続先のルートで展開します。
+承認はクライアントの `trusted.json` で行い、検査はコアで行います。`${workspace}`
+と `${home}` は接続先のルートで展開します。
 
 メッセージは JSON
 に変換できる値に限ります。関数と循環参照は送れません。1つのメッセージの上限を決め、超えた場合はストリームに分割します。
