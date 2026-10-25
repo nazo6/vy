@@ -228,6 +228,10 @@ impl Config {
             .unwrap_or(false)
     }
 
+    pub fn theme(&self) -> String {
+        self.string("ui.theme", "dark")
+    }
+
     fn string(&self, key: &str, fallback: &str) -> String {
         self.get(key)
             .and_then(Value::as_str)
@@ -427,5 +431,14 @@ mod tests {
 
         config.set("ui.fontFamily", Value::from("JetBrains Mono"));
         assert_eq!(config.font_family(), "JetBrains Mono");
+    }
+
+    #[test]
+    fn resolves_theme_setting() {
+        let mut config = Config::with_defaults();
+        assert_eq!(config.theme(), "dark");
+
+        config.set("ui.theme", Value::from("light"));
+        assert_eq!(config.theme(), "light");
     }
 }

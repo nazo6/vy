@@ -10,6 +10,7 @@ use vy_core::Uri;
 use vy_js::{HostRequest, ScriptEvent};
 
 use super::{EditorView, Pending, PluginRuntime};
+use crate::theme::Theme;
 
 impl EditorView {
     pub(super) fn start_script(&mut self, cx: &mut Context<Self>) {
@@ -39,7 +40,7 @@ impl EditorView {
             while let Ok(request) = requests.recv().await {
                 let updated = this.update(cx, |this, cx| {
                     if this.script_generation == generation {
-                        this.handle_host_request(request);
+                        this.handle_host_request(cx, request);
                         cx.notify();
                     }
                 });
@@ -122,7 +123,7 @@ impl EditorView {
                         .get(&id)
                         .is_some_and(|runtime| runtime.generation == generation);
                     if active {
-                        this.handle_plugin_host_request(&id, request);
+                        this.handle_plugin_host_request(cx, &id, request);
                         cx.notify();
                     }
                 });
@@ -412,15 +413,25 @@ impl EditorView {
     }
 
     /// Answers a call from the shim with the current client state.
-    pub(super) fn handle_host_request(&mut self, request: HostRequest) {
-        self.handle_host_request_for(None, request);
+    pub(super) fn handle_host_request(&mut self, cx: &mut Context<Self>, request: HostRequest) {
+        self.handle_host_request_for(cx, None, request);
     }
 
-    pub(super) fn handle_plugin_host_request(&mut self, plugin_id: &str, request: HostRequest) {
-        self.handle_host_request_for(Some(plugin_id), request);
+    pub(super) fn handle_plugin_host_request(
+        &mut self,
+        cx: &mut Context<Self>,
+        plugin_id: &str,
+        request: HostRequest,
+    ) {
+        self.handle_host_request_for(cx, Some(plugin_id), request);
     }
 
-    fn handle_host_request_for(&mut self, plugin_id: Option<&str>, request: HostRequest) {
+    fn handle_host_request_for(
+        &mut self,
+        cx: &mut Context<Self>,
+        plugin_id: Option<&str>,
+        request: HostRequest,
+    ) {
         self.activate_active_view();
         let document = self.document_info();
         let workspace = self.workspace_info();
@@ -472,7 +483,7 @@ impl EditorView {
         let outcome = plugin_host::handle_request(context, request);
 
         if let Some(status) = outcome.status.clone() {
-            self.status = status.into();
+            self.show_notification(status, cx);
         }
 
         if !outcome.config_changed.is_empty() {
@@ -481,6 +492,15 @@ impl EditorView {
             let timeout = Duration::from_millis(self.config.sequence_timeout_ms());
             self.set_transaction_idle(idle);
             self.keymap.set_sequence_timeout(timeout);
+
+            let theme = if self.config.theme() == "light" {
+                Theme::light()
+            } else {
+                Theme::dark()
+            };
+            if cx.global::<Theme>() != &theme {
+                cx.set_global(theme);
+            }
         }
 
         self.store_active_view();

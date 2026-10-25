@@ -7,7 +7,10 @@ use gpui::{
     ParentElement, Render, Styled, Window, canvas, div, px,
 };
 
-use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
+use vy_app::text_layout::{
+    DEFAULT_TAB_STOP, chunk_line, clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal,
+    utf16_to_display_col,
+};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
 use super::EditorView;
@@ -28,7 +31,7 @@ impl EditorView {
     /// Width of the line number gutter. It grows with the number of lines and is
     /// zero when line numbers are turned off.
     pub(super) fn gutter_width(&self, line_count: usize) -> f32 {
-        ui::pane::gutter_width(&self.config, line_count)
+        ui::pane::gutter_width(&self.config, line_count, self.char_width)
     }
 
     /// Updates the row and column capacity of all panes based on their allocated dimensions.
@@ -435,6 +438,7 @@ impl EditorView {
                         document,
                         &view.gutter,
                         bounds,
+                        view.cursor_visible,
                     )
                 })
             },
@@ -465,40 +469,93 @@ impl EditorView {
             // Render hover popup if active
             if let Some(hover) = &self.hover
                 && let Some(pane) = pane
+                && let Some(doc) = document
             {
                 let lh = self.line_height();
                 let ch_w = self.char_width;
-                let gutter =
-                    self.gutter_width(document.map(|d| d.editor.line_count()).unwrap_or(1));
-                if hover.line >= pane.scroll_top
-                    && hover.line < pane.scroll_top + pane.viewport_rows
-                {
-                    let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
-                    let scroll_left_px = if pane.is_wrap(&self.config) {
-                        0.0
+                let gutter = self.gutter_width(doc.editor.line_count());
+                let line_text = doc.editor.line(hover.line).unwrap_or_default();
+
+                let pos = if !pane.is_wrap(&self.config) {
+                    if hover.line >= pane.scroll_top
+                        && hover.line < pane.scroll_top + pane.viewport_rows
+                    {
+                        let display_col =
+                            utf16_to_display_col(&line_text, hover.character, DEFAULT_TAB_STOP);
+                        let scroll_left_px = pane.scroll_left as f32 * ch_w;
+                        let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
+                        let left = gutter + display_col as f32 * ch_w - scroll_left_px;
+                        Some((top, left))
                     } else {
-                        pane.scroll_left as f32 * ch_w
-                    };
-                    let left = gutter + hover.character as f32 * ch_w - scroll_left_px;
-                    if left >= gutter {
-                        area = area.child(
-                            div()
-                                .absolute()
-                                .top(px(top))
-                                .left(px(left))
-                                .max_w(px(400.0))
-                                .px_2()
-                                .py_1()
-                                .rounded_sm()
-                                .bg(theme.background.surface)
-                                .border_1()
-                                .border_color(theme.border.subtle)
-                                .shadow_md()
-                                .text_xs()
-                                .text_color(theme.foreground.default)
-                                .child(hover.text.clone()),
-                        );
+                        None
                     }
+                } else {
+                    let cols = pane.viewport_cols.max(1);
+                    let mut l_idx = pane.scroll_top;
+                    let mut s_idx = pane.scroll_sub_line;
+                    let mut v_row = 0;
+                    let total_lines = doc.editor.line_count();
+                    let mut found = None;
+
+                    while l_idx < total_lines && v_row < pane.viewport_rows {
+                        let text = doc.editor.line(l_idx).unwrap_or_default();
+                        let chunks = chunk_line(&text, cols);
+                        let total_chunks = chunks.len();
+
+                        while s_idx < total_chunks && v_row < pane.viewport_rows {
+                            if l_idx == hover.line {
+                                let chunk = &chunks[s_idx];
+                                let char_idx = hover.character;
+                                if char_idx >= chunk.utf16_range.start
+                                    && (char_idx < chunk.utf16_range.end
+                                        || s_idx + 1 == total_chunks)
+                                {
+                                    let chunk_text = &text[chunk.byte_range.clone()];
+                                    let chunk_char_offset =
+                                        char_idx.saturating_sub(chunk.utf16_range.start);
+                                    let col_in_chunk = utf16_to_display_col(
+                                        chunk_text,
+                                        chunk_char_offset,
+                                        DEFAULT_TAB_STOP,
+                                    );
+                                    let top = v_row as f32 * lh + lh;
+                                    let left = gutter + col_in_chunk as f32 * ch_w;
+                                    found = Some((top, left));
+                                    break;
+                                }
+                            }
+                            s_idx += 1;
+                            v_row += 1;
+                        }
+                        if found.is_some() || l_idx > hover.line {
+                            break;
+                        }
+                        l_idx += 1;
+                        s_idx = 0;
+                    }
+                    found
+                };
+
+                if let Some((top, left)) = pos
+                    && left >= gutter
+                {
+                    area = area.child(
+                        div()
+                            .absolute()
+                            .top(px(top))
+                            .left(px(left))
+                            .max_w(px(400.0))
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .bg(theme.background.surface)
+                            .border_1()
+                            .border_color(theme.border.subtle)
+                            .shadow_md()
+                            .text_xs()
+                            .text_color(theme.foreground.default)
+                            .child(hover.text.clone()),
+                    );
                 }
             }
         }

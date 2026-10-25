@@ -1,8 +1,8 @@
 //! Editor pane and line rendering.
 
 use gpui::{
-    App, Bounds, ContentMask, Pixels, SharedString, TextAlign, TextRun, UnderlineStyle, Window,
-    fill, point, px, size,
+    App, BorderStyle, Bounds, ContentMask, Pixels, SharedString, TextAlign, TextRun,
+    UnderlineStyle, Window, fill, outline, point, px, size,
 };
 use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
@@ -54,17 +54,16 @@ pub fn font_character_width(config: &Config, window: &mut Window) -> f32 {
     if w > 0.0 { w } else { character_width(config) }
 }
 
-/// Width of the line number gutter in pixels, or 0 when line numbers are off.
-pub fn gutter_width(config: &Config, line_count: usize) -> f32 {
+/// Width of the line number gutter using a measured character width.
+pub fn gutter_width(config: &Config, line_count: usize, char_w: f32) -> f32 {
     let base = if config.line_numbers() == LineNumbers::Off {
         0.0
     } else {
-        let width = character_width(config);
         let digits = line_number_width(line_count);
-        digits as f32 * width + width * 1.2
+        digits as f32 * char_w + char_w * 1.2
     };
-    // Reserve an extra 1.5 characters width for gutter marks (git diff, breakpoints, diagnostics)
-    base + character_width(config) * 1.5
+    // Reserve 2.0 characters width for gutter marks (allowing multiple marks side-by-side)
+    base + char_w * 2.0
 }
 
 /// Returns the text to draw on an Insert cursor line/chunk with an explicit character offset.
@@ -105,6 +104,7 @@ pub struct EditorPaintData {
     pub wrap: bool,
     pub visual_rows: Vec<VisualRow>,
     pub gutter_marks: Vec<(usize, Vec<vy_app::slots::GutterItem>)>,
+    pub cursor_visible: bool,
 }
 
 pub fn prepare_editor_paint(
@@ -114,6 +114,7 @@ pub fn prepare_editor_paint(
     document: &DocumentState,
     gutter_registry: &GutterRegistry,
     bounds: Bounds<Pixels>,
+    cursor_visible: bool,
 ) -> EditorPaintData {
     let visual_rows = collect_visual_rows(config, pane, document, bounds);
     let mut gutter_marks = Vec::new();
@@ -136,6 +137,7 @@ pub fn prepare_editor_paint(
         wrap: pane.is_wrap(config),
         visual_rows,
         gutter_marks,
+        cursor_visible,
     }
 }
 
@@ -221,7 +223,7 @@ pub fn paint_editor(
     let line_count = data.line_count;
     let lh = px(line_height(config));
     let char_w = font_character_width(config, window);
-    let gutter_w = px(gutter_width(config, line_count));
+    let gutter_w = px(gutter_width(config, line_count, char_w));
 
     let content_origin_x = bounds.left() + gutter_w;
     let content_w = (bounds.size.width - gutter_w).max(px(0.0));
@@ -255,26 +257,35 @@ pub fn paint_editor(
                     .gutter_marks
                     .iter()
                     .find(|(line, _)| *line == row.line_number)
-                    && let Some(mark) = marks.first()
                 {
-                    let mark_color = mark.color.map_or(theme.editor.gutter, |c| color(theme, c));
-                    let mark_run = TextRun {
-                        len: mark.text.len(),
-                        font: font.clone(),
-                        color: mark_color.into(),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    };
-                    let shaped = window.text_system().shape_line(
-                        SharedString::from(mark.text.clone()),
-                        font_size,
-                        &[mark_run],
-                        None,
-                    );
-                    let mark_x = bounds.left() + px(character_width(config) * 0.2);
-                    let _ =
-                        shaped.paint(point(mark_x, row.y), lh, TextAlign::Left, None, window, cx);
+                    let mut mark_x = bounds.left() + px(char_w * 0.2);
+                    for mark in marks.iter().take(2) {
+                        let mark_color =
+                            mark.color.map_or(theme.editor.gutter, |c| color(theme, c));
+                        let mark_run = TextRun {
+                            len: mark.text.len(),
+                            font: font.clone(),
+                            color: mark_color.into(),
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        };
+                        let shaped = window.text_system().shape_line(
+                            SharedString::from(mark.text.clone()),
+                            font_size,
+                            &[mark_run],
+                            None,
+                        );
+                        let _ = shaped.paint(
+                            point(mark_x, row.y),
+                            lh,
+                            TextAlign::Left,
+                            None,
+                            window,
+                            cx,
+                        );
+                        mark_x += px(char_w * 0.9);
+                    }
                 }
 
                 if let Some(label) = config.line_numbers().label(row.line_number, cursor_line) {
@@ -293,7 +304,7 @@ pub fn paint_editor(
                         &[num_run],
                         None,
                     );
-                    let num_x = bounds.left() + px(character_width(config) * 1.4);
+                    let num_x = bounds.left() + px(char_w * 2.0);
                     let _ =
                         shaped.paint(point(num_x, row.y), lh, TextAlign::Left, None, window, cx);
                 }
@@ -317,6 +328,15 @@ pub fn paint_editor(
             let font_size = px(config.font_size());
 
             for row in &data.visual_rows {
+                // Paint current line highlight
+                if row.line_number == cursor_line {
+                    let line_quad = fill(
+                        Bounds::new(point(content_origin_x, row.y), size(content_w, lh)),
+                        theme.editor.line_highlight,
+                    );
+                    window.paint_quad(line_quad);
+                }
+
                 let cursor_chunk_col = cursor_in_chunk(
                     data.view.cursor(),
                     row.line_number,
@@ -410,7 +430,8 @@ pub fn paint_editor(
                 }
 
                 // Paint block cursor highlight for Normal mode
-                if data.view.mode() == Mode::Normal
+                if data.cursor_visible
+                    && data.view.mode() == Mode::Normal
                     && let Some(col) = cursor_chunk_col
                 {
                     let from_b = utf16_to_byte(&display_text, col);
@@ -429,6 +450,31 @@ pub fn paint_editor(
                     window.paint_quad(cursor_quad);
                 }
 
+                // Paint cursor head indicator for Select modes
+                if data.cursor_visible
+                    && matches!(
+                        data.view.mode(),
+                        Mode::Select | Mode::SelectLine | Mode::SelectBlock
+                    )
+                    && let Some(col) = cursor_chunk_col
+                {
+                    let from_b = utf16_to_byte(&display_text, col);
+                    let to_b = utf16_to_byte(&display_text, col + 1);
+                    let start_x = text_origin_x + shaped.x_for_index(from_b);
+                    let end_x = text_origin_x + shaped.x_for_index(to_b);
+                    let cur_w = if end_x <= start_x {
+                        px(char_w)
+                    } else {
+                        end_x - start_x
+                    };
+                    let cursor_quad = outline(
+                        Bounds::new(point(start_x, row.y), size(cur_w, lh)),
+                        theme.editor.caret,
+                        BorderStyle::Solid,
+                    );
+                    window.paint_quad(cursor_quad);
+                }
+
                 // Paint text
                 let _ = shaped.paint(
                     point(text_origin_x, row.y),
@@ -440,7 +486,8 @@ pub fn paint_editor(
                 );
 
                 // Paint Insert mode vertical caret bar
-                if data.view.mode() == Mode::Insert
+                if data.cursor_visible
+                    && data.view.mode() == Mode::Insert
                     && let Some(caret_b) = caret_byte
                 {
                     let caret_x = text_origin_x + shaped.x_for_index(caret_b);

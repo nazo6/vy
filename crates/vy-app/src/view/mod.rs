@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::focus::FocusStack;
+use crate::theme::Theme;
 use crate::ui;
 
 mod commands;
@@ -137,6 +138,8 @@ pub struct EditorView {
     pub(super) view_widget_trees: HashMap<String, vy_app::widget::WidgetNode>,
     /// Which runtime spawned each process, so stream events go to its owner.
     pub(super) stream_owners: HashMap<u32, Option<String>>,
+    pub(super) cursor_visible: bool,
+    pub(super) status_generation: usize,
 }
 
 impl EditorView {
@@ -144,6 +147,12 @@ impl EditorView {
         let paths = Paths::from_env();
         let workspace = startup.local_workspace.clone();
         let (config, warnings) = Config::load(&paths, workspace.as_deref());
+        let theme = if config.theme() == "light" {
+            Theme::light()
+        } else {
+            Theme::dark()
+        };
+        cx.set_global(theme);
         let settings_stamp = paths.settings_stamp(workspace.as_deref());
         for warning in &warnings {
             eprintln!("vy: settings: {warning}");
@@ -248,6 +257,8 @@ impl EditorView {
             pending_view_for_next_open: None,
             view_widget_trees: HashMap::new(),
             stream_owners: HashMap::new(),
+            cursor_visible: true,
+            status_generation: 0,
         };
 
         if let Some(warning) = warnings.last() {
@@ -257,6 +268,7 @@ impl EditorView {
         view.start_config_watch(cx);
         view.start_script(cx);
         view.start_plugin_supervisor(cx);
+        view.start_cursor_blink(cx);
         view
     }
 
@@ -450,6 +462,14 @@ impl EditorView {
                         this.reload_plugin(&plugin_id);
                     }
                     if config_changed {
+                        let theme = if this.config.theme() == "light" {
+                            Theme::light()
+                        } else {
+                            Theme::dark()
+                        };
+                        if cx.global::<Theme>() != &theme {
+                            cx.set_global(theme);
+                        }
                         cx.notify();
                     }
                 });
@@ -457,6 +477,42 @@ impl EditorView {
                     break;
                 }
             }
+        })
+        .detach();
+    }
+
+    /// Starts the cursor blinking loop.
+    pub(super) fn start_cursor_blink(&self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(530))
+                    .await;
+                let updated = this.update(cx, |this, cx| {
+                    this.cursor_visible = !this.cursor_visible;
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Displays a transient notification status message and clears it after 4 seconds.
+    pub fn show_notification(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.status = message.into();
+        self.status_generation = self.status_generation.wrapping_add(1);
+        let target_generation = self.status_generation;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(4)).await;
+            let _ = this.update(cx, |this, cx| {
+                if this.status_generation == target_generation {
+                    this.status = "".into();
+                    cx.notify();
+                }
+            });
         })
         .detach();
     }
@@ -509,6 +565,7 @@ impl EditorView {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.cursor_visible = true;
         let key = ui::key::convert_key(&event.keystroke);
 
         if self.ex.is_some() {

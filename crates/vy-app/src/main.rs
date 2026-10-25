@@ -13,6 +13,7 @@ use gpui::{
 use gpui_platform::application;
 use theme::Theme;
 use view::EditorView;
+use vy_app::config::Config;
 use vy_app::connection::{CliOptions, startup_for};
 use vy_app::paths::Paths;
 
@@ -27,9 +28,16 @@ fn main() {
         }
     };
 
+    let (initial_config, _) = Config::load(&Paths::from_env(), startup.local_workspace.as_deref());
+    let initial_theme = if initial_config.theme() == "light" {
+        Theme::light()
+    } else {
+        Theme::dark()
+    };
+
     application().run(move |cx: &mut App| {
         gpui_base::init(cx);
-        cx.set_global(Theme::dark());
+        cx.set_global(initial_theme);
 
         let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
         let view_startup = startup.clone();

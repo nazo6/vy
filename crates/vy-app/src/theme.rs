@@ -47,6 +47,7 @@ pub struct EditorTokens {
     pub gutter: Rgba,
     pub selection: Rgba,
     pub caret: Rgba,
+    pub line_highlight: Rgba,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,6 +118,7 @@ impl Theme {
                 gutter: rgb(0x5a5a5a),
                 selection: rgb(0x264f78),
                 caret: rgb(0xd4d4d4),
+                line_highlight: rgb(0x282828),
             },
             titlebar: TitlebarTokens {
                 background: rgb(0x181818),
@@ -174,6 +176,7 @@ impl Theme {
                 gutter: rgb(0x6e6e6e),
                 selection: rgb(0xadd6ff),
                 caret: rgb(0x000000),
+                line_highlight: rgb(0xf0f0f0),
             },
             titlebar: TitlebarTokens {
                 background: rgb(0xf3f3f3),
@@ -233,8 +236,13 @@ mod tests {
 
     #[test]
     fn verifies_default_theme_tokens() {
-        let theme = Theme::dark();
-        assert_eq!(theme.background.app, rgb(0x1e1e1e));
-        assert_eq!(theme.statusline.normal, rgb(0x007acc));
+        let dark = Theme::dark();
+        assert_eq!(dark.background.app, rgb(0x1e1e1e));
+        assert_eq!(dark.editor.line_highlight, rgb(0x282828));
+        assert_eq!(dark.statusline.normal, rgb(0x007acc));
+
+        let light = Theme::light();
+        assert_eq!(light.background.app, rgb(0xffffff));
+        assert_eq!(light.editor.line_highlight, rgb(0xf0f0f0));
     }
 }

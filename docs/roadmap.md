@@ -251,23 +251,23 @@ Webview は Web の文書そのものを表示するときだけ使います。�
 
 ### P1: 表示と操作の質
 
-- [ ] カーソルの見た目: 点滅、Select 系のカーソル、現在行のハイライト
+- [x] カーソルの見た目: 点滅、Select 系のカーソル、現在行のハイライト
       （`crates/vy-app/src/ui/pane.rs`、`crates/vy-app/src/theme.rs`）。
-- [ ] ステータスライン: 長いパスの切り詰め。今は省略や `overflow` の指定がなく、長い URI は
+- [x] ステータスライン: 長いパスの切り詰め。今は省略や `overflow` の指定がなく、長い URI は
       折り返すか、右側の項目にはみ出します（`crates/vy-app/src/ui/statusline.rs`）。
-- [ ] 通知: 自動消去と重なりの扱い。`notifications.show` は `message` だけを受け取り、
+- [x] 通知: 自動消去と重なりの扱い。`notifications.show` は `message` だけを受け取り、
       状態行に置くだけで消えません（`crates/vy-app/src/api/host/notifications.rs`、
       [`api.md`](./api.md)）。
-- [ ] テーマ: 起動時に `Theme::dark()` を固定しています。`Theme::light()` を設定から
+- [x] テーマ: 起動時に `Theme::dark()` を固定しています。`Theme::light()` を設定から
       選べるようにし、切り替え時に再描画します（`crates/vy-app/src/main.rs`、
       `crates/vy-app/src/theme.rs`）。
 - [x] タブ: タブを 1 列として折り返しています。表示セル幅の計算と合わせて、
       `tabstop`（既定値を決める）で描くようにします（`crates/vy-app/src/text_layout.rs`、
       [`keymap.md`](./keymap.md)）。
-- [ ] ガター: 実測した文字幅とずれないようにし、1 行に複数のマークを描く。今は
+- [x] ガター: 実測した文字幅とずれないようにし、1 行に複数のマークを描く。今は
       近似幅を使い、`marks.first()` で 1 つだけ描きます
       （`crates/vy-app/src/ui/pane.rs`）。
-- [ ] ホバー: 折り返しのサブ行と全角幅を考慮した位置に出す
+- [x] ホバー: 折り返しのサブ行と全角幅を考慮した位置に出す
       （`crates/vy-app/src/view/render.rs`）。
 - [x] 横スクロール: 行の長さで上限を決め、文書の切り替えや再同期で 0 に戻す。
       `reset_views_for_document` は `scroll_top` だけ戻します

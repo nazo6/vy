@@ -78,6 +78,10 @@ fn wrap() -> Value {
     Value::from(false)
 }
 
+fn theme() -> Value {
+    Value::from("dark")
+}
+
 /// Every setting the client defines, with its default and description.
 pub const SETTINGS: &[SettingDecl] = &[
     SettingDecl {
@@ -99,6 +103,11 @@ pub const SETTINGS: &[SettingDecl] = &[
         key: "ui.lineNumbers",
         doc: "Line number style: absolute, relative, or off.",
         default: line_numbers,
+    },
+    SettingDecl {
+        key: "ui.theme",
+        doc: "Color theme: dark or light.",
+        default: theme,
     },
     SettingDecl {
         key: "editor.transactionIdleMs",
