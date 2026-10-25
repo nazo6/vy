@@ -11,6 +11,9 @@ pub struct PickerItem {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// Heading the item is listed under. Items with the same group stay together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 impl PickerItem {
@@ -20,6 +23,7 @@ impl PickerItem {
             title: title.into(),
             description: None,
             detail: None,
+            group: None,
         }
     }
 
@@ -30,6 +34,11 @@ impl PickerItem {
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
         self
     }
 }

@@ -5,7 +5,8 @@ use std::rc::Rc;
 use gpui::{AnyElement, Entity, IntoElement, div, prelude::*, px, size};
 use gpui_base::{FocusTrapElement, v_virtual_list};
 use vy_app::palette::{
-    PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteMode, PickerItem, filtered_picker_indices,
+    PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteMode, PaletteRow, PickerItem,
+    filtered_picker_indices, palette_rows, shows_palette_headings,
 };
 
 use super::ex::input_caret;
@@ -14,6 +15,28 @@ use crate::view::EditorView;
 
 /// Height of one row in the picker list.
 pub const PALETTE_ROW_HEIGHT: f32 = 28.0;
+/// Height of a group heading row in the picker list.
+pub const PALETTE_HEADING_HEIGHT: f32 = 22.0;
+
+/// Height of one rendered palette line.
+fn palette_row_height(row: &PaletteRow) -> f32 {
+    match row {
+        PaletteRow::Heading(_) => PALETTE_HEADING_HEIGHT,
+        PaletteRow::Item(_) => PALETTE_ROW_HEIGHT,
+    }
+}
+
+/// Renders a group heading between palette rows.
+pub fn render_picker_heading(theme: &Theme, label: &str) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .h(px(PALETTE_HEADING_HEIGHT))
+        .px_2()
+        .text_xs()
+        .text_color(theme.foreground.muted)
+        .child(label.to_string())
+}
 
 /// Renders a single row in the picker / palette.
 pub fn render_picker_row(theme: &Theme, item: &PickerItem, is_selected: bool) -> gpui::Div {
@@ -84,6 +107,7 @@ pub fn render_palette(
 
     let filtered = filtered_picker_indices(items, &palette.query);
     let filtered_count = filtered.len();
+    let rows = palette_rows(items, &filtered, shows_palette_headings(&palette.query));
 
     let count_label = match &palette.mode {
         PaletteMode::Commands => format!("{filtered_count} commands"),
@@ -170,38 +194,46 @@ pub fn render_palette(
             .child(empty_label)
             .into_any_element()
     } else {
-        let item_sizes = Rc::new(vec![
-            size(px(PALETTE_MAX_WIDTH), px(PALETTE_ROW_HEIGHT));
-            filtered_count
-        ]);
+        let item_sizes = Rc::new(
+            rows.iter()
+                .map(|row| size(px(PALETTE_MAX_WIDTH), px(palette_row_height(row))))
+                .collect::<Vec<_>>(),
+        );
         let theme_clone = theme.clone();
         let items_clone = items.to_vec();
-        let filtered_clone = filtered.clone();
+        let rows_clone = rows.clone();
+        let selected_item = filtered.get(palette.selected).copied();
 
         v_virtual_list(
             entity,
             "palette-virtual-list",
             item_sizes,
-            move |view, visible_range, _window, _cx| {
-                let selected = view.palette.as_ref().map(|p| p.selected).unwrap_or(0);
+            move |_view, visible_range, _window, _cx| {
                 visible_range
-                    .map(|ix| {
-                        let item_idx = filtered_clone[ix];
-                        let item = &items_clone[item_idx];
-                        render_picker_row(&theme_clone, item, ix == selected)
+                    .map(|ix| match &rows_clone[ix] {
+                        PaletteRow::Heading(label) => render_picker_heading(&theme_clone, label),
+                        PaletteRow::Item(index) => render_picker_row(
+                            &theme_clone,
+                            &items_clone[*index],
+                            Some(*index) == selected_item,
+                        ),
                     })
                     .collect()
             },
         )
         .track_scroll(scroll_handle)
-        .h(px(
-            (filtered_count as f32 * PALETTE_ROW_HEIGHT).min(PALETTE_MAX_HEIGHT - 80.0)
-        ))
+        .h(px(rows
+            .iter()
+            .map(palette_row_height)
+            .sum::<f32>()
+            .min(PALETTE_MAX_HEIGHT - 80.0)))
         .into_any_element()
     };
 
     let hint_label = match &palette.mode {
-        PaletteMode::Commands => "Enter run  ·  Esc close  ·  Up/Down move",
+        PaletteMode::Commands => {
+            "Enter run  ·  : for named commands  ·  Esc close  ·  Up/Down move"
+        }
         PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
         PaletteMode::Arguments { .. } => "Enter confirm  ·  Esc back",
         PaletteMode::Custom { .. } => "Enter select  ·  Esc close  ·  Up/Down move",

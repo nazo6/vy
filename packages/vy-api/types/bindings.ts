@@ -367,6 +367,8 @@ export type PickerItem = {
 	title: string,
 	description?: string | null,
 	detail?: string | null,
+	/**  Heading the item is listed under. Items with the same group stay together. */
+	group?: string | null,
 };
 
 /**

@@ -22,7 +22,7 @@ use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState};
 use vy_app::ex::{ExHistory, ExState};
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
-use vy_app::palette::PaletteState;
+use vy_app::palette::{PaletteMode, PaletteState};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
@@ -109,6 +109,8 @@ pub struct EditorView {
     fallback: DocumentState,
     /// Open command palette, if any.
     pub(crate) palette: Option<PaletteState>,
+    /// Commands run from the palette, most recent first. Session-local.
+    recent_commands: Vec<String>,
     /// Open Ex command line, if any.
     ex: Option<ExState>,
     ex_history: ExHistory,
@@ -240,6 +242,7 @@ impl EditorView {
             documents: HashMap::new(),
             fallback,
             palette: initial_palette,
+            recent_commands: Vec::new(),
             ex: None,
             ex_history: ExHistory::new(),
             command_queue: VecDeque::new(),
@@ -564,17 +567,27 @@ impl EditorView {
 
     /// Synchronizes window focus with active modal overlays via the focus stack.
     pub(super) fn sync_modal_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let is_modal_open = self.palette.is_some() || self.ex.is_some();
-        if is_modal_open && self.focus_stack.is_empty() {
-            let target = if self.palette.is_some() {
-                &self.palette_focus_handle
-            } else {
-                &self.ex_focus_handle
-            };
-            self.focus_stack
-                .push(self.focus_handle.clone(), target, window, cx);
-        } else if !is_modal_open && !self.focus_stack.is_empty() {
-            self.focus_stack.pop(window, cx);
+        let target = if self.palette.is_some() {
+            Some(self.palette_focus_handle.clone())
+        } else if self.ex.is_some() {
+            Some(self.ex_focus_handle.clone())
+        } else {
+            None
+        };
+        match target {
+            Some(target) if self.focus_stack.is_empty() => {
+                let previous = self.focus_handle.clone();
+                self.focus_stack.push(previous, &target, window, cx);
+            }
+            Some(target) => {
+                if !target.is_focused(window) {
+                    target.focus(window, cx);
+                }
+            }
+            None if !self.focus_stack.is_empty() => {
+                self.focus_stack.pop(window, cx);
+            }
+            None => {}
         }
     }
 
@@ -598,6 +611,13 @@ impl EditorView {
 
         if self.palette.is_some() {
             if let Some(key) = key {
+                if self.opens_ex_from_palette(key) {
+                    self.open_ex();
+                    self.sync_modal_focus(window, cx);
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 if matches!(key, Key::Char(_)) {
                     // Printable text reaches input handler via replace_text_in_range
                     return;
@@ -633,6 +653,18 @@ impl EditorView {
             self.sync_modal_focus(window, cx);
             cx.notify();
         }
+    }
+
+    /// `:` in an empty command palette closes it and opens the Ex command line.
+    fn opens_ex_from_palette(&self, key: Key) -> bool {
+        if !matches!(key, Key::Char(':')) {
+            return false;
+        }
+        self.palette.as_ref().is_some_and(|palette| {
+            palette.query.is_empty()
+                && palette.preedit.is_empty()
+                && matches!(palette.mode, PaletteMode::Commands)
+        })
     }
 
     /// Passes the key to the keymap and runs the command it resolves to.

@@ -10,8 +10,9 @@ use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::palette::{
-    PaletteMode, PaletteState, PickerItem, approval_picker_items, filtered_picker_indices,
-    move_palette_selection,
+    PaletteMode, PaletteState, PickerItem, RECENT_GROUP, approval_picker_items,
+    filtered_picker_indices, move_palette_selection, palette_row_index, push_recent_command,
+    shows_palette_headings,
 };
 use vy_app::state::DocumentState;
 use vy_app::text_layout::{
@@ -323,15 +324,10 @@ impl EditorView {
         let Some(palette) = self.palette.as_ref() else {
             return Vec::new();
         };
+        let browsing = shows_palette_headings(&palette.query);
 
         match palette.mode {
-            PaletteMode::Commands => self
-                .commands
-                .descriptors()
-                .into_iter()
-                .filter(|command| command.palette == PaletteVisibility::Listed)
-                .map(|cmd| PickerItem::from(&cmd))
-                .collect(),
+            PaletteMode::Commands => self.command_palette_items(browsing),
             PaletteMode::Documents => {
                 let mut docs: Vec<&DocumentState> = self.documents.values().collect();
                 docs.sort_by_key(|doc| doc.id);
@@ -369,6 +365,43 @@ impl EditorView {
                 ..
             } => approval_picker_items(plugin_id, plugin_name, missing),
         }
+    }
+
+    /// Command palette rows, grouped by category with recent commands on top.
+    fn command_palette_items(&self, show_recent: bool) -> Vec<PickerItem> {
+        let mut items: Vec<PickerItem> = self
+            .commands
+            .descriptors()
+            .into_iter()
+            .filter(|command| command.palette == PaletteVisibility::Listed)
+            .map(|command| PickerItem::from(&command))
+            .collect();
+        vy_app::palette::sort_picker_items(&mut items);
+
+        if !show_recent {
+            return items;
+        }
+        let recent: Vec<PickerItem> = self
+            .recent_commands
+            .iter()
+            .filter_map(|id| items.iter().find(|item| &item.id == id).cloned())
+            .map(|item| PickerItem {
+                group: Some(RECENT_GROUP.to_string()),
+                ..item
+            })
+            .collect();
+        if recent.is_empty() {
+            return items;
+        }
+        items.retain(|item| !recent.iter().any(|recent| recent.id == item.id));
+        recent.into_iter().chain(items).collect()
+    }
+
+    fn palette_query(&self) -> &str {
+        self.palette
+            .as_ref()
+            .map(|palette| palette.query.as_str())
+            .unwrap_or("")
     }
 
     pub(super) fn palette_filtered_len(&self) -> usize {
@@ -802,28 +835,38 @@ impl EditorView {
         }
 
         let len = self.palette_filtered_len();
-        let Some(palette) = self.palette.as_mut() else {
-            return false;
-        };
-
         match key {
-            Key::Up | Key::Ctrl('p') => {
-                palette.selected = move_palette_selection(palette.selected, -1, len);
+            Key::Up | Key::Ctrl('p') | Key::Down | Key::Ctrl('n') => {
+                let delta = if matches!(key, Key::Up | Key::Ctrl('p')) {
+                    -1
+                } else {
+                    1
+                };
+                let items = self.palette_items();
+                let query = self.palette_query().to_string();
+                let filtered = filtered_picker_indices(&items, &query);
+                let headings = shows_palette_headings(&query);
+                let Some(palette) = self.palette.as_mut() else {
+                    return false;
+                };
+                palette.selected = move_palette_selection(palette.selected, delta, len);
+                let row = palette_row_index(&items, &filtered, headings, palette.selected);
                 self.palette_scroll_handle
-                    .scroll_to_item(palette.selected, ScrollStrategy::Nearest);
-            }
-            Key::Down | Key::Ctrl('n') => {
-                palette.selected = move_palette_selection(palette.selected, 1, len);
-                self.palette_scroll_handle
-                    .scroll_to_item(palette.selected, ScrollStrategy::Nearest);
+                    .scroll_to_item(row, ScrollStrategy::Nearest);
             }
             Key::Backspace => {
+                let Some(palette) = self.palette.as_mut() else {
+                    return false;
+                };
                 palette.query.pop();
                 palette.selected = 0;
                 self.palette_scroll_handle
                     .scroll_to_item(0, ScrollStrategy::Top);
             }
             Key::Char(character) => {
+                let Some(palette) = self.palette.as_mut() else {
+                    return false;
+                };
                 palette.query.push(character);
                 palette.selected = 0;
                 self.palette_scroll_handle
@@ -836,6 +879,9 @@ impl EditorView {
 
     /// Queues a command and starts it when the previous command is done.
     pub(super) fn enqueue_command(&mut self, invocation: Invocation) {
+        if invocation.source == InvocationSource::Palette {
+            push_recent_command(&mut self.recent_commands, &invocation.id);
+        }
         self.command_queue.push_back(invocation);
         self.drain_command_queue();
     }

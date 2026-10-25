@@ -22,6 +22,22 @@ pub enum CommandCategory {
     Plugin,
 }
 
+impl CommandCategory {
+    /// Heading shown in the command palette.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::File => "File",
+            Self::Edit => "Edit",
+            Self::Selection => "Selection",
+            Self::View => "View",
+            Self::Pane => "Pane",
+            Self::App => "App",
+            Self::Settings => "Settings",
+            Self::Plugin => "Plugin",
+        }
+    }
+}
+
 /// Whether the command appears in the command palette list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
