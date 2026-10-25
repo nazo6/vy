@@ -678,6 +678,7 @@ impl EditorView {
     fn apply_key(&mut self, key: Key) -> bool {
         self.activate_active_view();
         let before = self.active_view();
+        let before_scroll = self.active_pane_state().map(scroll_position);
         let before_version = self.editor().version();
         let before_overlay = self.overlay.is_some();
 
@@ -704,13 +705,15 @@ impl EditorView {
         self.store_active_view();
         self.clamp_active_views();
 
-        // Do not repaint for keys that change nothing, such as a motion at a boundary.
-        let changed = before != self.active_view()
-            || before_version != self.editor().version()
-            || before_overlay != self.overlay.is_some();
-
         self.ensure_cursor_visible();
-        changed
+
+        // Do not repaint for keys that change nothing, such as a motion at a boundary.
+        // Scrolling commands (`zz`, `zt`, `zb`, `zh`, `zl`) move the view without
+        // touching the cursor, so the scroll offsets have to be compared as well.
+        before != self.active_view()
+            || before_scroll != self.active_pane_state().map(scroll_position)
+            || before_version != self.editor().version()
+            || before_overlay != self.overlay.is_some()
     }
 
     /// Scrolls by whole lines or columns. The wheel moves the view, not the cursor.
@@ -843,6 +846,11 @@ impl EditorView {
 
 fn remote_env(startup: &Startup) -> RemoteEnv {
     remote_env_for(&startup.connection, &startup.connection_name)
+}
+
+/// Scroll offsets that decide which part of the document a pane draws.
+fn scroll_position(pane: &PaneState) -> (usize, usize, usize) {
+    (pane.scroll_top, pane.scroll_left, pane.scroll_sub_line)
 }
 
 fn remote_env_for(connection: &ConnectionSpec, name: &str) -> RemoteEnv {
