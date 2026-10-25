@@ -10,7 +10,8 @@ use vy_app::rpc::Client;
 use vy_app::state::{DocumentState, PaneState};
 use vy_proto::{
     BufferDidChange, BufferResync, BufferSnapshot, BufferUndo, DidChangeParams, DocumentIdParams,
-    DocumentSave, DocumentSavedResult, EditorOpen, EditorOpenParams, HistoryResult, Initialize,
+    DocumentSave, DocumentSaveParams, DocumentSavedResult, EditorOpen, EditorOpenParams,
+    HistoryResult, Initialize,
     InitializeParams, Initialized, LayoutDidChange, LayoutDidChangeNotification, LayoutGet,
     LayoutGetResult, PROTOCOL_VERSION, PaneOpen, PaneOpenParams, PaneOpenResult, RpcMessage,
     RpcMethod, RpcNotification, RpcResult, SnapshotResult, SyncDocument, SyncRequest,
@@ -258,6 +259,33 @@ impl EditorView {
                 },
                 Pending::Save => match decode_reply::<DocumentSave>(&value) {
                     Some(saved) => self.saved(saved),
+                    None => self.status = "saved -".into(),
+                },
+                Pending::SaveThenQuit => match decode_reply::<DocumentSave>(&value) {
+                    Some(saved) => {
+                        self.saved(saved);
+                        self.request_quit(false);
+                    }
+                    None => self.status = "saved -".into(),
+                },
+                Pending::SaveForQuit { remaining } => match decode_reply::<DocumentSave>(&value)
+                {
+                    Some(saved) => {
+                        self.saved(saved);
+                        let mut remaining = remaining;
+                        if let Some(next) = remaining.first().copied() {
+                            remaining.remove(0);
+                            self.request::<DocumentSave>(
+                                DocumentSaveParams {
+                                    document_id: next,
+                                    force: Some(false),
+                                },
+                                Pending::SaveForQuit { remaining },
+                            );
+                        } else {
+                            self.close_requested = true;
+                        }
+                    }
                     None => self.status = "saved -".into(),
                 },
             },

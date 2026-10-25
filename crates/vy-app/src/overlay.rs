@@ -25,6 +25,8 @@ pub enum Overlay {
     Prompt(PromptState),
     /// Capability approval for an external plugin.
     Approval(ApprovalState),
+    /// Unsaved-changes confirmation before quitting the window.
+    QuitConfirm(QuitConfirmState),
     /// Settings list opened by `:set` or `vy.ui.open_settings`.
     Settings(SettingsState),
     /// Choice picker for an enumerated setting.
@@ -41,6 +43,7 @@ impl Overlay {
             Self::Ex(ex) => &ex.input,
             Self::Prompt(prompt) => &prompt.input,
             Self::Approval(approval) => &approval.input,
+            Self::QuitConfirm(quit) => &quit.input,
             Self::Settings(settings) => &settings.input,
             Self::SettingChoice(choice) => &choice.input,
             Self::SettingPrompt(prompt) => &prompt.input,
@@ -53,6 +56,7 @@ impl Overlay {
             Self::Ex(ex) => &mut ex.input,
             Self::Prompt(prompt) => &mut prompt.input,
             Self::Approval(approval) => &mut approval.input,
+            Self::QuitConfirm(quit) => &mut quit.input,
             Self::Settings(settings) => &mut settings.input,
             Self::SettingChoice(choice) => &mut choice.input,
             Self::SettingPrompt(prompt) => &mut prompt.input,
@@ -107,6 +111,7 @@ impl Overlay {
             Self::Palette(palette) => Some(palette.selected),
             Self::Prompt(prompt) => Some(prompt.selected),
             Self::Approval(approval) => Some(approval.selected),
+            Self::QuitConfirm(quit) => Some(quit.selected),
             Self::Settings(settings) => Some(settings.selected),
             Self::SettingChoice(choice) => Some(choice.selected),
             Self::Ex(_) | Self::SettingPrompt(_) => None,
@@ -118,6 +123,7 @@ impl Overlay {
             Self::Palette(palette) => Some(&mut palette.selected),
             Self::Prompt(prompt) => Some(&mut prompt.selected),
             Self::Approval(approval) => Some(&mut approval.selected),
+            Self::QuitConfirm(quit) => Some(&mut quit.selected),
             Self::Settings(settings) => Some(&mut settings.selected),
             Self::SettingChoice(choice) => Some(&mut choice.selected),
             Self::Ex(_) | Self::SettingPrompt(_) => None,
@@ -137,6 +143,7 @@ impl Overlay {
             Self::Palette(palette) => palette.prefix(),
             Self::Prompt(prompt) => prompt.prefix(),
             Self::Approval(approval) => format!("Approve {}? > ", approval.plugin_name),
+            Self::QuitConfirm(_) => "Unsaved changes > ".to_string(),
             Self::Settings(_) => "settings > ".to_string(),
             Self::SettingChoice(choice) => format!("{} > ", choice.key),
             Self::SettingPrompt(prompt) => format!("{} > ", prompt.key),
@@ -156,6 +163,10 @@ impl Overlay {
             Self::Approval(approval) => {
                 approval.input.push_char(character);
                 approval.selected = 0;
+            }
+            Self::QuitConfirm(quit) => {
+                quit.input.push_char(character);
+                quit.selected = 0;
             }
             Self::Settings(settings) => {
                 settings.input.push_char(character);
@@ -182,6 +193,10 @@ impl Overlay {
                 approval.input.push_str(text);
                 approval.selected = 0;
             }
+            Self::QuitConfirm(quit) => {
+                quit.input.push_str(text);
+                quit.selected = 0;
+            }
             Self::Settings(settings) => {
                 settings.input.push_str(text);
                 settings.selected = 0;
@@ -206,6 +221,10 @@ impl Overlay {
             Self::Approval(approval) => {
                 approval.input.pop_char();
                 approval.selected = 0;
+            }
+            Self::QuitConfirm(quit) => {
+                quit.input.pop_char();
+                quit.selected = 0;
             }
             Self::Settings(settings) => {
                 settings.input.pop_char();
@@ -242,6 +261,10 @@ impl Overlay {
             Self::Approval(approval) => {
                 approval.input.clear();
                 approval.selected = 0;
+            }
+            Self::QuitConfirm(quit) => {
+                quit.input.clear();
+                quit.selected = 0;
             }
             Self::Settings(settings) => {
                 settings.input.clear();
@@ -487,6 +510,28 @@ impl ApprovalState {
             plugin_name: plugin_name.into(),
             plugin_version: plugin_version.into(),
             missing,
+            input: TextInput::default(),
+            selected: 0,
+        }
+    }
+}
+
+/// Unsaved-changes confirmation before quitting the window.
+///
+/// The rows are fixed: Save, Discard, Cancel. The view decides what Save
+/// means (save every dirty document, then quit) from its own quit state;
+/// this state only carries the documents to name in the list.
+#[derive(Debug)]
+pub struct QuitConfirmState {
+    pub dirty_documents: Vec<String>,
+    pub input: TextInput,
+    pub selected: usize,
+}
+
+impl QuitConfirmState {
+    pub fn new(dirty_documents: Vec<String>) -> Self {
+        Self {
+            dirty_documents,
             input: TextInput::default(),
             selected: 0,
         }

@@ -26,7 +26,7 @@ use vy_app::text_layout::{
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_client_api::settings::{self, SettingKind, SettingScope};
 use vy_proto::{
-    DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
+    DocumentSave, DocumentSaveParams, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
     PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement, PaneResize,
     PaneResizeParams,
 };
@@ -209,7 +209,31 @@ impl EditorView {
                     self.status = "there is no active document".into();
                     return;
                 };
-                self.request::<DocumentSave>(DocumentIdParams { document_id }, Pending::Save);
+                self.request::<DocumentSave>(
+                    DocumentSaveParams {
+                        document_id,
+                        force: Some(invocation.bang),
+                    },
+                    Pending::Save,
+                );
+            }
+            DocumentCommand::WriteQuit => {
+                let Some(document_id) = self.active_document_id() else {
+                    self.status = "there is no active document".into();
+                    return;
+                };
+                // Save the active document first; on success `request_quit`
+                // still protects any other dirty document with the modal.
+                self.request::<DocumentSave>(
+                    DocumentSaveParams {
+                        document_id,
+                        force: Some(invocation.bang),
+                    },
+                    Pending::SaveThenQuit,
+                );
+            }
+            DocumentCommand::WriteQuitAll => {
+                self.save_all_for_quit(invocation.bang);
             }
             DocumentCommand::Switch => {
                 if let Some(raw) = invocation
@@ -391,7 +415,49 @@ impl EditorView {
         let Some(pane_id) = self.active_pane else {
             return;
         };
+        // The server cannot close the last pane, so `:q` on it quits the
+        // window instead, with the same unsaved-changes protection.
+        let pane_count = self
+            .layout
+            .as_ref()
+            .map(|layout| {
+                let mut pane_ids = Vec::new();
+                collect_pane_ids(layout, &mut pane_ids);
+                pane_ids.len()
+            })
+            .unwrap_or(0);
+        if pane_count <= 1 {
+            self.request_quit(force);
+            return;
+        }
         self.request::<PaneClose>(PaneCloseParams { pane_id, force }, Pending::Close);
+    }
+
+    /// Saves every dirty document, one request at a time, then quits.
+    ///
+    /// When nothing is dirty this asks to quit directly. A failed save
+    /// stops the sequence and leaves the window open, with the error in
+    /// the status line, so the user can retry with `:w!` or discard.
+    pub(super) fn save_all_for_quit(&mut self, force: bool) {
+        let mut dirty_ids: Vec<u64> = self
+            .dirty_documents()
+            .iter()
+            .map(|doc| doc.id)
+            .collect();
+        let Some(first) = dirty_ids.first().copied() else {
+            self.request_quit(force);
+            return;
+        };
+        dirty_ids.remove(0);
+        self.request::<DocumentSave>(
+            DocumentSaveParams {
+                document_id: first,
+                force: Some(force),
+            },
+            Pending::SaveForQuit {
+                remaining: dirty_ids,
+            },
+        );
     }
 
     pub(super) fn focus_direction(&mut self, direction: &str) {
@@ -427,6 +493,27 @@ impl EditorView {
                 &approval.plugin_name,
                 &approval.missing,
             ),
+            Some(Overlay::QuitConfirm(quit)) => {
+                let mut items = vec![
+                    PickerItem::new("save", "Save")
+                        .with_description("Save every unsaved document, then quit")
+                        .with_group("Action"),
+                    PickerItem::new("discard", "Discard")
+                        .with_description("Quit without saving unsaved changes")
+                        .with_group("Action"),
+                    PickerItem::new("cancel", "Cancel")
+                        .with_description("Keep editing; do not quit")
+                        .with_group("Action"),
+                ];
+                for uri in &quit.dirty_documents {
+                    items.push(
+                        PickerItem::new(format!("doc:{uri}"), uri.clone())
+                            .with_description("Unsaved document")
+                            .with_group("Document"),
+                    );
+                }
+                items
+            }
             Some(Overlay::Settings(_)) => self.setting_items(),
             Some(Overlay::SettingChoice(choice)) => setting_choice_items(choice),
             _ => Vec::new(),
@@ -924,6 +1011,7 @@ impl EditorView {
             Some(Overlay::Ex(_)) => self.handle_ex_key(key),
             Some(Overlay::Prompt(_)) => self.handle_prompt_key(key),
             Some(Overlay::Approval(_)) => self.handle_approval_key(key),
+            Some(Overlay::QuitConfirm(_)) => self.handle_quit_confirm_key(key),
             Some(Overlay::Settings(_)) => self.handle_settings_key(key),
             Some(Overlay::SettingChoice(_)) => self.handle_setting_choice_key(key),
             Some(Overlay::SettingPrompt(_)) => self.handle_setting_prompt_key(key),
@@ -1056,6 +1144,48 @@ impl EditorView {
                 } else {
                     // The user selected an info row; keep the dialog open.
                     self.overlay = Some(Overlay::Approval(approval));
+                }
+            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_quit_confirm_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                // Cancel: keep editing and do not close the window.
+                self.overlay = None;
+            }
+            Key::Enter => {
+                let Some(id) = self.overlay_selected_id() else {
+                    return;
+                };
+                let Some(Overlay::QuitConfirm(_)) = self.overlay.take() else {
+                    return;
+                };
+                if id == "save" {
+                    self.save_all_for_quit(false);
+                } else if id == "discard" {
+                    self.close_requested = true;
+                } else if id == "cancel" {
+                    // Modal is already closed; nothing else to do.
+                } else {
+                    // The user selected a document row; keep the dialog open.
+                    // Rebuild it from the current dirty documents so the list
+                    // cannot go stale while the modal is open.
+                    self.request_quit(false);
                 }
             }
             Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
@@ -1483,6 +1613,9 @@ impl EditorView {
             UiCommand::CommandPalette => self.open_palette(),
             UiCommand::ExCommandLine => self.open_ex(),
             UiCommand::OpenSettings => self.open_settings(),
+            UiCommand::QuitAll => {
+                self.request_quit(invocation.bang);
+            }
             UiCommand::ReconnectServer => {
                 self.reconnect_requested = true;
                 self.status = "reconnecting".into();

@@ -244,6 +244,19 @@ impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let started = Instant::now();
 
+        // The titlebar close button has no view access, so it signals
+        // through a shared flag that is consumed here, where a `Window`
+        // is available. `request_quit` may open the unsaved-changes modal
+        // instead of closing; `close_requested` is set by command and
+        // modal paths that already decided to quit.
+        if self.quit_request_flag.get() {
+            self.quit_request_flag.set(false);
+            self.request_quit(false);
+        }
+        if self.close_requested {
+            window.remove_window();
+        }
+
         self.apply_config_change(cx);
         self.char_width = ui::pane::font_character_width(&self.config, window);
 
@@ -810,6 +823,7 @@ impl EditorView {
             is_dirty,
             window,
             self.titlebar_press.clone(),
+            self.quit_request_flag.clone(),
             |window| {
                 #[cfg(target_os = "macos")]
                 window.titlebar_double_click();

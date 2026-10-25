@@ -26,7 +26,7 @@ use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState};
 use vy_app::ex::ExHistory;
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
-use vy_app::overlay::{ApprovalState, Overlay};
+use vy_app::overlay::{ApprovalState, Overlay, QuitConfirmState};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
@@ -54,6 +54,12 @@ pub(super) enum Pending {
     Resize,
     EditorOpen,
     Save,
+    /// A single save started by `:wq`; on success the view asks to quit,
+    /// which may still open the unsaved-changes modal for other documents.
+    SaveThenQuit,
+    /// A save-all started for quitting. The remaining dirty document ids
+    /// are saved one at a time; on the last success the window closes.
+    SaveForQuit { remaining: Vec<u64> },
     HostCall {
         request: vy_js::HostRequest,
         runtime: Option<String>,
@@ -154,6 +160,12 @@ pub struct EditorView {
     /// once the pointer leaves this point, so that double clicks still reach
     /// the titlebar instead of being swallowed by the compositor's move grab.
     titlebar_press: Rc<Cell<Option<Point<Pixels>>>>,
+    /// Set by the titlebar close button, which has no view access of its
+    /// own. The next render consumes it through `request_quit`.
+    quit_request_flag: Rc<Cell<bool>>,
+    /// Set when quitting may proceed. The next render closes the window;
+    /// this keeps window closing in the one place that has a `Window`.
+    close_requested: bool,
     last_reported_document_id: Option<u64>,
     last_reported_selections: Option<Vec<vy_core::Selection>>,
     pub(super) pending_view_for_next_open: Option<String>,
@@ -280,6 +292,8 @@ impl EditorView {
             gutter: GutterRegistry::new(),
             hover: None,
             titlebar_press: Rc::new(Cell::new(None)),
+            quit_request_flag: Rc::new(Cell::new(false)),
+            close_requested: false,
             last_reported_document_id: None,
             last_reported_selections: None,
             pending_view_for_next_open: None,
@@ -332,6 +346,52 @@ impl EditorView {
     fn active_document_mut(&mut self) -> Option<&mut DocumentState> {
         let id = self.active_document_id()?;
         self.documents.get_mut(&id)
+    }
+
+    /// Dirty documents, in document-id order, for the quit modal.
+    fn dirty_documents(&self) -> Vec<&DocumentState> {
+        let mut documents: Vec<&DocumentState> =
+            self.documents.values().filter(|doc| doc.is_dirty()).collect();
+        documents.sort_by_key(|doc| doc.id);
+        documents
+    }
+
+    /// The single entry point for quitting the window.
+    ///
+    /// Returns true when the window may close now. With `force`, or when
+    /// nothing is dirty, that is immediate. Otherwise it opens the
+    /// unsaved-changes modal and returns false; the window must not close
+    /// until the user chooses Save or Discard there. Callers that have a
+    /// `Window` close it when this returns true; command paths set
+    /// `close_requested` instead and let the next render close the window.
+    pub(crate) fn request_quit(&mut self, force: bool) -> bool {
+        if force {
+            self.overlay = None;
+            self.close_requested = true;
+            return true;
+        }
+        let dirty_uris: Vec<String> = self
+            .dirty_documents()
+            .iter()
+            .map(|doc| doc.uri.clone())
+            .collect();
+        if dirty_uris.is_empty() {
+            self.close_requested = true;
+            return true;
+        }
+        self.overlay = Some(Overlay::QuitConfirm(QuitConfirmState::new(dirty_uris)));
+        false
+    }
+
+    /// View-side hook for an OS-originated close request.
+    ///
+    /// Returns true when the window may close now and false when the
+    /// unsaved-changes modal was opened instead. Wire this to
+    /// `window.on_window_should_close` once the gpui-pre listener form is
+    /// confirmed against a local build; the titlebar and command paths
+    /// already go through `request_quit`.
+    pub(crate) fn handle_window_should_close(&mut self) -> bool {
+        self.request_quit(false)
     }
 
     /// The active editor, or a blank one when no pane is ready yet.

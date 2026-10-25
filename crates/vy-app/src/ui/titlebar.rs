@@ -32,12 +32,20 @@ const MAC_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 ///
 /// `press` is shared with the view so a drag can be told apart from a click
 /// across frames.
+/// Renders the custom window titlebar.
+///
+/// `press` is shared with the view so a drag can be told apart from a click
+/// across frames. `quit_request` is set by the close button instead of closing the window
+/// directly: the titlebar has no view access, so the view consumes the flag
+/// on the next render through `EditorView::request_quit`, which can open the
+/// unsaved-changes modal instead of closing.
 pub fn render_titlebar(
     theme: &Theme,
     title: impl Into<SharedString>,
     is_dirty: bool,
     window: &mut Window,
     press: Rc<Cell<Option<Point<Pixels>>>>,
+    quit_request: Rc<Cell<bool>>,
     on_double_click: impl Fn(&mut Window) + 'static,
 ) -> impl IntoElement {
     let title: SharedString = title.into();
@@ -126,7 +134,7 @@ pub fn render_titlebar(
 
     let titlebar = titlebar.child(title);
     if shows_window_buttons {
-        titlebar.child(render_window_buttons(theme))
+        titlebar.child(render_window_buttons(theme, quit_request))
     } else {
         titlebar
     }
@@ -139,7 +147,7 @@ enum WindowButtonIcon {
     Close,
 }
 
-fn render_window_buttons(theme: &Theme) -> impl IntoElement {
+fn render_window_buttons(theme: &Theme, quit_request: Rc<Cell<bool>>) -> impl IntoElement {
     let foreground = theme.titlebar.foreground;
     let hover_background = theme.background.surface;
 
@@ -167,7 +175,11 @@ fn render_window_buttons(theme: &Theme) -> impl IntoElement {
             foreground,
             hover_background,
             WindowButtonIcon::Close,
-            |window| window.remove_window(),
+            move |_window| {
+                // Do not close here: the view consumes this flag on the
+                // next render and may show the unsaved-changes modal.
+                quit_request.set(true);
+            },
         ))
 }
 

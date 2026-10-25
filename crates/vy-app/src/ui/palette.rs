@@ -130,6 +130,11 @@ fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
             empty: "no matching options",
             hint: "Enter choose  ·  Esc deny  ·  Up/Down move",
         },
+        Overlay::QuitConfirm(quit) => OverlayLabels {
+            count: format!("{} unsaved document(s)", quit.dirty_documents.len()),
+            empty: "no matching options",
+            hint: "Enter choose  ·  Esc cancel  ·  Up/Down move",
+        },
         Overlay::Settings(_) => OverlayLabels {
             count: format!("{filtered_count} settings"),
             empty: "no matching settings",
