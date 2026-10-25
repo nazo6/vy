@@ -2,8 +2,9 @@
 
 use gpui::ScrollStrategy;
 use vy_app::commands::{
-    BuiltinCommand, DocumentCommand, Invocation, InvocationArgs, Owner, PaletteVisibility,
-    PaneCommand, UiCommand, ViewCommand, parse_ex_line, resolve_ex_name,
+    ArgKind, BuiltinCommand, CommandSource, DocumentCommand, ExAddress, ExRange, Invocation,
+    InvocationSource, LineRange, Owner, PaletteVisibility, PaneCommand, RangeSpec, UiCommand,
+    ViewCommand, argument_error, parse_ex_args, parse_ex_line, resolve_ex_name, validate_json_args,
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
@@ -47,39 +48,23 @@ impl EditorView {
     ) {
         match command {
             DocumentCommand::Open => {
-                let path_or_uri = if let Some(raw) = invocation.ex_raw() {
-                    Some(raw.trim().to_string())
-                } else if let InvocationArgs::Script(val) = &invocation.args {
-                    if let Some(s) = val.as_str() {
-                        Some(s.trim().to_string())
-                    } else if let Some(obj) = val.as_object() {
-                        obj.get("uri")
-                            .or_else(|| obj.get("path"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim().to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                let path_or_uri = invocation
+                    .args
+                    .string("uri")
+                    .or_else(|| invocation.args.string("path"))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string);
 
                 let Some(path_or_uri) = path_or_uri else {
                     self.status = "editor.open requires a path".into();
                     return;
                 };
-                if path_or_uri.is_empty() {
-                    self.status = "editor.open requires a path".into();
-                    return;
-                }
 
-                let target_pane_id = if let InvocationArgs::Script(val) = &invocation.args {
-                    val.get("pane_id")
-                        .or_else(|| val.get("paneId"))
-                        .and_then(|v| v.as_u64())
-                } else {
-                    None
-                };
+                let target_pane_id = invocation
+                    .args
+                    .u64("paneId")
+                    .or_else(|| invocation.args.u64("pane_id"));
 
                 let target_pane = target_pane_id.or_else(|| {
                     if let Some(active_id) = self.active_pane {
@@ -115,8 +100,9 @@ impl EditorView {
             }
             DocumentCommand::Save => {
                 if invocation
-                    .ex_raw()
-                    .is_some_and(|raw| !raw.trim().is_empty())
+                    .args
+                    .string("path")
+                    .is_some_and(|path| !path.trim().is_empty())
                 {
                     self.status = "saving to another path is not supported yet".into();
                     return;
@@ -128,7 +114,11 @@ impl EditorView {
                 self.request::<DocumentSave>(DocumentIdParams { document_id }, Pending::Save);
             }
             DocumentCommand::Switch => {
-                if let Some(raw) = invocation.ex_raw() {
+                if let Some(raw) = invocation
+                    .args
+                    .string("document")
+                    .or_else(|| invocation.args.string("uri"))
+                {
                     let raw = raw.trim();
                     if !raw.is_empty() {
                         // Switch directly to matching document if argument provided.
@@ -360,6 +350,17 @@ impl EditorView {
                     })
                     .collect()
             }
+            PaletteMode::Arguments { spec, index, .. } => {
+                let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
+                match required.get(index) {
+                    Some(arg) if arg.kind == ArgKind::Choice => arg
+                        .choices
+                        .iter()
+                        .map(|choice| PickerItem::new(*choice, *choice))
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
             PaletteMode::Custom { ref items, .. } => items.clone(),
             PaletteMode::Approval {
                 ref plugin_id,
@@ -431,6 +432,123 @@ impl EditorView {
         self.status = "ex command".into();
     }
 
+    /// Starts collecting the required arguments of a palette command.
+    fn begin_palette_command(&mut self, id: String) {
+        let Some(descriptor) = self
+            .commands
+            .descriptors()
+            .into_iter()
+            .find(|command| command.id == id)
+        else {
+            return;
+        };
+        let required = descriptor
+            .args
+            .args()
+            .iter()
+            .filter(|arg| arg.required)
+            .count();
+        if required == 0 {
+            self.enqueue_command(Invocation::palette(id));
+            return;
+        }
+
+        let title = descriptor.title;
+        let arg_name = descriptor
+            .args
+            .args()
+            .iter()
+            .find(|arg| arg.required)
+            .map(|arg| arg.name)
+            .unwrap_or("");
+        self.palette = Some(PaletteState::with_mode(PaletteMode::Arguments {
+            command_id: id,
+            title: title.clone(),
+            spec: descriptor.args,
+            values: serde_json::Map::new(),
+            index: 0,
+        }));
+        self.palette_scroll_handle
+            .scroll_to_item(0, ScrollStrategy::Top);
+        self.status = format!("{title}: {arg_name}").into();
+    }
+
+    /// Stores the current argument and either asks for the next one or runs the command.
+    fn confirm_palette_argument(&mut self) {
+        let Some(palette) = self.palette.as_ref() else {
+            return;
+        };
+        let PaletteMode::Arguments {
+            command_id,
+            title,
+            spec,
+            values,
+            index,
+        } = &palette.mode
+        else {
+            return;
+        };
+        let command_id = command_id.clone();
+        let title = title.clone();
+        let spec = *spec;
+        let mut values = values.clone();
+        let index = *index;
+        let query = palette.query.trim().to_string();
+
+        let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
+        let Some(arg) = required.get(index).copied() else {
+            return;
+        };
+        let value = if arg.kind == ArgKind::Choice {
+            match self.palette_selected_id() {
+                Some(value) => value,
+                None => {
+                    self.status = format!("missing argument: {}", arg.name).into();
+                    return;
+                }
+            }
+        } else {
+            query
+        };
+        if value.is_empty() {
+            self.status = format!("missing argument: {}", arg.name).into();
+            return;
+        }
+        values.insert(arg.name.to_string(), serde_json::Value::String(value));
+
+        let next_index = index + 1;
+        if next_index < required.len() {
+            if let Some(palette) = self.palette.as_mut() {
+                palette.query.clear();
+                palette.preedit.clear();
+                palette.selected = 0;
+                if let PaletteMode::Arguments {
+                    values: current,
+                    index,
+                    ..
+                } = &mut palette.mode
+                {
+                    *current = values;
+                    *index = next_index;
+                }
+            }
+            self.status = format!("{title}: {}", required[next_index].name).into();
+            self.palette_scroll_handle
+                .scroll_to_item(0, ScrollStrategy::Top);
+            return;
+        }
+
+        match validate_json_args(spec, &serde_json::Value::Object(values)) {
+            Ok(values) => {
+                self.palette = None;
+                self.enqueue_command(Invocation::palette_with_args(command_id, values));
+            }
+            Err(error) => {
+                self.status = argument_error(&command_id, spec, &error).into();
+            }
+        }
+    }
+
     pub(super) fn handle_ex_key(&mut self, key: Key) {
         match key {
             Key::Esc => {
@@ -495,11 +613,81 @@ impl EditorView {
             self.status = format!("Ex command `{}` does not accept `!`", parsed.name).into();
             return;
         }
+        let values = match parse_ex_args(command.args, &parsed.args) {
+            Ok(values) => values,
+            Err(error) => {
+                self.status = argument_error(&parsed.name, command.args, &error).into();
+                return;
+            }
+        };
+        let range = match parsed.range {
+            Some(range) => {
+                if command.range == RangeSpec::None {
+                    self.status =
+                        format!("Ex command `{}` does not accept a range", parsed.name).into();
+                    return;
+                }
+                match self.resolve_ex_range(range) {
+                    Ok(range) => Some(range),
+                    Err(error) => {
+                        self.status = error.into();
+                        return;
+                    }
+                }
+            }
+            None => None,
+        };
         let id = command.id.clone();
 
         let bang_str = if parsed.bang { "!" } else { "" };
         self.status = format!(":{}{}", parsed.name, bang_str).into();
-        self.enqueue_command(Invocation::ex(id, parsed.args).with_bang(parsed.bang));
+        self.enqueue_command(
+            Invocation::ex(id, values)
+                .with_range(range)
+                .with_bang(parsed.bang),
+        );
+    }
+
+    /// Resolves parsed Ex addresses against the active document.
+    fn resolve_ex_range(&self, range: ExRange) -> Result<LineRange, String> {
+        let Some(document) = self.active_document() else {
+            return Err("Ex range requires an active document".into());
+        };
+        let line_count = document.editor.line_count().max(1) as u32;
+        let cursor_line = document.editor.cursor().line + 1;
+        let last_visual = document.editor.last_visual();
+
+        let resolve = |address: ExAddress| -> Result<u32, String> {
+            let line = match address {
+                ExAddress::Line(line) => line,
+                ExAddress::Current => cursor_line,
+                ExAddress::Last => line_count,
+                ExAddress::LastVisualStart => last_visual
+                    .map(|range| range.start.line + 1)
+                    .ok_or("no previous Visual range")?,
+                ExAddress::LastVisualEnd => last_visual
+                    .map(|range| range.end.line + 1)
+                    .ok_or("no previous Visual range")?,
+                ExAddress::Relative(delta) => {
+                    let line = cursor_line as i64 + delta;
+                    if line < 1 {
+                        return Err(format!("line {line} is out of range"));
+                    }
+                    line as u32
+                }
+            };
+            if line == 0 || line > line_count {
+                return Err(format!("line {line} is out of range"));
+            }
+            Ok(line)
+        };
+
+        let start = resolve(range.start)?;
+        let end = resolve(range.end)?;
+        if start > end {
+            return Err(format!("range start {start} is after end {end}"));
+        }
+        Ok(LineRange { start, end })
     }
 
     pub(super) fn show_next_approval_prompt(&mut self) {
@@ -516,6 +704,15 @@ impl EditorView {
     pub(super) fn handle_palette_key(&mut self, key: Key) -> bool {
         match key {
             Key::Esc => {
+                if matches!(
+                    self.palette.as_ref().map(|palette| &palette.mode),
+                    Some(PaletteMode::Arguments { .. })
+                ) {
+                    self.palette = Some(PaletteState::with_mode(PaletteMode::Commands));
+                    self.palette_scroll_handle
+                        .scroll_to_item(0, ScrollStrategy::Top);
+                    return true;
+                }
                 let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
                 match mode {
                     PaletteMode::Custom {
@@ -538,13 +735,20 @@ impl EditorView {
                 return true;
             }
             Key::Enter => {
+                if matches!(
+                    self.palette.as_ref().map(|palette| &palette.mode),
+                    Some(PaletteMode::Arguments { .. })
+                ) {
+                    self.confirm_palette_argument();
+                    return true;
+                }
                 let Some(id) = self.palette_selected_id() else {
                     return true;
                 };
                 let mode = self.palette.take().map(|p| p.mode).unwrap_or_default();
                 match mode {
                     PaletteMode::Commands => {
-                        self.enqueue_command(Invocation::palette(id));
+                        self.begin_palette_command(id);
                     }
                     PaletteMode::Documents => {
                         self.request::<EditorOpen>(
@@ -590,6 +794,7 @@ impl EditorView {
                             }));
                         }
                     }
+                    PaletteMode::Arguments { .. } => {}
                 }
                 return true;
             }
@@ -673,6 +878,20 @@ impl EditorView {
         let id = invocation.id.clone();
         self.activate_plugins_for_command(&id);
 
+        if invocation.source != InvocationSource::Script {
+            let descriptors = self.commands.descriptors();
+            if let Some(descriptor) = descriptors.iter().find(|command| command.id == id)
+                && !matches!(
+                    descriptor.source,
+                    CommandSource::Init | CommandSource::Plugin(_)
+                )
+                && let Err(error) = validate_json_args(descriptor.args, &invocation.args.values)
+            {
+                self.status = argument_error(&id, descriptor.args, &error).into();
+                return false;
+            }
+        }
+
         if let Some(command) = UiCommand::parse(&id) {
             self.run_ui_command(command, &invocation);
             return false;
@@ -707,15 +926,7 @@ impl EditorView {
         if self.commands.is_registered(&id) {
             // Script commands run on the script thread. Any edits they make come
             // back as host requests.
-            let args = match &invocation.args {
-                InvocationArgs::Script(value) => value.clone(),
-                InvocationArgs::Keymap(args) => serde_json::json!({
-                    "count": args.count,
-                    "register": args.register.map(|register| register.to_string()),
-                }),
-                InvocationArgs::Ex { raw } => serde_json::json!({ "raw": raw }),
-                InvocationArgs::None => serde_json::json!({}),
-            };
+            let args = invocation.args.values.clone();
             self.running_command = Some(id.clone());
             self.execute_script_command(&id, args);
             self.status = format!("running {id}").into();
@@ -735,37 +946,36 @@ impl EditorView {
                 self.status = "reconnecting".into();
             }
             UiCommand::ScriptEval => {
-                let Some(raw) = invocation.ex_raw() else {
+                let Some(code) = invocation.args.string("code") else {
                     self.status = "script.eval requires an expression".into();
                     return;
                 };
-                let raw = raw.trim();
-                if raw.is_empty() {
+                let code = code.trim();
+                if code.is_empty() {
                     self.status = "script.eval requires an expression".into();
                     return;
                 }
                 if let Some(plugin) = self.plugin.as_ref() {
-                    plugin.eval(raw);
+                    plugin.eval(code);
                 } else {
                     self.status = "the script host is not running".into();
                 }
             }
             UiCommand::ViewOpen => {
-                let (view_id, direction) = parse_view_args(invocation);
-                if let Some(view_id) = view_id {
-                    self.open_view_pane(&view_id, &direction);
+                if let Some(view_id) = invocation.args.string("view") {
+                    let direction = invocation.args.string("direction").unwrap_or("left");
+                    self.open_view_pane(view_id, direction);
                 }
             }
             UiCommand::ViewClose => {
-                let (view_id, _) = parse_view_args(invocation);
-                if let Some(view_id) = view_id {
-                    self.close_view_pane(&view_id);
+                if let Some(view_id) = invocation.args.string("view") {
+                    self.close_view_pane(view_id);
                 }
             }
             UiCommand::ViewToggle => {
-                let (view_id, direction) = parse_view_args(invocation);
-                if let Some(view_id) = view_id {
-                    self.toggle_view_pane(&view_id, &direction);
+                if let Some(view_id) = invocation.args.string("view") {
+                    let direction = invocation.args.string("direction").unwrap_or("left");
+                    self.toggle_view_pane(view_id, direction);
                 }
             }
         }
@@ -777,14 +987,32 @@ impl EditorView {
         if cmd.is_empty() {
             return;
         }
-        let (id, args) = match cmd.split_once(' ') {
+        let (id, raw) = match cmd.split_once(char::is_whitespace) {
             Some((id, args)) => (id, Some(args.trim())),
             None => (cmd, None),
         };
-        let invocation = if let Some(raw) = args {
-            Invocation::ex(id, raw)
-        } else {
-            Invocation::palette(id)
+        let descriptors = self.commands.descriptors();
+        let Some(descriptor) = descriptors.iter().find(|command| command.id == id) else {
+            self.status = format!("unknown command: {id}").into();
+            return;
+        };
+        let invocation = match raw {
+            None => Invocation::palette(id),
+            Some(raw)
+                if matches!(
+                    descriptor.source,
+                    CommandSource::Init | CommandSource::Plugin(_)
+                ) =>
+            {
+                Invocation::script(id, serde_json::json!({ "raw": raw }))
+            }
+            Some(raw) => match parse_ex_args(descriptor.args, raw) {
+                Ok(values) => Invocation::ex(id, values),
+                Err(error) => {
+                    self.status = argument_error(id, descriptor.args, &error).into();
+                    return;
+                }
+            },
         };
         self.execute_invocation(invocation);
     }
@@ -853,34 +1081,5 @@ impl EditorView {
         } else {
             self.open_view_pane(view_id, direction);
         }
-    }
-}
-
-fn parse_view_args(invocation: &Invocation) -> (Option<String>, String) {
-    if let Some(raw) = invocation.ex_raw() {
-        let parts: Vec<&str> = raw.split_whitespace().collect();
-        let view_id = parts.first().map(|s| s.to_string());
-        let dir = parts.get(1).unwrap_or(&"left").to_string();
-        (view_id, dir)
-    } else if let InvocationArgs::Script(val) = &invocation.args {
-        if let Some(s) = val.as_str() {
-            (Some(s.to_string()), "left".to_string())
-        } else if let Some(obj) = val.as_object() {
-            let view_id = obj
-                .get("view")
-                .or_else(|| obj.get("id"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let dir = obj
-                .get("direction")
-                .and_then(|v| v.as_str())
-                .unwrap_or("left")
-                .to_string();
-            (view_id, dir)
-        } else {
-            (None, "left".to_string())
-        }
-    } else {
-        (None, "left".to_string())
     }
 }

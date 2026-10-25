@@ -1,6 +1,8 @@
 //! State and item filtering for the command palette.
 
-use crate::commands::CommandDescriptor;
+use serde_json::{Map, Value};
+
+use crate::commands::{ArgSpec, CommandDescriptor};
 
 pub use vy_client_api::palette::PickerItem;
 
@@ -23,6 +25,15 @@ pub enum PaletteMode {
     Commands,
     /// Document / buffer picker for switching open documents.
     Documents,
+    /// Collects one required argument of a command after the palette selection.
+    Arguments {
+        command_id: String,
+        title: String,
+        spec: ArgSpec,
+        values: Map<String, Value>,
+        /// Index into the required arguments of `spec`.
+        index: usize,
+    },
     /// Custom picker triggered by a script or plugin via `ui.picker.show`.
     Custom {
         id: String,

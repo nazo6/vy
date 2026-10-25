@@ -7,7 +7,8 @@ use vy_host_api::{CallError, Reply};
 
 use super::ClientHost;
 use crate::commands::{
-    BuiltinCommand, CommandArgs, CommandDescriptor, DocumentCommand, PaneCommand, UiCommand,
+    BuiltinCommand, CommandDescriptor, CommandSource, DocumentCommand, KeymapArgs, PaneCommand,
+    UiCommand, argument_error, validate_json_args,
 };
 use crate::plugin_host::HostAction;
 
@@ -24,6 +25,28 @@ impl CommandsApi for ClientHost<'_, '_, '_> {
 
     fn execute(&mut self, params: CommandsExecuteParams) -> Result<Reply<()>, CallError> {
         let id = params.id;
+        let descriptor = self
+            .call
+            .context
+            .commands
+            .descriptors()
+            .into_iter()
+            .find(|command| command.id == id);
+
+        if let Some(descriptor) = &descriptor
+            && !matches!(
+                descriptor.source,
+                CommandSource::Init | CommandSource::Plugin(_)
+            )
+            && let Err(error) = validate_json_args(descriptor.args, &params.args)
+        {
+            return Err(CallError::invalid_params(argument_error(
+                &id,
+                descriptor.args,
+                &error,
+            )));
+        }
+
         let arguments = if params.args.is_null() {
             None
         } else {
@@ -91,8 +114,8 @@ fn command_info(command: &CommandDescriptor) -> CommandInfo {
     }
 }
 
-fn command_args(value: &serde_json::Value) -> CommandArgs {
-    CommandArgs {
+fn command_args(value: &serde_json::Value) -> KeymapArgs {
+    KeymapArgs {
         count: value
             .get("count")
             .and_then(serde_json::Value::as_u64)

@@ -380,7 +380,7 @@ fn file_stamp(path: &Path) -> Option<SystemTime> {
 mod tests {
     use super::*;
     use crate::color::ThemeColor;
-    use crate::commands::{CommandArgs, Owner};
+    use crate::commands::Owner;
     use crate::keymap::KeyContext;
     use crate::statusline::StatuslineAlignment;
     use serde_json::json;
@@ -500,7 +500,8 @@ mod tests {
             outcome,
             crate::keymap::KeymapOutcome::Command {
                 id: "user.hello".to_string(),
-                args: CommandArgs::default()
+                args: crate::commands::KeymapArgs::default(),
+                values: serde_json::Value::Null,
             }
         );
     }

@@ -185,7 +185,7 @@ Vim
 
 | 項目                                                       | 状態     | 備考                                                                      |
 | :--------------------------------------------------------- | :------- | :------------------------------------------------------------------------ |
-| `keymap.bind(keys, target, options?)`                      | 実装済み | 後から登録したものが優先。`options.when` か `options.mode` で条件を付ける |
+| `keymap.bind({ keys, command, when?, args? })`             | 実装済み | 後から登録したものが優先。`when` で条件を付ける。`args` は `ArgSpec` で検証する |
 | `keymap.unbind({ keys })`                                  | 実装済み | 一致するキー列をすべて外す（既定の束縛も対象）                            |
 | `keymap.setContext({ key, value })`                        | 実装済み | `when` から参照できる。真偽値・文字列・数値                               |
 | `keymap.registerMode(definition)`                          | 未実装   | 優先度 P2                                                                 |

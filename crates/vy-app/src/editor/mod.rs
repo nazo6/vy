@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use vy_core::{EditError, Position, Range, Selection, Text, TextEdit};
 
-use crate::commands::{BuiltinCommand, CommandArgs};
+use crate::commands::{BuiltinCommand, KeymapArgs};
 
 pub use crate::keymap::{Key, Mode};
 
@@ -295,6 +295,11 @@ impl Editor {
         self.last_visual = Some(Range::new(start, end));
     }
 
+    /// The last recorded Visual range, used by Ex addresses such as `'<`.
+    pub fn last_visual(&self) -> Option<Range> {
+        self.last_visual
+    }
+
     /// Restores the last Visual range. Does nothing when none was recorded.
     pub fn select_last_visual(&mut self) -> Action {
         let Some(range) = self.last_visual else {
@@ -320,7 +325,7 @@ impl Editor {
     }
 
     /// Runs a built-in command. The keymap supplies the count and register.
-    pub fn execute(&mut self, command: BuiltinCommand, args: CommandArgs) -> Action {
+    pub fn execute(&mut self, command: BuiltinCommand, args: KeymapArgs) -> Action {
         let count = args.count.unwrap_or(1).max(1);
         self.active_register = args.register.and_then(register_index);
 

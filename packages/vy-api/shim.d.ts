@@ -39,11 +39,13 @@ declare function bind<K extends string & (BuiltinCommandId | keyof Vy.CommandMap
     keys: string;
     command: K;
     when?: string | null;
+    args?: unknown;
 }): Promise<void>;
 declare function bind(params: {
     keys: string;
     command: string;
     when?: string | null;
+    args?: unknown;
 }): Promise<void>;
 export declare const keymap: KeymapApi & {
     bind: typeof bind;

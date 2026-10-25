@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 
 use serde_json::Value as JsonValue;
-use vy_core::Range;
 
 pub use vy_client_api::command::{
     Arg, ArgKind, ArgSpec, BuiltinCommand, CommandCategory, CommandMeta, DocumentCommand,
@@ -21,13 +20,60 @@ pub enum Owner {
     Plugin(String),
 }
 
-/// Arguments passed from the keymap to a command.
+/// Count and register prefixes captured by the keymap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct CommandArgs {
+pub struct KeymapArgs {
     /// Count typed before the key sequence (`5` in `5j`).
     pub count: Option<u32>,
     /// Register chosen with `"`, as a lowercase letter.
     pub register: Option<char>,
+}
+
+/// Arguments passed to a command, independent of the entry point.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CommandArgs {
+    /// Values produced by the command's [`ArgSpec`], or the script's own JSON.
+    pub values: JsonValue,
+    /// Count typed before a key sequence.
+    pub count: Option<u32>,
+    /// Register chosen with `"`.
+    pub register: Option<char>,
+}
+
+impl CommandArgs {
+    pub fn keymap(args: KeymapArgs) -> Self {
+        Self {
+            values: JsonValue::Null,
+            count: args.count,
+            register: args.register,
+        }
+    }
+
+    pub fn values(values: JsonValue) -> Self {
+        Self {
+            values,
+            ..Self::default()
+        }
+    }
+
+    pub fn value(&self, name: &str) -> Option<&JsonValue> {
+        self.values.get(name)
+    }
+
+    pub fn string(&self, name: &str) -> Option<&str> {
+        self.value(name).and_then(JsonValue::as_str)
+    }
+
+    pub fn u64(&self, name: &str) -> Option<u64> {
+        self.value(name).and_then(JsonValue::as_u64)
+    }
+
+    pub fn keymap_args(&self) -> KeymapArgs {
+        KeymapArgs {
+            count: self.count,
+            register: self.register,
+        }
+    }
 }
 
 /// Where a command came from. The palette shows this next to the title.
@@ -111,33 +157,35 @@ pub enum InvocationSource {
     Script,
 }
 
-/// Arguments in the shape each entry point can provide.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum InvocationArgs {
-    #[default]
-    None,
-    Keymap(CommandArgs),
-    Script(JsonValue),
-    Ex {
-        raw: String,
-    },
-}
-
 /// One command call, before it reaches the registry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Invocation {
     pub id: String,
-    pub args: InvocationArgs,
-    pub range: Option<Range>,
+    pub args: CommandArgs,
+    pub range: Option<LineRange>,
     pub bang: bool,
     pub source: InvocationSource,
 }
 
 impl Invocation {
-    pub fn keymap(id: impl Into<String>, args: CommandArgs) -> Self {
+    pub fn keymap(id: impl Into<String>, args: KeymapArgs) -> Self {
         Self {
             id: id.into(),
-            args: InvocationArgs::Keymap(args),
+            args: CommandArgs::keymap(args),
+            range: None,
+            bang: false,
+            source: InvocationSource::Keymap,
+        }
+    }
+
+    pub fn keymap_with_args(id: impl Into<String>, args: KeymapArgs, values: JsonValue) -> Self {
+        Self {
+            id: id.into(),
+            args: CommandArgs {
+                values,
+                count: args.count,
+                register: args.register,
+            },
             range: None,
             bang: false,
             source: InvocationSource::Keymap,
@@ -147,45 +195,50 @@ impl Invocation {
     pub fn palette(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
-            args: InvocationArgs::None,
+            args: CommandArgs::default(),
             range: None,
             bang: false,
             source: InvocationSource::Palette,
         }
     }
 
-    pub fn ex(id: impl Into<String>, raw: impl Into<String>) -> Self {
+    pub fn palette_with_args(id: impl Into<String>, values: JsonValue) -> Self {
         Self {
             id: id.into(),
-            args: InvocationArgs::Ex { raw: raw.into() },
+            args: CommandArgs::values(values),
+            range: None,
+            bang: false,
+            source: InvocationSource::Palette,
+        }
+    }
+
+    pub fn ex(id: impl Into<String>, values: JsonValue) -> Self {
+        Self {
+            id: id.into(),
+            args: CommandArgs::values(values),
             range: None,
             bang: false,
             source: InvocationSource::Ex,
         }
     }
 
-    pub fn script(id: impl Into<String>, args: JsonValue) -> Self {
+    pub fn script(id: impl Into<String>, values: JsonValue) -> Self {
         Self {
             id: id.into(),
-            args: InvocationArgs::Script(args),
+            args: CommandArgs::values(values),
             range: None,
             bang: false,
             source: InvocationSource::Script,
         }
     }
 
-    pub fn keymap_args(&self) -> CommandArgs {
-        match self.args {
-            InvocationArgs::Keymap(args) => args,
-            _ => CommandArgs::default(),
-        }
+    pub fn keymap_args(&self) -> KeymapArgs {
+        self.args.keymap_args()
     }
 
-    pub fn ex_raw(&self) -> Option<&str> {
-        match &self.args {
-            InvocationArgs::Ex { raw } => Some(raw),
-            _ => None,
-        }
+    pub fn with_range(mut self, range: Option<LineRange>) -> Self {
+        self.range = range;
+        self
     }
 
     pub fn with_bang(mut self, bang: bool) -> Self {
@@ -194,9 +247,35 @@ impl Invocation {
     }
 }
 
+/// A 1-based inclusive line range resolved on the client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// One unresolved address in an Ex range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExAddress {
+    Line(u32),
+    Current,
+    Last,
+    LastVisualStart,
+    LastVisualEnd,
+    Relative(i64),
+}
+
+/// An unresolved Ex range, before the client knows the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExRange {
+    pub start: ExAddress,
+    pub end: ExAddress,
+}
+
 /// One parsed Ex command line, without the leading `:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExCommandLine {
+    pub range: Option<ExRange>,
     pub name: String,
     pub bang: bool,
     pub args: String,
@@ -206,11 +285,19 @@ pub struct ExCommandLine {
 pub enum ExParseError {
     #[error("empty Ex command")]
     Empty,
+    #[error("invalid Ex range: {0}")]
+    InvalidRange(String),
 }
 
-/// Parses `name[!] [args]`. Ranges are reserved for a later step.
+/// Parses `[range] name[!] [args]`.
 pub fn parse_ex_line(input: &str) -> Result<ExCommandLine, ExParseError> {
     let input = input.trim_start();
+    if input.is_empty() {
+        return Err(ExParseError::Empty);
+    }
+
+    let (range, rest) = parse_ex_range(input)?;
+    let input = rest.trim_start();
     if input.is_empty() {
         return Err(ExParseError::Empty);
     }
@@ -232,10 +319,82 @@ pub fn parse_ex_line(input: &str) -> Result<ExCommandLine, ExParseError> {
     };
 
     Ok(ExCommandLine {
+        range,
         name,
         bang,
         args: rest.trim_start().to_string(),
     })
+}
+
+fn parse_ex_range(input: &str) -> Result<(Option<ExRange>, &str), ExParseError> {
+    let mut end = 0;
+    for (index, character) in input.char_indices() {
+        if character.is_whitespace() || character == '!' || !is_address_character(character) {
+            break;
+        }
+        end = index + character.len_utf8();
+    }
+    if end == 0 {
+        return Ok((None, input));
+    }
+
+    let token = &input[..end];
+    let rest = &input[end..];
+    if token == "%" {
+        return Ok((
+            Some(ExRange {
+                start: ExAddress::Line(1),
+                end: ExAddress::Last,
+            }),
+            rest,
+        ));
+    }
+
+    let mut parts = token.split(',');
+    let start = parse_ex_address(parts.next().unwrap_or(""))?;
+    let end = match parts.next() {
+        Some(part) => parse_ex_address(part)?,
+        None => start,
+    };
+    if parts.next().is_some() {
+        return Err(ExParseError::InvalidRange(token.to_string()));
+    }
+    Ok((Some(ExRange { start, end }), rest))
+}
+
+fn is_address_character(character: char) -> bool {
+    character.is_ascii_digit()
+        || matches!(
+            character,
+            '.' | '$' | '\'' | '<' | '>' | '+' | '-' | ',' | '%'
+        )
+}
+
+fn parse_ex_address(text: &str) -> Result<ExAddress, ExParseError> {
+    match text {
+        "." => Ok(ExAddress::Current),
+        "$" => Ok(ExAddress::Last),
+        "'<" => Ok(ExAddress::LastVisualStart),
+        "'>" => Ok(ExAddress::LastVisualEnd),
+        "" => Err(ExParseError::InvalidRange(String::new())),
+        _ if text.starts_with('+') => Ok(ExAddress::Relative(parse_relative(text, 1)?)),
+        _ if text.starts_with('-') => Ok(ExAddress::Relative(parse_relative(text, -1)?)),
+        _ => text
+            .parse::<u32>()
+            .map(ExAddress::Line)
+            .map_err(|_| ExParseError::InvalidRange(text.to_string())),
+    }
+}
+
+fn parse_relative(text: &str, sign: i64) -> Result<i64, ExParseError> {
+    let digits = &text[1..];
+    if digits.is_empty() {
+        return Ok(sign);
+    }
+    digits
+        .parse::<i64>()
+        .map(|number| sign * number)
+        .map_err(|_| ExParseError::InvalidRange(text.to_string()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -247,6 +406,209 @@ pub enum ExResolveError {
         name: String,
         candidates: Vec<String>,
     },
+}
+
+/// Why a command's arguments could not be parsed or validated.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ArgumentError {
+    #[error("this command does not take arguments")]
+    NoArguments,
+    #[error("missing argument: {0}")]
+    Missing(&'static str),
+    #[error("too many arguments: {0}")]
+    Unexpected(String),
+    #[error("invalid value for {name}: {value}")]
+    Invalid { name: &'static str, value: String },
+    #[error("unterminated quote")]
+    UnterminatedQuote,
+}
+
+/// Parses the raw text after an Ex command name into an argument object.
+pub fn parse_ex_args(spec: ArgSpec, raw: &str) -> Result<JsonValue, ArgumentError> {
+    let raw = raw.trim();
+    if spec.is_none() {
+        if raw.is_empty() {
+            return Ok(JsonValue::Object(serde_json::Map::new()));
+        }
+        return Err(ArgumentError::NoArguments);
+    }
+
+    let args = spec.args();
+    if args.len() == 1 && args[0].rest {
+        if raw.is_empty() {
+            return Err(ArgumentError::Missing(args[0].name));
+        }
+        let mut values = serde_json::Map::new();
+        values.insert(
+            args[0].name.to_string(),
+            parse_arg_value(&args[0], raw.to_string())?,
+        );
+        return Ok(JsonValue::Object(values));
+    }
+
+    let mut tokens = split_argument_tokens(raw)?.into_iter();
+    let mut values = serde_json::Map::new();
+    for arg in args {
+        let Some(token) = tokens.next() else {
+            if arg.required {
+                return Err(ArgumentError::Missing(arg.name));
+            }
+            continue;
+        };
+        values.insert(arg.name.to_string(), parse_arg_value(arg, token)?);
+    }
+    if let Some(extra) = tokens.next() {
+        return Err(ArgumentError::Unexpected(extra));
+    }
+    Ok(JsonValue::Object(values))
+}
+
+/// Validates a JSON argument object against a command's argument declaration.
+pub fn validate_json_args(spec: ArgSpec, value: &JsonValue) -> Result<JsonValue, ArgumentError> {
+    if spec.is_none() {
+        return match value {
+            JsonValue::Null => Ok(JsonValue::Object(serde_json::Map::new())),
+            JsonValue::Object(object)
+                if object.keys().all(|key| key == "count" || key == "register") =>
+            {
+                Ok(JsonValue::Object(serde_json::Map::new()))
+            }
+            _ => Err(ArgumentError::NoArguments),
+        };
+    }
+
+    let Some(object) = value.as_object() else {
+        if value.is_null() {
+            if let Some(required) = spec.args().iter().find(|arg| arg.required) {
+                return Err(ArgumentError::Missing(required.name));
+            }
+            return Ok(JsonValue::Object(serde_json::Map::new()));
+        }
+        return Err(ArgumentError::Invalid {
+            name: spec.args().first().map(|arg| arg.name).unwrap_or("args"),
+            value: value.to_string(),
+        });
+    };
+
+    let args = spec.args();
+    let mut values = serde_json::Map::new();
+    for arg in args {
+        let Some(value) = object.get(arg.name) else {
+            if arg.required {
+                return Err(ArgumentError::Missing(arg.name));
+            }
+            continue;
+        };
+        let text = match value {
+            JsonValue::String(text) => text.clone(),
+            JsonValue::Number(number) => number.to_string(),
+            other => {
+                return Err(ArgumentError::Invalid {
+                    name: arg.name,
+                    value: other.to_string(),
+                });
+            }
+        };
+        values.insert(arg.name.to_string(), parse_arg_value(arg, text)?);
+    }
+    if let Some(key) = object.keys().find(|key| {
+        *key != "count" && *key != "register" && !args.iter().any(|arg| arg.name == *key)
+    }) {
+        return Err(ArgumentError::Unexpected(key.clone()));
+    }
+    Ok(JsonValue::Object(values))
+}
+
+fn parse_arg_value(arg: &Arg, value: String) -> Result<JsonValue, ArgumentError> {
+    match arg.kind {
+        ArgKind::Text | ArgKind::Path | ArgKind::Document => Ok(JsonValue::String(value)),
+        ArgKind::Number => {
+            value
+                .parse::<i64>()
+                .map(JsonValue::from)
+                .map_err(|_| ArgumentError::Invalid {
+                    name: arg.name,
+                    value,
+                })
+        }
+        ArgKind::Choice => {
+            if arg.choices.contains(&value.as_str()) {
+                Ok(JsonValue::String(value))
+            } else {
+                Err(ArgumentError::Invalid {
+                    name: arg.name,
+                    value,
+                })
+            }
+        }
+    }
+}
+
+fn split_argument_tokens(raw: &str) -> Result<Vec<String>, ArgumentError> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut has_token = false;
+
+    for character in raw.chars() {
+        match quote {
+            Some(quote_character) if character == quote_character => {
+                quote = None;
+                has_token = true;
+            }
+            Some(_) => {
+                current.push(character);
+                has_token = true;
+            }
+            None if character.is_whitespace() => {
+                if has_token {
+                    tokens.push(std::mem::take(&mut current));
+                    has_token = false;
+                }
+            }
+            None if character == '"' || character == '\'' => {
+                quote = Some(character);
+                has_token = true;
+            }
+            None => {
+                current.push(character);
+                has_token = true;
+            }
+        }
+    }
+
+    if quote.is_some() {
+        return Err(ArgumentError::UnterminatedQuote);
+    }
+    if has_token {
+        tokens.push(current);
+    }
+    Ok(tokens)
+}
+
+/// A human-readable argument list such as `<uri> [direction]`.
+pub fn usage(spec: ArgSpec) -> String {
+    spec.args()
+        .iter()
+        .map(|arg| {
+            if arg.required {
+                format!("<{}>", arg.name)
+            } else {
+                format!("[{}]", arg.name)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Formats an argument error with the command's usage.
+pub fn argument_error(name: &str, spec: ArgSpec, error: &ArgumentError) -> String {
+    let usage = usage(spec);
+    if usage.is_empty() {
+        format!("{error}")
+    } else {
+        format!("{error} (usage: :{name} {usage})")
+    }
 }
 
 /// Resolves an exact Ex name or a unique prefix to a command descriptor.
@@ -574,7 +936,7 @@ mod tests {
 
     #[test]
     fn invocations_keep_their_source_and_arguments() {
-        let args = CommandArgs {
+        let args = KeymapArgs {
             count: Some(3),
             register: Some('a'),
         };
@@ -582,10 +944,11 @@ mod tests {
         assert_eq!(invocation.source, InvocationSource::Keymap);
         assert_eq!(invocation.keymap_args(), args);
 
-        let invocation = Invocation::ex("vy.pane.close", "").with_bang(true);
+        let values = serde_json::json!({});
+        let invocation = Invocation::ex("vy.pane.close", values.clone()).with_bang(true);
         assert_eq!(invocation.source, InvocationSource::Ex);
         assert!(invocation.bang);
-        assert_eq!(invocation.args, InvocationArgs::Ex { raw: String::new() });
+        assert_eq!(invocation.args.values, values);
     }
 
     #[test]
@@ -616,6 +979,7 @@ mod tests {
         assert_eq!(
             parse_ex_line("sp"),
             Ok(ExCommandLine {
+                range: None,
                 name: "sp".to_string(),
                 bang: false,
                 args: String::new(),
@@ -624,6 +988,7 @@ mod tests {
         assert_eq!(
             parse_ex_line("  close!"),
             Ok(ExCommandLine {
+                range: None,
                 name: "close".to_string(),
                 bang: true,
                 args: String::new(),
@@ -632,12 +997,90 @@ mod tests {
         assert_eq!(
             parse_ex_line("e  src/main.rs"),
             Ok(ExCommandLine {
+                range: None,
                 name: "e".to_string(),
                 bang: false,
                 args: "src/main.rs".to_string(),
             })
         );
         assert_eq!(parse_ex_line("   "), Err(ExParseError::Empty));
+    }
+
+    #[test]
+    fn parses_ex_ranges() {
+        let range = |start, end| Some(ExRange { start, end });
+
+        assert_eq!(
+            parse_ex_line("1,5d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Line(1), ExAddress::Line(5)),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("%w"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Line(1), ExAddress::Last),
+                name: "w".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line(".d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Current, ExAddress::Current),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("$d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Last, ExAddress::Last),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("'<,'>d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::LastVisualStart, ExAddress::LastVisualEnd),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("+2d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Relative(2), ExAddress::Relative(2)),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("-1d"),
+            Ok(ExCommandLine {
+                range: range(ExAddress::Relative(-1), ExAddress::Relative(-1)),
+                name: "d".into(),
+                bang: false,
+                args: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_ex_line("1,2,3d"),
+            Err(ExParseError::InvalidRange("1,2,3".into()))
+        );
+        assert_eq!(
+            parse_ex_line("1.5d"),
+            Err(ExParseError::InvalidRange("1.5".into()))
+        );
     }
 
     #[test]
@@ -710,8 +1153,8 @@ mod tests {
             find("vy.ui.command_palette").palette,
             PaletteVisibility::Hidden
         );
-        assert_eq!(find("vy.editor.open").palette, PaletteVisibility::Hidden);
-        assert_eq!(find("vy.view.open").palette, PaletteVisibility::Hidden);
+        assert_eq!(find("vy.editor.open").palette, PaletteVisibility::Listed);
+        assert_eq!(find("vy.view.open").palette, PaletteVisibility::Listed);
         assert_eq!(find("vy.document.save").palette, PaletteVisibility::Listed);
         assert_eq!(
             find("vy.pane.split_right").palette,
@@ -759,6 +1202,101 @@ mod tests {
         assert_eq!(view.args.args()[1].kind, ArgKind::Choice);
 
         assert!(find("vy.pane.close").bang);
+    }
+
+    #[test]
+    fn parses_ex_arguments_into_a_typed_object() {
+        const VIEW: ArgSpec = ArgSpec::Positionals(&[
+            Arg::required("view", ArgKind::Text),
+            Arg::choice("direction", &["left", "right"], false),
+        ]);
+        const OPEN: ArgSpec = ArgSpec::Positionals(&[Arg::rest("uri", ArgKind::Path)]);
+        const TWO: ArgSpec = ArgSpec::Positionals(&[
+            Arg::required("first", ArgKind::Text),
+            Arg::required("second", ArgKind::Text),
+        ]);
+
+        assert_eq!(
+            parse_ex_args(VIEW, "tree left"),
+            Ok(serde_json::json!({ "view": "tree", "direction": "left" }))
+        );
+        assert_eq!(
+            parse_ex_args(VIEW, "tree"),
+            Ok(serde_json::json!({ "view": "tree" }))
+        );
+        assert_eq!(parse_ex_args(VIEW, ""), Err(ArgumentError::Missing("view")));
+        assert_eq!(
+            parse_ex_args(VIEW, "tree sideways"),
+            Err(ArgumentError::Invalid {
+                name: "direction",
+                value: "sideways".into(),
+            })
+        );
+        assert_eq!(
+            parse_ex_args(VIEW, "tree left extra"),
+            Err(ArgumentError::Unexpected("extra".into()))
+        );
+        assert_eq!(
+            parse_ex_args(OPEN, "src/a file.rs"),
+            Ok(serde_json::json!({ "uri": "src/a file.rs" }))
+        );
+        assert_eq!(
+            parse_ex_args(TWO, r#""a b" c"#),
+            Ok(serde_json::json!({ "first": "a b", "second": "c" }))
+        );
+        assert_eq!(
+            parse_ex_args(TWO, "\"unterminated"),
+            Err(ArgumentError::UnterminatedQuote)
+        );
+        assert_eq!(parse_ex_args(ArgSpec::None, ""), Ok(serde_json::json!({})));
+        assert_eq!(
+            parse_ex_args(ArgSpec::None, "extra"),
+            Err(ArgumentError::NoArguments)
+        );
+    }
+
+    #[test]
+    fn validates_json_arguments() {
+        const OPEN: ArgSpec = ArgSpec::Positionals(&[Arg::rest("uri", ArgKind::Path)]);
+        const OPTIONAL: ArgSpec =
+            ArgSpec::Positionals(&[Arg::optional("document", ArgKind::Document)]);
+
+        assert_eq!(
+            validate_json_args(OPEN, &serde_json::json!({ "uri": "src/main.rs" })),
+            Ok(serde_json::json!({ "uri": "src/main.rs" }))
+        );
+        assert_eq!(
+            validate_json_args(OPEN, &serde_json::json!({ "path": "src/main.rs" })),
+            Err(ArgumentError::Missing("uri"))
+        );
+        assert_eq!(
+            validate_json_args(
+                OPEN,
+                &serde_json::json!({ "uri": "src/main.rs", "extra": 1 })
+            ),
+            Err(ArgumentError::Unexpected("extra".into()))
+        );
+        assert_eq!(
+            validate_json_args(OPEN, &serde_json::json!({})),
+            Err(ArgumentError::Missing("uri"))
+        );
+        assert_eq!(
+            validate_json_args(OPEN, &serde_json::Value::Null),
+            Err(ArgumentError::Missing("uri"))
+        );
+        assert_eq!(
+            validate_json_args(OPTIONAL, &serde_json::Value::Null),
+            Ok(serde_json::json!({}))
+        );
+        assert_eq!(
+            validate_json_args(ArgSpec::None, &serde_json::json!({ "count": 2 })),
+            Ok(serde_json::json!({}))
+        );
+        assert_eq!(
+            validate_json_args(ArgSpec::None, &serde_json::json!({ "extra": 1 })),
+            Err(ArgumentError::NoArguments)
+        );
+        assert_eq!(usage(OPEN), "<uri>");
     }
 
     #[test]

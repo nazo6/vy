@@ -14,7 +14,13 @@ impl KeymapApi for ClientHost<'_, '_, '_> {
         self.call
             .context
             .keymap
-            .bind(&params.keys, params.command, params.when.as_deref(), owner)
+            .bind_with_args(
+                &params.keys,
+                params.command,
+                params.when.as_deref(),
+                params.args.unwrap_or(serde_json::Value::Null),
+                owner,
+            )
             .map_err(|error| CallError::invalid_state(error.to_string()))?;
         Ok(Reply::Value(()))
     }

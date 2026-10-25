@@ -185,17 +185,19 @@ export const fs = methods<FsApi>("fs");
 
 const keymapBase = methods<KeymapApi>("keymap");
 function bind<K extends string & (BuiltinCommandId | keyof Vy.CommandMap)>(
-  params: { keys: string; command: K; when?: string | null },
+  params: { keys: string; command: K; when?: string | null; args?: unknown },
 ): Promise<void>;
 function bind(params: {
   keys: string;
   command: string;
   when?: string | null;
+  args?: unknown;
 }): Promise<void>;
 function bind(params: {
   keys: string;
   command: string;
   when?: string | null;
+  args?: unknown;
 }): Promise<void> {
   call("keymap.bind", params);
   return Promise.resolve();

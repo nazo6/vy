@@ -15,6 +15,11 @@ vy.commands.execute({ id: "vy.history.undo" });
 vy.commands.execute({ id: "test.ping" });
 vy.keymap.bind({ keys: "x", command: "test.add" });
 vy.keymap.bind({ keys: "x", command: "vy.history.undo" });
+vy.keymap.bind({
+    keys: "x",
+    command: "vy.editor.open",
+    args: { uri: "README.md" },
+});
 
 // @ts-expect-error a known command requires all of its arguments
 vy.commands.execute({ id: "test.add", args: { a: 1 } });

@@ -4,12 +4,14 @@ use serde::{Deserialize, Serialize};
 use vy_host_api::{CallError, Reply};
 
 /// `keymap.bind` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct KeymapBindParams {
     pub keys: String,
     pub command: String,
     #[serde(default)]
     pub when: Option<String>,
+    #[serde(default)]
+    pub args: Option<serde_json::Value>,
 }
 
 /// `keymap.unbind` parameters.

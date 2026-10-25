@@ -325,6 +325,7 @@ export type KeymapBindParams = {
 	keys: string,
 	command: string,
 	when?: string | null,
+	args?: Value | null,
 };
 
 /**  `keymap.setContext` parameters. */

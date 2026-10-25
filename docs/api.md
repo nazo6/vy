@@ -257,7 +257,7 @@ version と一致したときだけ確定します。
 | `commands.register(descriptor, handler)` | local    | なし           | P1（予定） |
 | `commands.execute({ id, args? })`        | both     | なし           | P0         |
 | `commands.getCommands()`                 | local    | なし           | P1         |
-| `keymap.bind({ keys, command, when? })`  | local    | なし           | P0         |
+| `keymap.bind({ keys, command, when?, args? })` | local    | なし           | P0         |
 | `keymap.unbind({ keys })`                | local    | なし           | P0         |
 | `keymap.setContext({ key, value })`      | local    | なし           | P0         |
 | `keymap.registerMode(definition)`        | local    | なし           | P2         |
@@ -274,6 +274,8 @@ version と一致したときだけ確定します。
 `commands.getCommands` は `CommandInfo[]` を返します。各要素は `id`、`title`、
 `category`、`palette`、`exNames`、`args`、`range`、`bang` を持ちます。形は
 [`commands.md`](./commands.md) の「データモデル」と「プラグイン」にあります。
+`commands.execute`、`keymap.bind` の `args`、Ex の引数は、コマンドが宣言した
+`ArgSpec` で検証します。必須引数の不足や未知のキーはエラーになります。
 
 Phase 3 で入れたペイン操作（`vy.pane.split_right`、`vy.pane.focus_left`、
 `vy.pane.close` など）は、キーマップと同じ ID で `commands.getCommands` に現れ、

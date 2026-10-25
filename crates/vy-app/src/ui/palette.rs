@@ -88,6 +88,10 @@ pub fn render_palette(
     let count_label = match &palette.mode {
         PaletteMode::Commands => format!("{filtered_count} commands"),
         PaletteMode::Documents => format!("{filtered_count} documents"),
+        PaletteMode::Arguments { spec, index, .. } => {
+            let required = spec.args().iter().filter(|arg| arg.required).count();
+            format!("{} / {required}", index + 1)
+        }
         PaletteMode::Custom { .. } => format!("{filtered_count} items"),
         PaletteMode::Approval { missing, .. } => format!("{} permission(s)", missing.len()),
     };
@@ -98,6 +102,15 @@ pub fn render_palette(
             ..
         } => format!("{p} > "),
         PaletteMode::Approval { plugin_name, .. } => format!("Approve {plugin_name}? > "),
+        PaletteMode::Arguments {
+            title, spec, index, ..
+        } => {
+            let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
+            match required.get(*index) {
+                Some(arg) => format!("{title} · {} > ", arg.name),
+                None => format!("{title} > "),
+            }
+        }
         _ => "> ".to_string(),
     };
 
@@ -137,6 +150,14 @@ pub fn render_palette(
     let empty_label = match &palette.mode {
         PaletteMode::Commands => "no matching commands",
         PaletteMode::Documents => "no matching documents",
+        PaletteMode::Arguments { spec, index, .. } => {
+            let required: Vec<_> = spec.args().iter().filter(|arg| arg.required).collect();
+            match required.get(*index) {
+                Some(arg) if arg.choices.is_empty() => "type a value and press Enter",
+                Some(_) => "no matching choices",
+                None => "argument",
+            }
+        }
         PaletteMode::Custom { .. } => "no matching items",
         PaletteMode::Approval { .. } => "no matching options",
     };
@@ -182,6 +203,7 @@ pub fn render_palette(
     let hint_label = match &palette.mode {
         PaletteMode::Commands => "Enter run  ·  Esc close  ·  Up/Down move",
         PaletteMode::Documents => "Enter switch  ·  Esc close  ·  Up/Down move",
+        PaletteMode::Arguments { .. } => "Enter confirm  ·  Esc back",
         PaletteMode::Custom { .. } => "Enter select  ·  Esc close  ·  Up/Down move",
         PaletteMode::Approval { .. } => "Enter choose  ·  Esc deny  ·  Up/Down move",
     };

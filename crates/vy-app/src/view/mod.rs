@@ -653,8 +653,8 @@ impl EditorView {
         };
 
         match self.keymap.feed(key, &context) {
-            KeymapOutcome::Command { id, args } => {
-                self.enqueue_command(Invocation::keymap(id, args));
+            KeymapOutcome::Command { id, args, values } => {
+                self.enqueue_command(Invocation::keymap_with_args(id, args, values));
             }
             KeymapOutcome::Pending | KeymapOutcome::Ignored => {}
         }

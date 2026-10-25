@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 
-use crate::commands::{CommandArgs, Owner};
+use crate::commands::{KeymapArgs, Owner};
 use crate::when::{self, Expr, Value};
 
 pub use vy_client_api::keymap::Mode;
@@ -135,18 +136,23 @@ pub struct Binding {
     pub keys: Vec<Key>,
     pub command: String,
     pub when: Option<Expr>,
+    pub values: JsonValue,
     pub owner: Owner,
 }
 
 /// Result of feeding one key to the keymap.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum KeymapOutcome {
     /// More keys are needed to complete a binding.
     Pending,
     /// No binding matched; the key is not consumed.
     Ignored,
     /// A binding completed.
-    Command { id: String, args: CommandArgs },
+    Command {
+        id: String,
+        args: KeymapArgs,
+        values: JsonValue,
+    },
 }
 
 /// Key bindings plus the partially typed sequence.
@@ -184,10 +190,11 @@ impl Keymap {
                 .map_err(|error| KeymapError::DefaultKeymap(error.to_string()))?;
 
         for spec in specs {
-            keymap.bind(
+            keymap.bind_with_args(
                 &spec.keys,
                 spec.command,
                 spec.when.as_deref(),
+                spec.args.unwrap_or(JsonValue::Null),
                 Owner::Builtin,
             )?;
         }
@@ -202,6 +209,18 @@ impl Keymap {
         when: Option<&str>,
         owner: Owner,
     ) -> Result<(), KeymapError> {
+        self.bind_with_args(keys, command, when, JsonValue::Null, owner)
+    }
+
+    /// Adds a binding with explicit command arguments.
+    pub fn bind_with_args(
+        &mut self,
+        keys: &str,
+        command: impl Into<String>,
+        when: Option<&str>,
+        values: JsonValue,
+        owner: Owner,
+    ) -> Result<(), KeymapError> {
         let keys = parse_sequence(keys)?;
         let condition = match when {
             Some(source) => Some(when::parse(source).map_err(KeymapError::When)?),
@@ -211,6 +230,7 @@ impl Keymap {
             keys,
             command: command.into(),
             when: condition,
+            values,
             owner,
         });
         Ok(())
@@ -326,14 +346,15 @@ impl Keymap {
 
         if let Some(index) = exact {
             let binding = &self.bindings[index];
-            let args = CommandArgs {
+            let args = KeymapArgs {
                 count: self.count.take(),
                 register: self.register.take(),
             };
             let id = binding.command.clone();
+            let values = binding.values.clone();
             self.pending.clear();
             self.last_key = None;
-            return KeymapOutcome::Command { id, args };
+            return KeymapOutcome::Command { id, args, values };
         }
 
         if prefix {
@@ -381,6 +402,8 @@ struct BindingSpec {
     command: String,
     #[serde(default)]
     when: Option<String>,
+    #[serde(default)]
+    args: Option<JsonValue>,
 }
 
 /// Why a binding could not be built.
@@ -408,9 +431,9 @@ mod tests {
         KeyContext::default()
     }
 
-    fn command(outcome: KeymapOutcome) -> (String, CommandArgs) {
+    fn command(outcome: KeymapOutcome) -> (String, KeymapArgs) {
         match outcome {
-            KeymapOutcome::Command { id, args } => (id, args),
+            KeymapOutcome::Command { id, args, .. } => (id, args),
             other => panic!("expected a command: {other:?}"),
         }
     }
@@ -459,7 +482,7 @@ mod tests {
             let context = KeyContext { mode, ..normal() };
             let (id, args) = command(keymap.feed(key, &context));
             assert_eq!(id, expected, "key {key:?} in {mode:?}");
-            assert_eq!(args, CommandArgs::default());
+            assert_eq!(args, KeymapArgs::default());
         }
     }
 
@@ -499,6 +522,34 @@ mod tests {
         );
         let (_, args) = command(keymap.feed(Key::Char('p'), &context));
         assert_eq!(args.register, Some('a'));
+    }
+
+    #[test]
+    fn passes_binding_arguments() {
+        let mut keymap = Keymap::new(Duration::from_millis(500));
+        keymap
+            .bind_with_args(
+                "g z",
+                "user.hello",
+                None,
+                serde_json::json!({ "name": "Ada" }),
+                Owner::Init,
+            )
+            .expect("bind");
+        let context = normal();
+
+        assert_eq!(
+            keymap.feed(Key::Char('g'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('z'), &context),
+            KeymapOutcome::Command {
+                id: "user.hello".to_string(),
+                args: KeymapArgs::default(),
+                values: serde_json::json!({ "name": "Ada" }),
+            }
+        );
     }
 
     #[test]

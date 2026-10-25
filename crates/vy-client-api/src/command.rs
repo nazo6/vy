@@ -187,7 +187,7 @@ impl CommandMeta {
     }
 }
 
-const PATH_ARGS: &[Arg] = &[Arg::rest("path", ArgKind::Path)];
+const PATH_ARGS: &[Arg] = &[Arg::rest("uri", ArgKind::Path)];
 const DOCUMENT_ARGS: &[Arg] = &[Arg::optional("document", ArgKind::Document)];
 const CODE_ARGS: &[Arg] = &[Arg::rest("code", ArgKind::Text)];
 const VIEW_ID_ARGS: &[Arg] = &[Arg::required("view", ArgKind::Text)];
@@ -255,9 +255,7 @@ define_command_enum! {
 impl DocumentCommand {
     pub fn meta(self) -> CommandMeta {
         match self {
-            // Hidden until the palette can prompt for the path (Phase 2).
-            Self::Open => CommandMeta::hidden(CommandCategory::File)
-                .with_ex_names(&["e", "edit"])
+            Self::Open => CommandMeta::listed(CommandCategory::File, &["e", "edit"])
                 .with_args(ArgSpec::Positionals(PATH_ARGS)),
             Self::Save => CommandMeta::listed(CommandCategory::File, &["w", "write"]),
             Self::Switch => CommandMeta::listed(CommandCategory::File, &["b", "buffer"])
@@ -288,14 +286,11 @@ impl UiCommand {
                 .with_ex_names(&["ts"])
                 .with_args(ArgSpec::Positionals(CODE_ARGS)),
             Self::ReconnectServer => CommandMeta::listed(CommandCategory::App, &["reconnect"]),
-            Self::ViewOpen => CommandMeta::hidden(CommandCategory::View)
-                .with_ex_names(&["view"])
+            Self::ViewOpen => CommandMeta::listed(CommandCategory::View, &["view"])
                 .with_args(ArgSpec::Positionals(VIEW_OPEN_ARGS)),
-            Self::ViewClose => CommandMeta::hidden(CommandCategory::View)
-                .with_ex_names(&["view-close"])
+            Self::ViewClose => CommandMeta::listed(CommandCategory::View, &["view-close"])
                 .with_args(ArgSpec::Positionals(VIEW_ID_ARGS)),
-            Self::ViewToggle => CommandMeta::hidden(CommandCategory::View)
-                .with_ex_names(&["view-toggle"])
+            Self::ViewToggle => CommandMeta::listed(CommandCategory::View, &["view-toggle"])
                 .with_args(ArgSpec::Positionals(VIEW_ID_ARGS)),
         }
     }

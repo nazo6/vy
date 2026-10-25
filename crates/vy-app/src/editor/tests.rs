@@ -44,7 +44,7 @@ impl Harness {
         }
 
         match self.keymap.feed(key, &self.context()) {
-            KeymapOutcome::Command { id, args } => {
+            KeymapOutcome::Command { id, args, .. } => {
                 let command = BuiltinCommand::parse(&id).expect("built-in command");
                 self.editor.execute(command, args)
             }
