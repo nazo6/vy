@@ -37,7 +37,6 @@ flowchart TD
 
 ### ① 開発ガイド・方針
 - [`development.md`](./development.md): 開発環境、言語ルール、テスト・ビルド・検証の手順。
-- [`roadmap.md`](./roadmap.md): 実装フェーズの全体計画と現在の進捗。
 
 ### ② 生きた仕様書 (Living Specs)
 「いまシステムがどう設計・実装されているか」の唯一の正解（SSOT）です。常に最新の状態にメンテナンスされます。一覧は [`specs/`](./specs/README.md) にあります。

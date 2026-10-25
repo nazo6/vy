@@ -21,7 +21,6 @@ Vy の開発方針です。作業を始める前に [`docs/README.md`](./docs/RE
 - **未決定事項・検討案**: [`docs/proposals/`](./docs/proposals/README.md)
 - **作業ログ**: [`docs/worklogs/`](./docs/worklogs/README.md)
 - **開発方針・運用ルール**: [`docs/development.md`](./docs/development.md)
-- **実装ロードマップ**: [`docs/roadmap.md`](./docs/roadmap.md)
 
 ## 検証
 

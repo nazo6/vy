@@ -55,8 +55,6 @@
   - ユーザー設定、プロジェクト、プラグインのパッケージ、リポジトリの構成
 - [**通信プロトコル仕様 (`docs/specs/protocol.md`)**](./docs/specs/protocol.md)
   - Pure Rust `rmp-serde` によるMessagePackバイナリRPCメッセージ構造
-- [**ロードマップ (`docs/roadmap.md`)**](./docs/roadmap.md)
-  - 実装フェーズ（Phase 1〜6）と、決定済みの項目、残っている論点
 - [**開発方針 (`docs/development.md`)**](./docs/development.md)
   - 言語、エラー、状態の所在、ビルドと検証の決まり
 - [**アーキテクチャ決定記録 (`docs/adr/`)**](./docs/adr/README.md)

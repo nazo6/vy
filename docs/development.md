@@ -7,8 +7,7 @@ updated_at: 2026-10-25
 # 開発方針
 
 このファイルは、リポジトリで作業するときの共通の決まりをまとめたものです。
-画面の設計は [`specs/architecture.md`](./specs/architecture.md)、実装の順序は
-[`roadmap.md`](./roadmap.md) にあります。
+画面の設計は [`specs/architecture.md`](./specs/architecture.md) にあります。
 
 ## 1. 言語
 
