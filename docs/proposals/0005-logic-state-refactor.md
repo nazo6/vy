@@ -156,18 +156,25 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ### Phase 0: 先行して直す小さな不整合
 
-- [ ] `ViewState.selection` の更新を `Editor::view_state()`
+- [x] `ViewState.selection` の更新を `Editor::view_state()`
       経由に限定する（`set_view_state`
       でも再計算するか、フィールドを削除してアクセサにする）。
-- [ ] `chunk_line` の `.chunks.clone()` 経路を洗い出し、`Arc<LineChunks>` を返す
+  - 派生値のため**フィールドを削除**した。描画直前に
+    `Editor::range_for(mode, anchor, head)` で求める（`EditorPaintData.selection`）。
+- [x] `chunk_line` の `.chunks.clone()` 経路を洗い出し、`Arc<LineChunks>` を返す
       API に統一する（`ui/pane.rs` の方式に寄せる）。
-- [ ] `active_register` の解除漏れがないかテストで固定する（早期 return
+  - 本番の 10 箇所を `cached_chunk_line` に置換。`chunk_line` 系は本番から削除し、
+    テスト用のヘルパーは `text_layout` の `mod tests` に移した。
+- [x] `active_register` の解除漏れがないかテストで固定する（早期 return
       を含む経路）。
-- [ ] `reconnect_requested` のポーリング依存を洗い出し、Phase D
+- [x] `reconnect_requested` のポーリング依存を洗い出し、Phase D
       の置き換え対象として記録する。
 
 完了条件: `cargo test -p vy-app --lib` が通り、`chunk_line` の呼び出し箇所が
 `cached_chunk_line` だけになる。
+
+実施記録: [`../worklogs/2026-10-26-logic-state-refactor.md`](../worklogs/2026-10-26-logic-state-refactor.md)
+（2026-10-26 完了。`vy-app` の lib テストは 196 → 200 件）。
 
 ### Phase A: 視覚行モデル（効果最大）
 
