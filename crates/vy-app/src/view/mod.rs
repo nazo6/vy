@@ -67,6 +67,17 @@ pub(super) struct PluginRuntime {
     pub(super) started: bool,
 }
 
+/// How the open overlay handles a key before the editor sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayTarget {
+    /// `:` in an empty palette switches to the Ex line.
+    OpenEx,
+    /// Printable text reaches the input handler.
+    Text,
+    /// The overlay handles the key itself.
+    Key,
+}
+
 /// Active drag operation resizing a split.
 #[derive(Debug, Clone)]
 pub(super) struct SplitDragState {
@@ -639,19 +650,15 @@ impl EditorView {
         let key = ui::key::convert_key(&event.keystroke);
 
         if self.overlay.is_some() {
-            if let Some(key) = key {
-                if self.opens_ex_from_palette(key) {
-                    self.open_ex();
-                    self.sync_modal_focus(window, cx);
-                    cx.stop_propagation();
-                    cx.notify();
-                    return;
+            match key.map(|key| self.overlay_target(key)) {
+                Some(OverlayTarget::OpenEx) => self.open_ex(),
+                // Printable text reaches the input handler via `replace_text_in_range`.
+                Some(OverlayTarget::Text) => {}
+                Some(OverlayTarget::Key) | None => {
+                    if let Some(key) = key {
+                        self.handle_overlay_key(key);
+                    }
                 }
-                if matches!(key, Key::Char(_)) {
-                    // Printable text reaches input handler via replace_text_in_range
-                    return;
-                }
-                self.handle_overlay_key(key);
             }
             self.sync_modal_focus(window, cx);
             cx.stop_propagation();
@@ -684,6 +691,17 @@ impl EditorView {
         if self.apply_key(key) {
             self.sync_modal_focus(window, cx);
             cx.notify();
+        }
+    }
+
+    /// How the open overlay handles `key`.
+    fn overlay_target(&self, key: Key) -> OverlayTarget {
+        if self.opens_ex_from_palette(key) {
+            OverlayTarget::OpenEx
+        } else if matches!(key, Key::Char(_)) {
+            OverlayTarget::Text
+        } else {
+            OverlayTarget::Key
         }
     }
 

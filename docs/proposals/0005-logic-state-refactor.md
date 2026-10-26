@@ -233,21 +233,27 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ### Phase C: Keymap プレフィックス
 
-- [ ] `crates/vy-app/src/keymap.rs` に `Prefix` を導入する。
+- [x] `crates/vy-app/src/keymap.rs` に `Prefix` を導入する。
   - `None`
   - `Count { value }`
   - `Register { count }`
   - `Sequence { keys, count, register }`
-- [ ] `feed` を「`Prefix` の遷移 +
+- [x] `feed` を「`Prefix` の遷移 +
       バインディング照合」に分解する。Esc・タイムアウトは遷移として表現する。
-- [ ] `expire` の責務を1つにする（`feed` 内、またはタイマーのみ）。
-- [ ] `view/mod.rs` の `on_key_down` の早期 return
+- [x] `expire` の責務を1つにする（`feed` 内、またはタイマーのみ）。
+- [x] `view/mod.rs` の `on_key_down` の早期 return
       群を、`InputTarget { Overlay, InsertIme, InsertKeys, Normal }`
       を返す純関数に集約する。
-- [ ] テスト: 既存の `keymap.rs` のテストを維持し、`Prefix` の遷移テストを追加。
+  - IME の振り分けは既存の `ActiveInput` が担っているため、オーバーレイの
+    3 分岐だけを `OverlayTarget { OpenEx, Text, Key }` に集約した。
+- [x] テスト: 既存の `keymap.rs` のテストを維持し、`Prefix` の遷移テストを追加。
 
 完了条件: `is_pending()` の3条件 OR
 が消える。「今なにを待っているか」が1つの値で分かる。
+
+実施記録: [`../worklogs/2026-10-26-logic-state-refactor.md`](../worklogs/2026-10-26-logic-state-refactor.md)
+（2026-10-26 完了。`Prefix` の遷移テスト 5 件を追加）。
+`"` + レジスタ名の直後がタイムアウトで消えなかった点も修正した。
 
 ### Phase D: セッションとプラグインのライフサイクル
 

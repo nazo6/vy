@@ -2,15 +2,15 @@
 title: "純粋ロジックの状態モデル整理ログ"
 type: "worklog"
 date: 2026-10-26
-phase: "Phase 0–B"
+phase: "Phase 0–C"
 tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 ---
 
 # [Worklog] 純粋ロジックの状態モデル整理ログ
 
 - **日付**: 2026-10-26
-- **関連フェーズ/タスク**: [`0005-logic-state-refactor.md`](../proposals/0005-logic-state-refactor.md) Phase 0, A, B
-- **目的**: GPUI 非依存のロジックに散在する暗黙の状態と重複した視覚行計算を、挙動を変えずに整理する。Phase 0 で後続フェーズの前提になる小さな不整合を直し、Phase A で視覚行の計算を 1 実装に寄せ、Phase B で入力状態を 1 つの enum にまとめる。
+- **関連フェーズ/タスク**: [`0005-logic-state-refactor.md`](../proposals/0005-logic-state-refactor.md) Phase 0, A, B, C
+- **目的**: GPUI 非依存のロジックに散在する暗黙の状態と重複した視覚行計算を、挙動を変えずに整理する。Phase 0 で後続フェーズの前提になる小さな不整合を直し、Phase A で視覚行の計算を 1 実装に寄せ、Phase B でエディタの入力状態を、Phase C でキーマップのプレフィックス状態を 1 つの値にまとめる。
 
 ## 進め方
 
@@ -44,6 +44,17 @@ tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 - 3 つの Select モード切替を `toggle_select_mode(mode)` に統合した。
 - `insert_buffer` / `insert_kind` を `InsertSession` にまとめ、`begin` / `clear` で遷移するようにした。
 
+### Phase C
+
+- `crates/vy-app/src/keymap.rs` の `pending` / `count` / `awaiting_register` / `register` を `Prefix` 1 つに置き換えた。
+  - `None`
+  - `Count { value }`
+  - `Register { count }`（`"` の直後。count は保持）
+  - `Sequence { keys, count, register }`（`keys` が空なら count / register 入力済みで次のキー待ち）
+- `feed` を「`Prefix` の遷移」と「バインディング照合」に分解した。`feed_register` は `"` の次のキーだけを扱い、`feed_binding` がキーをシーケンスへ追加して exact / prefix / unknown を判定する。Esc とタイムアウトはどちらも `reset()`（`Prefix::None`）への遷移として表現する。
+- `expire` の呼び出しは `feed` の先頭とテストだけになり、責務が 1 つになった。`is_pending()` は `!matches!(self.prefix, Prefix::None)` の 1 条件になった。
+- `view/mod.rs` の `on_key_down` のオーバーレイ分岐を `OverlayTarget { OpenEx, Text, Key }` に集約し、内部の早期 return をなくした。
+
 ## 発生した課題と対処
 
 - `ViewState.selection` は、`Select` が head の次の文字まで広げ、`SelectLine` が本文の行境界を使うため、`mode` / `anchor` / `head` だけからは導出できない。フィールドを残す案もあったが、`PaneState` に複製された時点で古い本文の範囲が残りうるため、**フィールドを削除**し、描画直前に `Editor::range_for(mode, anchor, head)` で求める形にした。`ui/pane.rs` の `EditorPaintData` に `selection` を追加し、`prepare_editor_paint` が現在の本文から計算する。`ViewState::cursor()` は Normal のとき `anchor.min(head)` を使う。
@@ -56,20 +67,23 @@ tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 - `"a` + `d` + `w` のように、レジスタ指定が operator の開始キーに付き、モーションが次のコマンドになる場合、旧実装は `active_register` を `execute` の終わりに消していたため **レジスタが unnamed に落ちていた**（`"adw` が `a` に入らない）。`PendingInput::Operator` が register を持つようにして、operator が完了するまで保持するよう直した。`"add` / `"adiw` も同じ理由で以前は `a` に入らなかった。
 - `PendingInput::start_operator` が同じ operator の繰り返し（`dd`）を「回数を合成して状態を消す」として扱うため、`execute` 側の二重管理（`self.operator == Some(...)`）がなくなった。`is_operator_command` / `is_text_object_command` によるキャンセル判定は挙動を変えないよう残した。
 - `execute` の末尾から `self.active_register = None` を消したことで `let action = match ...; action` が clippy の `let_and_return` に掛かり、`match` をそのまま返す形にした。
+- register 名を選んだ直後（`"` + `a`）は、旧実装では `pending` が空・`awaiting_register` が false のため `is_pending()` が false になり、**タイムアウトで消えなかった**。`Prefix::Sequence { keys: [], register: Some(_) }` として表すことで `is_pending()` が true になり、他のプレフィックスと同じように期限切れになる。挙動としては「放置したレジスタ指定が残らない」方向の修正。
+- 部分シーケンスの途中に数字を打つと、旧実装は count だけ更新して `pending` を保持していた。`Prefix::Sequence` が count を持つため、同じ挙動をそのまま表せる。
+- Phase C の `InputTarget { Overlay, InsertIme, InsertKeys, Normal }` は作らなかった。IME の振り分けは `view/input.rs` の `ActiveInput` が既に担っており、`on_key_down` に残っていたのはオーバーレイの 3 分岐だけだったため、`OverlayTarget` に絞った。
 
 ## 検証結果・測定値
 
-- `cargo test --workspace`: 全テスト緑（`vy-app` の lib は 196 → 216 件。Phase 0 で 4 件、Phase A で 8 件、Phase B で 8 件を追加）。
+- `cargo test --workspace`: 全テスト緑（`vy-app` の lib は 196 → 221 件。Phase 0 で 4 件、Phase A で 8 件、Phase B で 8 件、Phase C で 5 件を追加）。
 - `cargo clippy --workspace --all-targets`: 警告なし。
 - `cargo fmt --all --check`, `pnpm format:check`: 緑。
 - `rg -n '[ぁ-んァ-ヶ一-龠]' crates`: テストデータ以外のヒットなし。
 - チャンク分割の本番呼び出しは `editor/visual.rs` のみ（`rg 'cached_chunk_line|chunk_line\(' crates` で `text_layout` の定義とテスト以外は `visual.rs`）。
-- `active_register` / `clear_operator` / `insert_buffer` / `insert_kind` の参照は 0（`rg` でコマンド名 `vy.text_object.*` だけが残る）。
-- 手動確認（折り返し ON の `j` / `k`、ホイール、IME 前編集、ホバー、`"a` 付き operator）は GUI を起動していないため未実施。単体テストの往復一致・折り返し跨ぎ・全角/タブ・空行・最終行、`"adw` / `"add` / `"adiw` で代替した。
+- `active_register` / `clear_operator` / `insert_buffer` / `insert_kind` / `awaiting_register` の参照は 0（`rg` でコマンド名 `vy.text_object.*` だけが残る）。
+- 手動確認（折り返し ON の `j` / `k`、ホイール、IME 前編集、ホバー、`"a` 付き operator、`2"a3j`）は GUI を起動していないため未実施。
 
 ## フォローアップ・残課題
 
-- Phase C（`Keymap` の `Prefix`）でプレフィックス状態を 1 つの値にする。`ActiveInput` は既にあるので、`on_key_down` の残りの分岐だけを寄せる。
-- Phase D で `reconnect_requested`（`view/commands.rs` で設定し、`view/mod.rs` の 500ms ポーリングが消費する）を `SessionState` に置き換える。
-- 手動確認（折り返し ON の連続 `j` / `k`、ホイール、IME 前編集、ホバー、マウス選択、`"a` 付き operator）を実機で行う。
+- Phase D で `reconnect_requested`（`view/commands.rs` で設定し、`view/mod.rs` の 500ms ポーリングが消費する）を `SessionState` に置き換える。プラグインの `started` ポーリングも同じ系列で扱う。
+- Phase E（`Overlay` の共通入力、`execute_invocation` の解決順、`ResizeArg::parse`）は未着手。
+- 手動確認（折り返し ON の連続 `j` / `k`、ホイール、IME 前編集、ホバー、マウス選択、`"a` 付き operator、`2"a3j`）を実機で行う。
 - `text_layout::cursor_in_chunk` は `ui/pane.rs` の描画だけで使う。Phase A で `VisualIndex` に行の所属判定が入ったため、描画側も `row_of` に寄せられるか検討する。

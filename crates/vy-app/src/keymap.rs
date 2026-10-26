@@ -157,16 +157,87 @@ pub enum KeymapOutcome {
     },
 }
 
+/// Keys typed before a binding resolves.
+///
+/// A count and a register can be typed before a sequence starts, so the
+/// sequence variant carries both. [`Prefix::None`] means no input is waiting.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+enum Prefix {
+    #[default]
+    None,
+    /// Digits typed as a count. `0` only starts a count after another digit.
+    Count { value: u32 },
+    /// `"` waits for a register name. `count` may already exist.
+    Register { count: Option<u32> },
+    /// Part of a key sequence, with any count and register typed before it.
+    ///
+    /// Empty `keys` means the count or register is complete and the next key
+    /// starts a binding.
+    Sequence {
+        keys: Vec<Key>,
+        count: Option<u32>,
+        register: Option<char>,
+    },
+}
+
+impl Prefix {
+    fn count(&self) -> Option<u32> {
+        match self {
+            Self::Count { value } => Some(*value),
+            Self::Register { count } => *count,
+            Self::Sequence { count, .. } => *count,
+            Self::None => None,
+        }
+    }
+
+    /// The keys of the partial sequence. Empty for counts and registers.
+    fn keys(&self) -> &[Key] {
+        match self {
+            Self::Sequence { keys, .. } => keys,
+            _ => &[],
+        }
+    }
+
+    fn append_count(&mut self, digit: u32) {
+        let value = self
+            .count()
+            .unwrap_or(0)
+            .saturating_mul(10)
+            .saturating_add(digit);
+        let next = match self {
+            Self::Sequence { keys, register, .. } => Self::Sequence {
+                keys: keys.clone(),
+                count: Some(value),
+                register: *register,
+            },
+            _ => Self::Count { value },
+        };
+        *self = next;
+    }
+
+    /// Starts a sequence with `key` appended to the keys typed so far.
+    fn push_key(&mut self, key: Key) {
+        let mut keys = self.keys().to_vec();
+        keys.push(key);
+        let next = Self::Sequence {
+            keys,
+            count: self.count(),
+            register: match self {
+                Self::Sequence { register, .. } => *register,
+                _ => None,
+            },
+        };
+        *self = next;
+    }
+}
+
 /// Key bindings plus the partially typed sequence.
 #[derive(Debug)]
 pub struct Keymap {
     bindings: Vec<Binding>,
     contexts: HashMap<String, Value>,
     sequence_timeout: Duration,
-    pending: Vec<Key>,
-    count: Option<u32>,
-    awaiting_register: bool,
-    register: Option<char>,
+    prefix: Prefix,
     last_key: Option<Instant>,
 }
 
@@ -176,10 +247,7 @@ impl Keymap {
             bindings: Vec::new(),
             contexts: HashMap::new(),
             sequence_timeout,
-            pending: Vec::new(),
-            count: None,
-            awaiting_register: false,
-            register: None,
+            prefix: Prefix::None,
             last_key: None,
         }
     }
@@ -266,12 +334,12 @@ impl Keymap {
         self.sequence_timeout = timeout;
     }
 
-    /// Returns whether a partially typed sequence is waiting for more keys.
+    /// Returns whether input is waiting for more keys (a count, register, or sequence).
     pub fn is_pending(&self) -> bool {
-        !self.pending.is_empty() || self.count.is_some() || self.awaiting_register
+        !matches!(self.prefix, Prefix::None)
     }
 
-    /// Clears buffers that waited too long. Returns whether anything was cleared.
+    /// Clears a prefix that waited too long. Returns whether anything was cleared.
     pub fn expire(&mut self, now: Instant) -> bool {
         if !self.is_pending() {
             return false;
@@ -294,21 +362,16 @@ impl Keymap {
             self.reset();
         }
 
-        if self.awaiting_register {
-            self.awaiting_register = false;
-            self.last_key = Some(Instant::now());
-            if let Key::Char(character) = key {
-                self.register = character.is_ascii_lowercase().then_some(character);
-                return KeymapOutcome::Pending;
-            }
-            self.reset();
-            return KeymapOutcome::Ignored;
+        if let Prefix::Register { count } = &self.prefix {
+            let count = *count;
+            return self.feed_register(key, count);
         }
 
         // `"` selects a register unless a binding uses it.
         if key == Key::Char('"') && !self.has_prefix(&[key], context) {
-            self.awaiting_register = true;
-            self.pending.clear();
+            self.prefix = Prefix::Register {
+                count: self.prefix.count(),
+            };
             self.last_key = Some(Instant::now());
             return KeymapOutcome::Pending;
         }
@@ -316,32 +379,48 @@ impl Keymap {
         // Digits build a count. `0` is a motion until a count has started.
         if let Key::Char(character) = key
             && character.is_ascii_digit()
-            && (self.count.is_some() || (character != '0' && !self.has_prefix(&[key], context)))
+            && (self.prefix.count().is_some()
+                || (character != '0' && !self.has_prefix(&[key], context)))
         {
             let digit = character.to_digit(10).unwrap_or(0);
-            self.count = Some(
-                self.count
-                    .unwrap_or(0)
-                    .saturating_mul(10)
-                    .saturating_add(digit),
-            );
+            self.prefix.append_count(digit);
             self.last_key = Some(Instant::now());
             return KeymapOutcome::Pending;
         }
 
-        self.pending.push(key);
+        self.feed_binding(key, context)
+    }
 
+    /// Consumes the key that names a register after `"`.
+    fn feed_register(&mut self, key: Key, count: Option<u32>) -> KeymapOutcome {
+        if let Key::Char(character) = key {
+            self.prefix = Prefix::Sequence {
+                keys: Vec::new(),
+                count,
+                register: character.is_ascii_lowercase().then_some(character),
+            };
+            self.last_key = Some(Instant::now());
+            return KeymapOutcome::Pending;
+        }
+
+        self.reset();
+        KeymapOutcome::Ignored
+    }
+
+    /// Appends `key` to the sequence and resolves or waits for a binding.
+    fn feed_binding(&mut self, key: Key, context: &KeyContext) -> KeymapOutcome {
+        self.prefix.push_key(key);
+
+        let keys = self.prefix.keys();
         let mut exact = None;
         let mut prefix = false;
         for (index, binding) in self.bindings.iter().enumerate() {
             if !self.matches(binding, context) {
                 continue;
             }
-            if binding.keys == self.pending {
+            if binding.keys == keys {
                 exact = Some(index);
-            } else if binding.keys.len() > self.pending.len()
-                && binding.keys.starts_with(&self.pending)
-            {
+            } else if binding.keys.len() > keys.len() && binding.keys.starts_with(keys) {
                 prefix = true;
             }
         }
@@ -349,13 +428,15 @@ impl Keymap {
         if let Some(index) = exact {
             let binding = &self.bindings[index];
             let args = KeymapArgs {
-                count: self.count.take(),
-                register: self.register.take(),
+                count: self.prefix.count(),
+                register: match &self.prefix {
+                    Prefix::Sequence { register, .. } => *register,
+                    _ => None,
+                },
             };
             let id = binding.command.clone();
             let values = binding.values.clone();
-            self.pending.clear();
-            self.last_key = None;
+            self.reset();
             return KeymapOutcome::Command { id, args, values };
         }
 
@@ -369,10 +450,7 @@ impl Keymap {
     }
 
     fn reset(&mut self) {
-        self.pending.clear();
-        self.count = None;
-        self.awaiting_register = false;
-        self.register = None;
+        self.prefix = Prefix::None;
         self.last_key = None;
     }
 
@@ -388,7 +466,7 @@ impl Keymap {
     }
 
     fn has_prefix(&self, keys: &[Key], context: &KeyContext) -> bool {
-        let mut sequence = self.pending.clone();
+        let mut sequence = self.prefix.keys().to_vec();
         sequence.extend_from_slice(keys);
         self.bindings.iter().any(|binding| {
             self.matches(binding, context)
@@ -524,6 +602,105 @@ mod tests {
         );
         let (_, args) = command(keymap.feed(Key::Char('p'), &context));
         assert_eq!(args.register, Some('a'));
+    }
+
+    #[test]
+    fn zero_starts_a_motion_until_a_count_has_started() {
+        let mut keymap = keymap();
+        let context = normal();
+
+        let (id, args) = command(keymap.feed(Key::Char('0'), &context));
+        assert_eq!(id, "vy.motion.line_start");
+        assert_eq!(args.count, None);
+
+        assert_eq!(
+            keymap.feed(Key::Char('2'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('0'), &context),
+            KeymapOutcome::Pending
+        );
+        let (id, args) = command(keymap.feed(Key::Char('j'), &context));
+        assert_eq!(id, "vy.motion.down");
+        assert_eq!(args.count, Some(20));
+    }
+
+    #[test]
+    fn a_register_survives_a_partial_sequence() {
+        let mut keymap = keymap();
+        let context = normal();
+
+        assert_eq!(
+            keymap.feed(Key::Char('"'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('a'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('g'), &context),
+            KeymapOutcome::Pending
+        );
+        let (id, args) = command(keymap.feed(Key::Char('g'), &context));
+        assert_eq!(id, "vy.motion.document_start");
+        assert_eq!(args.register, Some('a'));
+    }
+
+    #[test]
+    fn a_count_and_a_register_combine() {
+        let mut keymap = keymap();
+        let context = normal();
+
+        assert_eq!(
+            keymap.feed(Key::Char('2'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('"'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('a'), &context),
+            KeymapOutcome::Pending
+        );
+        let (id, args) = command(keymap.feed(Key::Char('j'), &context));
+        assert_eq!(id, "vy.motion.down");
+        assert_eq!(args.count, Some(2));
+        assert_eq!(args.register, Some('a'));
+    }
+
+    #[test]
+    fn a_chosen_register_expires_after_the_timeout() {
+        let mut keymap = keymap();
+        let context = normal();
+
+        assert_eq!(
+            keymap.feed(Key::Char('"'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('a'), &context),
+            KeymapOutcome::Pending
+        );
+        assert!(keymap.expire(Instant::now() + Duration::from_secs(1)));
+        assert!(!keymap.is_pending());
+    }
+
+    #[test]
+    fn escape_clears_a_count() {
+        let mut keymap = keymap();
+        let context = normal();
+
+        assert_eq!(
+            keymap.feed(Key::Char('2'), &context),
+            KeymapOutcome::Pending
+        );
+        let (id, args) = command(keymap.feed(Key::Esc, &context));
+        assert_eq!(id, "vy.mode.normal");
+        assert_eq!(args.count, None);
+        assert!(!keymap.is_pending());
     }
 
     #[test]
