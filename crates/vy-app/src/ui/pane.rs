@@ -11,9 +11,7 @@ use vy_app::config::{Config, LineNumbers};
 use vy_app::editor::Mode;
 use vy_app::slots::GutterRegistry;
 use vy_app::state::{DocumentState, PaneState};
-use vy_app::text_layout::{
-    DEFAULT_TAB_STOP, cached_chunk_line, cursor_in_chunk, selection_in_chunk, utf16_to_byte,
-};
+use vy_app::text_layout::{cursor_in_chunk, selection_in_chunk, utf16_to_byte};
 
 use crate::theme::Theme;
 use crate::ui::color::color;
@@ -203,13 +201,14 @@ fn collect_visual_rows(
         }
     } else {
         let cols = pane.viewport_cols.max(1);
+        let index = document.editor.visual_index_with(Some(cols));
         let mut line_idx = pane.scroll_top;
         let mut chunk_idx = pane.scroll_sub_line;
         let mut row_idx = 0;
 
         while line_idx < line_count && row_idx < pane.viewport_rows {
             let text = document.editor.line(line_idx).unwrap_or_default();
-            let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+            let line_chunks = index.chunks(line_idx as u32);
             let chunks = &line_chunks.chunks;
             let total_chunks = chunks.len();
             let line_len = line_chunks.utf16_length;

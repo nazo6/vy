@@ -4,9 +4,9 @@ use gpui::{
     App, Bounds, Context, EntityInputHandler, FocusHandle, Focusable, Pixels, ScrollStrategy,
     SharedString, TextRun, UTF16Selection, Window, point, px, size,
 };
-use vy_app::editor::{Action, Mode};
+use vy_app::editor::{Action, Mode, VisualRow};
 use vy_app::overlay::Overlay;
-use vy_app::text_layout::{DEFAULT_TAB_STOP, byte_to_utf16, cached_chunk_line, utf16_to_byte};
+use vy_app::text_layout::{byte_to_utf16, utf16_to_byte};
 
 use super::EditorView;
 use crate::theme::ActiveTheme;
@@ -410,55 +410,29 @@ impl EntityInputHandler for EditorView {
                         size(px(2.), px(self.line_height())),
                     ))
                 } else {
-                    if target_line < pane.scroll_top {
+                    let cols = pane.viewport_cols.max(1);
+                    let index = document.editor.visual_index_with(Some(cols));
+                    let row = index.row_of(position);
+                    let scroll_row = VisualRow {
+                        line: pane.scroll_top as u32,
+                        chunk: pane.scroll_sub_line,
+                    };
+
+                    if row < scroll_row {
                         return None;
                     }
-                    let cols = pane.viewport_cols.max(1);
-                    let mut visual_row = 0;
 
-                    for l in pane.scroll_top..target_line {
-                        let text = document.editor.line(l).unwrap_or_default();
-                        let chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-                        let count = if l == pane.scroll_top {
-                            chunks.chunks.len().saturating_sub(pane.scroll_sub_line)
-                        } else {
-                            chunks.chunks.len()
-                        };
-                        visual_row += count;
-                        if visual_row >= pane.viewport_rows {
-                            return None;
-                        }
-                    }
-
-                    let text = document.editor.line(target_line).unwrap_or_default();
-                    let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-                    let chunks = &line_chunks.chunks;
-                    let target_utf16 = position.character as usize;
-
-                    let (chunk_idx, chunk) = chunks.iter().enumerate().find(|(idx, chk)| {
-                        let is_last = *idx + 1 >= chunks.len();
-                        if is_last {
-                            target_utf16 >= chk.utf16_range.start
-                        } else {
-                            target_utf16 >= chk.utf16_range.start
-                                && target_utf16 < chk.utf16_range.end
-                        }
-                    })?;
-
-                    if target_line == pane.scroll_top {
-                        if chunk_idx < pane.scroll_sub_line {
-                            return None;
-                        }
-                        visual_row += chunk_idx - pane.scroll_sub_line;
-                    } else {
-                        visual_row += chunk_idx;
-                    }
-
+                    let visual_row = index.rows_between(scroll_row, row);
                     if visual_row >= pane.viewport_rows {
                         return None;
                     }
 
-                    let chunk_sub_utf16 = target_utf16.saturating_sub(chunk.utf16_range.start);
+                    let text = document.editor.line(target_line).unwrap_or_default();
+                    let chunks = index.chunks(target_line as u32);
+                    let chunk = &chunks.chunks[row.chunk];
+
+                    let chunk_sub_utf16 =
+                        (position.character as usize).saturating_sub(chunk.utf16_range.start);
                     let chunk_text = &text[chunk.byte_range.clone()];
                     let chunk_byte_offset = utf16_to_byte(chunk_text, chunk_sub_utf16 as u32);
                     let chunk_prefix = chunk_text.get(..chunk_byte_offset).unwrap_or("");
@@ -550,42 +524,15 @@ impl EntityInputHandler for EditorView {
             Some(document.editor.utf16_offset(pos))
         } else {
             let cols = pane.viewport_cols.max(1);
-            let line_count = document.editor.line_count();
-            let mut current_vrow = 0;
-            let mut target_line = pane.scroll_top;
-            let mut target_chunk = None;
-
-            'outer: while target_line < line_count {
-                let text = document.editor.line(target_line).unwrap_or_default();
-                let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-                let start_chk = if target_line == pane.scroll_top {
-                    pane.scroll_sub_line
-                } else {
-                    0
-                };
-                for (_chk_idx, chunk) in line_chunks.chunks.iter().enumerate().skip(start_chk) {
-                    if current_vrow == visual_row {
-                        target_chunk = Some((target_line, chunk.clone()));
-                        break 'outer;
-                    }
-                    current_vrow += 1;
-                }
-                target_line += 1;
-            }
-
-            let (line_idx, chunk) =
-                target_chunk.unwrap_or_else(|| {
-                    let last = line_count.saturating_sub(1);
-                    let text = document.editor.line(last).unwrap_or_default();
-                    let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-                    let last_chk = line_chunks.chunks.last().cloned().unwrap_or(
-                        vy_app::text_layout::LineChunk {
-                            byte_range: 0..0,
-                            utf16_range: 0..0,
-                        },
-                    );
-                    (last, last_chk)
-                });
+            let index = document.editor.visual_index_with(Some(cols));
+            let scroll_row = VisualRow {
+                line: pane.scroll_top as u32,
+                chunk: pane.scroll_sub_line,
+            };
+            let row = index.step(scroll_row, visual_row as i64);
+            let line_idx = row.line as usize;
+            let chunks = index.chunks(row.line);
+            let chunk = &chunks.chunks[row.chunk];
 
             let full_line = document.editor.line(line_idx).unwrap_or_default();
             let chunk_text = full_line.get(chunk.byte_range.clone()).unwrap_or("");

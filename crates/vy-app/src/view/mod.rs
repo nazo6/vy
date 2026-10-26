@@ -23,7 +23,7 @@ use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
 use vy_app::config::Config;
 use vy_app::connection::{ConnectionSpec, Startup};
-use vy_app::editor::{Editor, Key, Mode, ViewState};
+use vy_app::editor::{Editor, Key, Mode, ViewState, VisualRow};
 use vy_app::ex::ExHistory;
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
 use vy_app::overlay::{ApprovalState, Overlay};
@@ -810,68 +810,21 @@ impl EditorView {
                 }
             } else {
                 let rows_delta = -lines;
-                let cols = viewport_cols.max(1);
-                let mut cur_top = scroll_top;
-                let mut cur_sub = scroll_sub_line;
+                let index = document
+                    .editor
+                    .visual_index_with(Some(viewport_cols.max(1)));
+                let row = VisualRow {
+                    line: scroll_top as u32,
+                    chunk: scroll_sub_line,
+                };
+                let target = index.step(row, rows_delta as i64);
 
-                if rows_delta > 0 {
-                    let mut remaining = rows_delta as usize;
-                    while remaining > 0 && cur_top < line_count {
-                        let text = document.editor.line(cur_top).unwrap_or_default();
-                        let num_chunks = vy_app::text_layout::cached_chunk_line(
-                            &text,
-                            cols,
-                            vy_app::text_layout::DEFAULT_TAB_STOP,
-                        )
-                        .chunks
-                        .len();
-                        if cur_sub + 1 < num_chunks {
-                            cur_sub += 1;
-                            remaining -= 1;
-                        } else if cur_top + 1 < line_count {
-                            cur_top += 1;
-                            cur_sub = 0;
-                            remaining -= 1;
-                        } else {
-                            break;
-                        }
+                if target.line as usize != scroll_top || target.chunk != scroll_sub_line {
+                    if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                        pane.scroll_top = target.line as usize;
+                        pane.scroll_sub_line = target.chunk;
                     }
-                    if cur_top != scroll_top || cur_sub != scroll_sub_line {
-                        if let Some(pane) = self.panes.get_mut(&active_pane_id) {
-                            pane.scroll_top = cur_top;
-                            pane.scroll_sub_line = cur_sub;
-                        }
-                        changed = true;
-                    }
-                } else if rows_delta < 0 {
-                    let mut remaining = rows_delta.unsigned_abs();
-                    while remaining > 0 {
-                        if cur_sub > 0 {
-                            cur_sub -= 1;
-                            remaining -= 1;
-                        } else if cur_top > 0 {
-                            cur_top -= 1;
-                            let text = document.editor.line(cur_top).unwrap_or_default();
-                            let num_chunks = vy_app::text_layout::cached_chunk_line(
-                                &text,
-                                cols,
-                                vy_app::text_layout::DEFAULT_TAB_STOP,
-                            )
-                            .chunks
-                            .len();
-                            cur_sub = num_chunks.saturating_sub(1);
-                            remaining -= 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    if cur_top != scroll_top || cur_sub != scroll_sub_line {
-                        if let Some(pane) = self.panes.get_mut(&active_pane_id) {
-                            pane.scroll_top = cur_top;
-                            pane.scroll_sub_line = cur_sub;
-                        }
-                        changed = true;
-                    }
+                    changed = true;
                 }
             }
         }

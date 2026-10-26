@@ -25,9 +25,11 @@ mod operator;
 mod register;
 mod repeat;
 mod view;
+mod visual;
 
 pub use action::{Action, Transaction};
 pub use view::ViewState;
+pub use visual::{VisualIndex, VisualOptions, VisualRow};
 
 use self::motion::{Motion, motion_of};
 use self::operator::{

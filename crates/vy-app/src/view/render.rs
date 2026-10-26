@@ -7,11 +7,9 @@ use gpui::{
     IntoElement, MouseButton, ParentElement, Render, Styled, Window, canvas, div, px,
 };
 
+use vy_app::editor::VisualRow;
 use vy_app::overlay::Overlay;
-use vy_app::text_layout::{
-    DEFAULT_TAB_STOP, cached_chunk_line, clamp_scroll_top, scroll_to_show,
-    scroll_to_show_horizontal, utf16_to_display_col,
-};
+use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
 use super::{EditorView, Pending};
@@ -113,12 +111,7 @@ impl EditorView {
 
         if !is_wrap {
             let next_top = scroll_to_show(cursor_line, pane.scroll_top, rows, line_count);
-            let text = document.editor.line(cursor_line).unwrap_or_default();
-            let display_col = vy_app::text_layout::utf16_to_display_col(
-                &text,
-                cursor.character as usize,
-                vy_app::text_layout::DEFAULT_TAB_STOP,
-            );
+            let display_col = document.editor.visual_index_with(None).display_col(cursor);
             let next_left = scroll_to_show_horizontal(display_col, pane.scroll_left, cols);
             if let Some(pane) = self.active_pane_state_mut() {
                 pane.scroll_top = next_top;
@@ -126,87 +119,27 @@ impl EditorView {
                 pane.scroll_sub_line = 0;
             }
         } else {
-            let text = document.editor.line(cursor_line).unwrap_or_default();
-            let line_chunks = vy_app::text_layout::cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-            let chunks = &line_chunks.chunks;
-            let cursor_chunk = chunks
-                .iter()
-                .enumerate()
-                .find_map(|(idx, chunk)| {
-                    vy_app::text_layout::cursor_in_chunk(
-                        cursor,
-                        cursor_line,
-                        idx,
-                        chunks.len(),
-                        &chunk.utf16_range,
-                    )
-                    .map(|_| idx)
-                })
-                .unwrap_or(0);
+            let index = document.editor.visual_index_with(Some(cols));
+            let cursor_row = index.row_of(cursor);
+            let scroll_row = VisualRow {
+                line: pane.scroll_top as u32,
+                chunk: pane.scroll_sub_line,
+            };
 
-            let (scroll_top, scroll_sub) = (pane.scroll_top, pane.scroll_sub_line);
-
-            if (cursor_line, cursor_chunk) < (scroll_top, scroll_sub) {
+            if cursor_row < scroll_row {
                 if let Some(pane) = self.active_pane_state_mut() {
-                    pane.scroll_top = cursor_line;
-                    pane.scroll_sub_line = cursor_chunk;
+                    pane.scroll_top = cursor_row.line as usize;
+                    pane.scroll_sub_line = cursor_row.chunk;
                     pane.scroll_left = 0;
                 }
             } else {
-                let mut rows_between = 0;
-                let mut cur_l = scroll_top;
-                let mut cur_c = scroll_sub;
-                let mut found = false;
-
-                while cur_l <= cursor_line {
-                    let cur_text = document.editor.line(cur_l).unwrap_or_default();
-                    let cur_chunks_len =
-                        vy_app::text_layout::cached_chunk_line(&cur_text, cols, DEFAULT_TAB_STOP)
-                            .chunks
-                            .len();
-                    while cur_c < cur_chunks_len {
-                        if cur_l == cursor_line && cur_c == cursor_chunk {
-                            found = true;
-                            break;
-                        }
-                        rows_between += 1;
-                        cur_c += 1;
-                    }
-                    if found {
-                        break;
-                    }
-                    cur_l += 1;
-                    cur_c = 0;
-                }
+                let rows_between = index.rows_between(scroll_row, cursor_row);
 
                 if rows_between >= rows {
-                    let mut needed_steps = rows.saturating_sub(1);
-                    let mut b_line = cursor_line;
-                    let mut b_chunk = cursor_chunk;
-
-                    while needed_steps > 0 {
-                        if b_chunk > 0 {
-                            b_chunk -= 1;
-                            needed_steps -= 1;
-                        } else if b_line > 0 {
-                            b_line -= 1;
-                            let prev_text = document.editor.line(b_line).unwrap_or_default();
-                            let prev_chunks = vy_app::text_layout::cached_chunk_line(
-                                &prev_text,
-                                cols,
-                                DEFAULT_TAB_STOP,
-                            )
-                            .chunks
-                            .len();
-                            b_chunk = prev_chunks.saturating_sub(1);
-                            needed_steps -= 1;
-                        } else {
-                            break;
-                        }
-                    }
+                    let target = index.step(cursor_row, -(rows.saturating_sub(1) as i64));
                     if let Some(pane) = self.active_pane_state_mut() {
-                        pane.scroll_top = b_line;
-                        pane.scroll_sub_line = b_chunk;
+                        pane.scroll_top = target.line as usize;
+                        pane.scroll_sub_line = target.chunk;
                         pane.scroll_left = 0;
                     }
                 } else if let Some(pane) = self.active_pane_state_mut() {
@@ -694,14 +627,17 @@ impl EditorView {
                 let lh = self.line_height();
                 let ch_w = self.char_width;
                 let gutter = self.gutter_width(doc.editor.line_count());
-                let line_text = doc.editor.line(hover.line).unwrap_or_default();
+                let hover_position =
+                    vy_core::Position::new(hover.line as u32, hover.character as u32);
 
                 let pos = if !pane.is_wrap(&self.config) {
                     if hover.line >= pane.scroll_top
                         && hover.line < pane.scroll_top + pane.viewport_rows
                     {
-                        let display_col =
-                            utf16_to_display_col(&line_text, hover.character, DEFAULT_TAB_STOP);
+                        let display_col = doc
+                            .editor
+                            .visual_index_with(None)
+                            .display_col(hover_position);
                         let scroll_left_px = pane.scroll_left as f32 * ch_w;
                         let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
                         let left = gutter + display_col as f32 * ch_w - scroll_left_px;
@@ -711,50 +647,22 @@ impl EditorView {
                     }
                 } else {
                     let cols = pane.viewport_cols.max(1);
-                    let mut l_idx = pane.scroll_top;
-                    let mut s_idx = pane.scroll_sub_line;
-                    let mut v_row = 0;
-                    let total_lines = doc.editor.line_count();
-                    let mut found = None;
+                    let index = doc.editor.visual_index_with(Some(cols));
+                    let scroll_row = VisualRow {
+                        line: pane.scroll_top as u32,
+                        chunk: pane.scroll_sub_line,
+                    };
+                    let target = index.row_of(hover_position);
+                    let v_row = index.rows_between(scroll_row, target);
 
-                    while l_idx < total_lines && v_row < pane.viewport_rows {
-                        let text = doc.editor.line(l_idx).unwrap_or_default();
-                        let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
-                        let chunks = &line_chunks.chunks;
-                        let total_chunks = chunks.len();
-
-                        while s_idx < total_chunks && v_row < pane.viewport_rows {
-                            if l_idx == hover.line {
-                                let chunk = &chunks[s_idx];
-                                let char_idx = hover.character;
-                                if char_idx >= chunk.utf16_range.start
-                                    && (char_idx < chunk.utf16_range.end
-                                        || s_idx + 1 == total_chunks)
-                                {
-                                    let chunk_text = &text[chunk.byte_range.clone()];
-                                    let chunk_char_offset =
-                                        char_idx.saturating_sub(chunk.utf16_range.start);
-                                    let col_in_chunk = utf16_to_display_col(
-                                        chunk_text,
-                                        chunk_char_offset,
-                                        DEFAULT_TAB_STOP,
-                                    );
-                                    let top = v_row as f32 * lh + lh;
-                                    let left = gutter + col_in_chunk as f32 * ch_w;
-                                    found = Some((top, left));
-                                    break;
-                                }
-                            }
-                            s_idx += 1;
-                            v_row += 1;
-                        }
-                        if found.is_some() || l_idx > hover.line {
-                            break;
-                        }
-                        l_idx += 1;
-                        s_idx = 0;
+                    if v_row >= pane.viewport_rows {
+                        None
+                    } else {
+                        let col_in_chunk = index.display_col(hover_position);
+                        let top = v_row as f32 * lh + lh;
+                        let left = gutter + col_in_chunk as f32 * ch_w;
+                        Some((top, left))
                     }
-                    found
                 };
 
                 if let Some((top, left)) = pos

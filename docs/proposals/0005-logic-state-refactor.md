@@ -178,25 +178,29 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ### Phase A: 視覚行モデル（効果最大）
 
-- [ ] `crates/vy-app/src/editor/visual.rs`
+- [x] `crates/vy-app/src/editor/visual.rs`
       を新設し、`VisualOptions { cols, tab_stop }` と `VisualIndex` を定義する。
   - `rows_in(line)`（行の視覚行数）
   - `row_of(position)`（`VisualRow { line, chunk, col }`）
   - `position_at(row, desired_col)`
   - `step(row, delta)`（折り返しを跨ぐ前後移動）
-- [ ] 行テキストの取得は `&Text` を受け取る形にし、`vy-app` 内で完結させる。
-- [ ] `target_display_vertical` の前後走査ループを `VisualIndex::step`
+- [x] 行テキストの取得は `&Text` を受け取る形にし、`vy-app` 内で完結させる。
+- [x] `target_display_vertical` の前後走査ループを `VisualIndex::step`
       に置換する。
-- [ ] `on_scroll_wheel` の折り返し分岐を `VisualIndex` に置換する。
-- [ ] `view/input.rs` の `bounds_for_range` / `character_index_for_point` を
+- [x] `on_scroll_wheel` の折り返し分岐を `VisualIndex` に置換する。
+- [x] `view/input.rs` の `bounds_for_range` / `character_index_for_point` を
       `row_of` / `position_at` に置換する。
-- [ ] `view/render.rs` のカーソル・ホバー行計算を `VisualIndex` に置換する。
-- [ ] Normal / Select の行末クランプを `VisualIndex` の1実装に統合する。
-- [ ] テスト: 往復一致（`row_of` →
+- [x] `view/render.rs` のカーソル・ホバー行計算を `VisualIndex` に置換する。
+- [x] Normal / Select の行末クランプを `VisualIndex` の1実装に統合する。
+- [x] テスト: 往復一致（`row_of` →
       `position_at`）、折り返し跨ぎ、全角・タブ、空行、最終行。
 
 完了条件: 「行 → チャンク → 視覚行」の計算が `editor/visual.rs`
 以外に存在しない。可視行の描画で `Vec` の新規確保が発生しない。
+
+実施記録: [`../worklogs/2026-10-26-logic-state-refactor.md`](../worklogs/2026-10-26-logic-state-refactor.md)
+（2026-10-26 完了。`VisualIndex` のテスト 8 件を追加）。`ui/pane.rs` の
+`prepare_editor_paint` / `collect_visual_rows` も同じ型に寄せた。手動確認は未実施。
 
 ### Phase B: 入力状態機械（エディタ）
 
