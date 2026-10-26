@@ -124,6 +124,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 - **クライアント本文ミラーの整合性**: 仕様どおりクライアントが本文の写しを持つが、`buffer/did_change` に Ack がない。コアは拒否時だけ `buffer/resync` を返すため、要求が届かなかった場合は永続的にずれる。再接続時以外にもバージョンを突き合わせる保険を検討する。
 - **ケイパビリティ検査の分散**: 個別の `check_capability` 呼び出しが `crates/vy-app/src/api/host/*.rs` に並ぶ。マクロの `dispatch` には要求コンテキストがないため、`capability` と `target`（params のどのフィールドか）を宣言するか、`authorize(method, params)` フックを1本足す。
 - **モジュールの肥大化**: `crates/vy-app/src/view/commands.rs`（約 1772 行）、`crates/vy-app/src/commands.rs`（約 1635 行）、`crates/vy-app/src/view/rpc.rs`（約 766 行）、`crates/vy-app/src/view/plugin.rs`（約 698 行）。
+- **`:resize` の引数宣言がない**: `PaneCommand::Resize` は `ArgSpec::None` のため、Ex と `commands.execute` から `value` を渡せない。`run_pane_resize_command` が持つ `+N` / `-N` / パーセント / 比率の解釈は現状到達しない（Phase 0 で確認）。
 - **固定値と未使用の宣言**: `workspace.info` の `trusted` が常に `true`（`crates/vy-app/src/api/host/workspace.rs`、`crates/vy-app/src/plugin_host.rs`）。`clipboard:*` / `secrets` / `net` / `openExternal` / `fs:local:*` / `process:local` は定義だけで検査箇所がない。
 - **状態ファイルの書き込み**: `crates/vy-server/src/session/state.rs` の `persist_session` も非原子的。レイアウトのみなので影響は小さいが、3.2 のヘルパーに寄せられる。
 
@@ -133,10 +134,26 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 ### Phase 0: 文書と実装の突き合わせ
 
-- [ ] [`../specs/commands.md`](../specs/commands.md) の `:q!` の記述矛盾を解消する（実装済みとして扱う）。
-- [ ] `pane/resize` が実装済みであることを前提に、古い計画由来の記述が残っていないか確認する。
-- [ ] 実装済みなのに未実装と書かれている項目、その逆を一覧化して直す。
-- [ ] `:wq` / `:qa` の予定を Phase 1 の完了条件として本文に反映する。
+- [x] [`../specs/commands.md`](../specs/commands.md) の `:q!` の記述矛盾を解消する（実装済みとして扱う）。
+- [x] `pane/resize` が実装済みであることを前提に、古い計画由来の記述が残っていないか確認する。
+- [x] 実装済みなのに未実装と書かれている項目、その逆を一覧化して直す。
+- [x] `:wq` / `:qa` の予定を Phase 1 の完了条件として本文に反映する。
+
+確認結果（2026-10-26）:
+
+- `:q!` は `PaneCommand::Close` の `bang` として実装済み。未保存の確認は飛ぶが、
+  ウィンドウ最後の 1 枚は `Layout::close` の `LastPane` で閉じられない。
+  `commands.md` と `panes.md` の記述をこの挙動に合わせた。
+- `:resize` / `:res` と `:equalize` は登録済みだが `commands.md` の表になかった
+  ため追加した。`PaneCommand::Resize` の `ArgSpec` が `None` のため、
+  `run_pane_resize_command` が解釈する `+N` / `-N` / パーセント / 比率は Ex から
+  渡せない。現状は引数なし（高さ +5%）のみ動く。引数宣言は Phase 6 に送る。
+- `pane/resize` のキーボード・Ex・ディバイダーの実装は仕様書の記述と一致して
+  おり、修正は不要だった。
+- `keymap.md` の「認識するキー」に `Delete`、`Shift-Tab`、`Ctrl` + 英字全般が
+  抜けていた。Insert の `Delete` はキー名を解釈済みで、未実装の理由は「処理が
+  ない」ため備考を直した。`editor.rs` という古いパスも `editor/` に直した。
+- `:wq` / `:qa` は未実装で、記述は正しかった。
 
 完了条件: `docs/` 内で `:q!` / `:wq` / `pane/resize` の記述がコードと一致する。
 
@@ -151,6 +168,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 - [ ] テスト: 保存の成功・失敗・強制保存、未保存状態での終了要求、最後のペインの `:q`。
 
 完了条件: どの経路でウィンドウを閉じても、未保存の本文が無断で消えない。
+`:wq` / `:qa` / `:qa!` / `:wqa` で終了でき、最後のペインの `:q` も終了になる。
 
 ### Phase 2: サンドボックスの境界
 
@@ -199,6 +217,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 - [ ] `view/commands.rs` を「ディスパッチ / Ex / パレット / 設定」に分割する。`commands.rs` の Ex パーサと引数検証も分ける。
 - [ ] `workspace.info.trusted` と未使用のケイパビリティ種別を、実装するか仕様から外すか決める。
 - [ ] `persist_session` を原子的な保存ヘルパーに寄せる。
+- [ ] `PaneCommand::Resize` に `value` の `ArgSpec` を宣言し、`:resize +3` / `:resize 50` / `:resize 0.3` を動かす（§3.9）。
 
 完了条件: 同じ役割の実装が1箇所にまとまり、追加時に触るファイルが減っている。
 

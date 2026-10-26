@@ -2,7 +2,7 @@
 title: "キーマップ一覧と実装状況"
 type: "spec"
 status: "active"
-updated_at: 2026-10-25
+updated_at: 2026-10-26
 related_adrs: ["0016", "0022"]
 tags: ["keymap", "modal-editing", "helix"]
 ---
@@ -14,7 +14,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 
 現時点は、`crates/vy-app/src/keymap.rs`
 がキー列を照合し、`builtin/keymaps/default.json` の既定キーマップからコマンド ID
-を決めます。`editor.rs`
+を決めます。`crates/vy-app/src/editor/`
 はコマンドを実行するだけで、キーの解釈は持ちません。`init.ts` から `keymap.bind`
 を呼ぶ経路も動きます。再評価のときは、`init.ts` が足した束縛だけを外します。
 
@@ -22,7 +22,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 
 | 表記     | 意味                                                                      |
 | :------- | :------------------------------------------------------------------------ |
-| 実装済み | 動く。`crates/vy-app/src/editor.rs` と `keymap.rs` のテストで押さえている |
+| 実装済み | 動く。`crates/vy-app/src/editor/` と `keymap.rs` のテストで押さえている   |
 | 一部     | 動くが、下の「制限」に書いた範囲だけ。カウントや行単位の操作は効かない    |
 | 未実装   | 予定だけ。押しても何も起きない（Normal / Select）か、文字として入力される |
 
@@ -35,10 +35,11 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
   [`ui.md`](./ui.md) §2）。
 - Normal / Select
   モードでは、文字キーはキーマップが照合して消費し、入力ハンドラへ渡しません。一致したコマンドだけを
-  `editor.rs` が実行します。
+  `crates/vy-app/src/editor/` が実行します。
 - 認識するキー名は、文字キー（`a`〜`z`、記号、数字）と、`Left`、`Right`、`Up`、
-  `Down`、`Home`、`End`、`Esc`、`Enter`、`Backspace`、`Tab`、`Space`、`Ctrl-r`、
-  `Ctrl-u`、`Ctrl-d`、`Ctrl-v` です。`Alt` と `Super`
+  `Down`、`Home`、`End`、`Esc`、`Enter`、`Backspace`、`Delete`、`Tab`、
+  `Shift-Tab`（`BackTab`）、`Space`、`Ctrl` + 英字（`Ctrl-r`、`Ctrl-d`、
+  `Ctrl-w` など）です。`Alt` と `Super`
   付きのキーは捨てます（macOS の `Option`
   入力は入力ハンドラ経由で文字になります）。
 - 未実装のキーは、Normal / Select では無視されます。Insert
@@ -114,7 +115,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 | `Up` / `Down`    | 行を移動                        | 実装済み |                                              |
 | `Home`           | 行頭へ                          | 実装済み |                                              |
 | `End`            | 行末の次へ                      | 実装済み |                                              |
-| `Delete`         | カーソルの文字を削除            | 未実装   | キー名 `delete` をまだ受け取っていない       |
+| `Delete`         | カーソルの文字を削除            | 未実装   | キー名は解釈するが、Insert の処理がない      |
 | `Ctrl-w`         | 前の単語を削除                  | 未実装   |                                              |
 | `Ctrl-r`         | レジスタを挿入                  | 未実装   |                                              |
 | `Ctrl-o`         | 1 コマンドだけ Normal で実行    | 未実装   |                                              |
@@ -191,7 +192,7 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 ## 9. この文書の更新
 
 - キーを足したら、この表と [`README.md`](../README.md) の「操作（Phase 1–2）」、
-  `crates/vy-app/src/editor.rs` と `crates/vy-app/src/keymap.rs`
+  `crates/vy-app/src/editor/` と `crates/vy-app/src/keymap.rs`
   のテストを同じ変更で更新します。
 - 「実装済み」は、テストがあるものだけにします。
 - キーマップ API へ移したあとは、「状態」の根拠を「組み込みエンジン」から

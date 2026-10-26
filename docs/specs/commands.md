@@ -2,7 +2,7 @@
 title: "コマンドと設定"
 type: "spec"
 status: "active"
-updated_at: 2026-10-25
+updated_at: 2026-10-26
 related_adrs: ["0016", "0022"]
 tags: ["commands", "keymap", "config"]
 ---
@@ -288,33 +288,41 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 
 ### 5.4 組み込みの Ex 名
 
-| Ex 名             | コマンド ID                                         | 状態     | 備考                        |
-| :---------------- | :-------------------------------------------------- | :------- | :-------------------------- |
-| `:e` / `:edit`    | `vy.editor.open`                                    | 実装済み | 引数に URI またはパス       |
-| `:w` / `:write`   | `vy.document.save`                                  | 実装済み | 別名保存は未対応            |
-| `:b` / `:buffer`  | `vy.editor.switch_document`                         | 実装済み | 引数なしは文書ピッカー      |
-| `:sp`             | `vy.pane.split_down`                                | 実装済み | 上下に分割                  |
-| `:vsp`            | `vy.pane.split_right`                               | 実装済み | 左右に分割                  |
-| `:split-left`     | `vy.pane.split_left`                                | 実装済み | 左に分割                    |
-| `:split-up`       | `vy.pane.split_up`                                  | 実装済み | 上に分割                    |
-| `:close` / `:q`   | `vy.pane.close`                                     | 実装済み | 最後のペインは閉じられない  |
-| `:view`           | `vy.view.open`                                      | 実装済み | プラグインのビューを開く    |
-| `:view-close`     | `vy.view.close`                                     | 実装済み | ビューを閉じる              |
-| `:view-toggle`    | `vy.view.toggle`                                    | 実装済み | ビューの表示を切り替える    |
-| `:undo` / `:redo` | `vy.history.undo` / `vy.history.redo`               | 実装済み | アンドゥとリドゥ            |
-| `:reconnect`      | `vy.reconnect_server`                               | 実装済み | サーバーへ再接続            |
-| `:set`            | `vy.setting.ex_set`（引数なしは Settings パレット） | 実装済み | 設定を変える。次節          |
-| `:setglobal`      | `vy.setting.ex_set_global`                          | 実装済み | メモリ層の既定値を変える    |
-| `:settings`       | `vy.ui.open_settings`                               | 実装済み | Settings パレットを開く     |
-| `:ts`             | `vy.script.eval`                                    | 実装済み | TypeScript を評価（hidden） |
-| `:wq`             | `vy.document.write_quit`                            | 未実装   | 保存と終了を1コマンドにする |
-| `:bn` / `:bp`     | `vy.document.next` / `previous`                     | 未実装   | 文書一覧ができてから        |
-| `:noh`            | `vy.search.clear_highlight`                         | 未実装   | 検索のハイライトを消す      |
+| Ex 名              | コマンド ID                                         | 状態     | 備考                                                   |
+| :----------------- | :-------------------------------------------------- | :------- | :----------------------------------------------------- |
+| `:e` / `:edit`     | `vy.editor.open`                                    | 実装済み | 引数に URI またはパス                                  |
+| `:w` / `:write`    | `vy.document.save`                                  | 実装済み | 別名保存は未対応                                       |
+| `:b` / `:buffer`   | `vy.editor.switch_document`                         | 実装済み | 引数なしは文書ピッカー                                 |
+| `:sp`              | `vy.pane.split_down`                                | 実装済み | 上下に分割                                             |
+| `:vsp`             | `vy.pane.split_right`                               | 実装済み | 左右に分割                                             |
+| `:split-left`      | `vy.pane.split_left`                                | 実装済み | 左に分割                                               |
+| `:split-up`        | `vy.pane.split_up`                                  | 実装済み | 上に分割                                               |
+| `:resize` / `:res` | `vy.pane.resize`                                    | 実装済み | 引数なしは高さ +5%。比率・差分の指定は未対応           |
+| `:equalize`        | `vy.pane.equalize`                                  | 実装済み | 全スプリットの比率を均等にする                         |
+| `:close` / `:q`    | `vy.pane.close`                                     | 実装済み | 最後のペインは閉じられない。`!` で未保存の確認を飛ばす |
+| `:view`            | `vy.view.open`                                      | 実装済み | プラグインのビューを開く                               |
+| `:view-close`      | `vy.view.close`                                     | 実装済み | ビューを閉じる                                         |
+| `:view-toggle`     | `vy.view.toggle`                                    | 実装済み | ビューの表示を切り替える                               |
+| `:undo` / `:redo`  | `vy.history.undo` / `vy.history.redo`               | 実装済み | アンドゥとリドゥ                                       |
+| `:reconnect`       | `vy.reconnect_server`                               | 実装済み | サーバーへ再接続                                       |
+| `:set`             | `vy.setting.ex_set`（引数なしは Settings パレット） | 実装済み | 設定を変える。次節                                     |
+| `:setglobal`       | `vy.setting.ex_set_global`                          | 実装済み | メモリ層の既定値を変える                               |
+| `:settings`        | `vy.ui.open_settings`                               | 実装済み | Settings パレットを開く                                |
+| `:ts`              | `vy.script.eval`                                    | 実装済み | TypeScript を評価（hidden）                            |
+| `:wq`              | `vy.document.write_quit`                            | 未実装   | 保存と終了を1コマンドにする                            |
+| `:bn` / `:bp`      | `vy.document.next` / `previous`                     | 未実装   | 文書一覧ができてから                                   |
+| `:noh`             | `vy.search.clear_highlight`                         | 未実装   | 検索のハイライトを消す                                 |
 
 `:wrap` は `:set wrap` に統合したため、Ex 名としては存在しません。
 `vy.view.toggle_wrap` はキーマップ用の糖衣として残しています。
 
-`!` 付きの強制終了（`:q!`）、シェル実行（`:!`）、`:terminal` は初期版では
+`:qa` / `:qa!` / `:wqa` はまだ Ex 名として登録していません。`:wq` と併せて、
+終了フローを実装するときに追加します。
+
+`!` 付きの強制終了（`:q!`）は実装済みです。未保存の変更がある文書を表示する
+最後のペインでも、`!` を付ければ未保存の確認をせずに閉じられます。ただし、
+ウィンドウに残る最後の 1 枚は `!` の有無にかかわらず閉じられません（終了は
+`:qa` 系で扱う予定です）。シェル実行（`:!`）と `:terminal` は初期版では
 扱いません。`:!` は `process:exec` の承認が必要になるため、Ex の権限経路が
 固まってから追加します。
 

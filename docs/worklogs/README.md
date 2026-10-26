@@ -1,7 +1,7 @@
 ---
 title: "作業ログ (Worklogs)"
 type: "guide"
-updated_at: 2026-10-25
+updated_at: 2026-10-26
 ---
 
 # 作業ログ (Worklogs)
@@ -14,6 +14,7 @@ updated_at: 2026-10-25
 
 - [`2026-10-initial-phases.md`](./2026-10-initial-phases.md): Phase 1〜5 実装進捗ログ
 - [`2026-10-editor-ui-improvements.md`](./2026-10-editor-ui-improvements.md): UI・エディタ品質改善ログ
+- [`2026-10-runtime-safety-infrastructure.md`](./2026-10-runtime-safety-infrastructure.md): 実行時・基盤・セキュリティ負債整理ログ
 
 ## 命名規則
 
