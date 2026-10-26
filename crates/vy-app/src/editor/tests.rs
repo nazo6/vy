@@ -384,6 +384,40 @@ fn cancelling_a_text_object_clears_the_register() {
 }
 
 #[test]
+fn a_register_survives_until_the_operator_completes() {
+    let mut editor = Editor::with_text("one two\nthree", 0);
+
+    // The register is typed before `d`, but `w` arrives in the next command.
+    press(&mut editor, "\"adw");
+    assert_eq!(editor.text(), "two\nthree");
+    assert_eq!(editor.named_register_text('a'), "one ");
+    assert_eq!(editor.register_text(), "one ");
+
+    // A later command without a prefix leaves `a` alone.
+    press(&mut editor, "yy");
+    assert_eq!(editor.register_text(), "two");
+    assert_eq!(editor.named_register_text('a'), "one ");
+}
+
+#[test]
+fn a_register_applies_to_a_doubled_operator() {
+    let mut editor = Editor::with_text("one\ntwo", 0);
+
+    press(&mut editor, "\"add");
+    assert_eq!(editor.text(), "two");
+    assert_eq!(editor.named_register_text('a'), "one");
+}
+
+#[test]
+fn a_register_applies_to_a_text_object() {
+    let mut editor = Editor::with_text("foo bar", 0);
+
+    press(&mut editor, "\"adiw");
+    assert_eq!(editor.text(), " bar");
+    assert_eq!(editor.named_register_text('a'), "foo");
+}
+
+#[test]
 fn deletes_text_objects() {
     let mut editor = Editor::with_text("foo bar", 0);
     press(&mut editor, "diw");

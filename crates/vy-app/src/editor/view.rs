@@ -3,7 +3,7 @@
 use crate::keymap::Mode;
 use vy_core::Position;
 
-use super::operator::{Operator, TextObjectKind};
+use super::input_state::PendingInput;
 
 /// The part of the editor that belongs to one pane.
 ///
@@ -15,9 +15,7 @@ pub struct ViewState {
     pub(super) mode: Mode,
     pub(super) anchor: Position,
     pub(super) head: Position,
-    pub(super) operator: Option<Operator>,
-    pub(super) operator_count: Option<u32>,
-    pub(super) text_object: Option<TextObjectKind>,
+    pub(super) pending: PendingInput,
     pub(super) preferred_character: Option<u32>,
     pub(super) preferred_display_col: Option<usize>,
 }
@@ -28,9 +26,7 @@ impl Default for ViewState {
             mode: Mode::Normal,
             anchor: Position::new(0, 0),
             head: Position::new(0, 0),
-            operator: None,
-            operator_count: None,
-            text_object: None,
+            pending: PendingInput::Idle,
             preferred_character: None,
             preferred_display_col: None,
         }
@@ -59,10 +55,10 @@ impl ViewState {
     }
 
     pub fn operator_pending(&self) -> bool {
-        self.operator.is_some()
+        self.pending.operator_pending()
     }
 
     pub fn text_object_pending(&self) -> bool {
-        self.text_object.is_some()
+        self.pending.text_object_pending()
     }
 }

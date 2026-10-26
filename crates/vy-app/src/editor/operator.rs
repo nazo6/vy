@@ -6,7 +6,7 @@ use vy_core::{Position, Range, TextEdit};
 
 use super::Editor;
 use super::action::Action;
-use super::motion::{CharClass, Motion, combined_count, motion_of};
+use super::motion::{CharClass, Motion, motion_of};
 use super::register::RegisterKind;
 use super::repeat::Repeat;
 /// A command waiting for a motion or a text object.
@@ -71,49 +71,42 @@ pub(super) fn is_text_object_command(command: BuiltinCommand) -> bool {
 }
 
 impl Editor {
-    pub(super) fn start_operator(&mut self, operator: Operator, count: Option<u32>) -> Action {
+    pub(super) fn start_operator(
+        &mut self,
+        operator: Operator,
+        count: Option<u32>,
+        register: Option<usize>,
+    ) -> Action {
         if self.mode.is_select() {
             return match operator {
-                Operator::Delete => self.delete_selection(),
-                Operator::Yank => self.yank_selection(),
+                Operator::Delete => self.delete_selection(register),
+                Operator::Yank => self.yank_selection(register),
             };
         }
 
-        if self.operator == Some(operator) {
-            let times = combined_count(self.operator_count, count).unwrap_or(1);
-            self.clear_operator();
+        if let Some((times, register)) = self.pending.start_operator(operator, count, register) {
             return match operator {
-                Operator::Delete => self.delete_lines(times),
-                Operator::Yank => self.yank_lines(times),
+                Operator::Delete => self.delete_lines(times, register),
+                Operator::Yank => self.yank_lines(times, register),
             };
         }
 
-        self.operator = Some(operator);
-        self.operator_count = count;
-        self.text_object = None;
         Action::None
     }
 
     pub(super) fn begin_text_object(&mut self, kind: TextObjectKind) -> Action {
-        if self.operator.is_some() {
-            self.text_object = Some(kind);
-        }
+        self.pending.begin_text_object(kind);
         Action::None
     }
 
     pub(super) fn apply_text_object(&mut self, object: TextObject) -> Action {
-        let Some(kind) = self.text_object.take() else {
+        let Some(pending) = self.pending.take_text_object() else {
             return Action::None;
         };
-        let Some(operator) = self.operator else {
-            self.clear_operator();
+        let Some(range) = self.text_object_range(object, pending.kind) else {
             return Action::None;
         };
-        let Some(range) = self.text_object_range(object, kind) else {
-            self.clear_operator();
-            return Action::None;
-        };
-        self.apply_operator_range(operator, range)
+        self.apply_operator_range(pending.operator, range, pending.register)
     }
 
     pub(super) fn text_object_range(
@@ -318,21 +311,22 @@ impl Editor {
         operator: Operator,
         motion: Motion,
         count: Option<u32>,
+        register: Option<usize>,
     ) -> Action {
-        let count = combined_count(self.operator_count, count);
         let Some(range) = self.motion_range(motion, count) else {
-            self.clear_operator();
+            self.pending.clear();
             return Action::None;
         };
-        self.apply_operator_range(operator, range)
+        self.apply_operator_range(operator, range, register)
     }
 
     pub(super) fn apply_operator_range(
         &mut self,
         operator: Operator,
         range: OperatorRange,
+        register: Option<usize>,
     ) -> Action {
-        self.clear_operator();
+        self.pending.clear();
 
         let kind = if range.linewise {
             RegisterKind::Linewise
@@ -348,14 +342,14 @@ impl Editor {
 
         match operator {
             Operator::Yank => {
-                self.store_register(&stored, kind);
+                self.store_register(&stored, kind, register);
                 Action::None
             }
             Operator::Delete => {
                 if range.start == range.end {
                     return Action::None;
                 }
-                self.store_register(&stored, kind);
+                self.store_register(&stored, kind, register);
                 self.last_change = Some(Repeat::Delete {
                     count: self.char_count(text_range),
                 });
@@ -368,23 +362,23 @@ impl Editor {
         }
     }
 
-    pub(super) fn delete_lines(&mut self, count: u32) -> Action {
+    pub(super) fn delete_lines(&mut self, count: u32, register: Option<usize>) -> Action {
         let line = self.current().line;
         let last = (line + count.saturating_sub(1)).min(self.last_line());
         let range = self.linewise_range(line, last);
-        self.apply_operator_range(Operator::Delete, range)
+        self.apply_operator_range(Operator::Delete, range, register)
     }
 
-    pub(super) fn yank_lines(&mut self, count: u32) -> Action {
+    pub(super) fn yank_lines(&mut self, count: u32, register: Option<usize>) -> Action {
         let line = self.current().line;
         let last = (line + count.saturating_sub(1)).min(self.last_line());
         let range = self.linewise_range(line, last);
-        self.apply_operator_range(Operator::Yank, range)
+        self.apply_operator_range(Operator::Yank, range, register)
     }
 
     /// Deletes `count` characters from the cursor and stores them in a register.
-    pub(super) fn delete_charwise(&mut self, count: u32) -> Action {
-        let action = self.delete_forward(count);
+    pub(super) fn delete_charwise(&mut self, count: u32, register: Option<usize>) -> Action {
+        let action = self.delete_forward(count, register);
         if matches!(action, Action::Edit(_)) {
             self.last_change = Some(Repeat::Delete { count });
         }
@@ -392,7 +386,7 @@ impl Editor {
     }
 
     /// Deletes `count` characters without touching the repeat history.
-    pub(super) fn delete_forward(&mut self, count: u32) -> Action {
+    pub(super) fn delete_forward(&mut self, count: u32, register: Option<usize>) -> Action {
         let start = self.ordered().0;
         let end = self.position_forward(start, count);
         if start == end {
@@ -401,19 +395,19 @@ impl Editor {
 
         let range = Range::new(start, end);
         let deleted = self.text.slice(range).unwrap_or_default();
-        self.store_register(&deleted, RegisterKind::Charwise);
+        self.store_register(&deleted, RegisterKind::Charwise, register);
         self.commit(vec![TextEdit::delete(range)], start, Mode::Normal)
     }
 
-    pub(super) fn delete_selection(&mut self) -> Action {
+    pub(super) fn delete_selection(&mut self, register: Option<usize>) -> Action {
         match self.mode {
             Mode::SelectLine => {
                 let first = self.anchor.line.min(self.head.line);
                 let last = self.anchor.line.max(self.head.line);
                 let range = self.linewise_range(first, last);
-                self.apply_operator_range(Operator::Delete, range)
+                self.apply_operator_range(Operator::Delete, range, register)
             }
-            Mode::SelectBlock => self.delete_block(),
+            Mode::SelectBlock => self.delete_block(register),
             _ => {
                 let (start, end) = self.ordered();
                 if start == end {
@@ -422,7 +416,7 @@ impl Editor {
 
                 let range = Range::new(start, end);
                 let deleted = self.text.slice(range).unwrap_or_default();
-                self.store_register(&deleted, RegisterKind::Charwise);
+                self.store_register(&deleted, RegisterKind::Charwise, register);
                 self.last_change = Some(Repeat::Delete {
                     count: self.char_count(range),
                 });
@@ -438,7 +432,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn delete_block(&mut self) -> Action {
+    pub(super) fn delete_block(&mut self, register: Option<usize>) -> Action {
         let first_line = self.anchor.line.min(self.head.line);
         let last_line = self.anchor.line.max(self.head.line);
         let first_col = self.anchor.character.min(self.head.character);
@@ -463,7 +457,7 @@ impl Editor {
         }
         yanked_lines.reverse();
         let stored = yanked_lines.join("\n");
-        self.store_register(&stored, RegisterKind::Charwise);
+        self.store_register(&stored, RegisterKind::Charwise, register);
 
         let start = Position::new(first_line, first_col);
         self.commit(edits, start, Mode::Normal)

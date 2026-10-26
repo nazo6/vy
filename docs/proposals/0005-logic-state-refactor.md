@@ -204,25 +204,32 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ### Phase B: 入力状態機械（エディタ）
 
-- [ ] `crates/vy-app/src/editor/input_state.rs` を新設し、`PendingInput`
+- [x] `crates/vy-app/src/editor/input_state.rs` を新設し、`PendingInput`
       を定義する。
   - `Idle`
   - `Operator { op, count, register }`
   - `TextObject { op, count, register, kind }`
-- [ ] `Editor` と `ViewState` の `operator` / `operator_count` / `text_object`
+- [x] `Editor` と `ViewState` の `operator` / `operator_count` / `text_object`
       を `PendingInput` に置き換える。
-- [ ] `execute` の前処理を `PendingInput::consume(command)`
+- [x] `execute` の前処理を `PendingInput`
       に集約し、`clear_operator` の呼び出しを削除する。
-- [ ] `active_register` を廃止し、register を `PendingInput`
+  - `consume(command)` という 1 関数にはせず、`operator()` / `start_operator` /
+    `begin_text_object` / `take_text_object` / `clear` に分けた。キャンセル判定
+    （`is_operator_command` / `is_text_object_command`）は `execute` に残している。
+- [x] `active_register` を廃止し、register を `PendingInput`
       と適用関数の引数で受け渡す。
-- [ ] Insert セッションを `InsertSession { kind, buffer }` にまとめる。
-- [ ] `SelectMode` / `SelectLineMode` / `SelectBlockMode` の3ブロックを
+- [x] Insert セッションを `InsertSession { kind, buffer }` にまとめる。
+- [x] `SelectMode` / `SelectLineMode` / `SelectBlockMode` の3ブロックを
       `toggle_select_mode(mode)` に統合する。
-- [ ] テスト: `d` → motion、`d` → `i` → object、`dd`、カウントの合成、Esc
+- [x] テスト: `d` → motion、`d` → `i` → object、`dd`、カウントの合成、Esc
       でのキャンセル、`.` の再現。
 
 完了条件: 「演算子待ち」を表す `Option`
 が複数フィールドにまたがらない。`clear_*` 系の呼び忘れが構造的に起きない。
+
+実施記録: [`../worklogs/2026-10-26-logic-state-refactor.md`](../worklogs/2026-10-26-logic-state-refactor.md)
+（2026-10-26 完了。`PendingInput` 5 件とレジスタ保持 3 件のテストを追加）。
+`"adw` / `"add` / `"adiw` で register が unnamed に落ちていた既存の不具合も修正した。
 
 ### Phase C: Keymap プレフィックス
 

@@ -20,6 +20,7 @@ pub use crate::keymap::{Key, Mode};
 pub const TRANSACTION_IDLE: Duration = Duration::from_millis(500);
 
 mod action;
+mod input_state;
 mod motion;
 mod operator;
 mod register;
@@ -31,7 +32,8 @@ pub use action::{Action, Transaction};
 pub use view::ViewState;
 pub use visual::{VisualIndex, VisualOptions, VisualRow};
 
-use self::motion::{Motion, motion_of};
+use self::input_state::{InsertSession, PendingInput};
+use self::motion::{Motion, combined_count, motion_of};
 use self::operator::{
     Operator, TextObject, TextObjectKind, is_operator_command, is_text_object_command,
 };
@@ -48,26 +50,18 @@ pub struct Editor {
     last_edit: Option<Instant>,
     /// Idle interval that splits undo transactions.
     transaction_idle: Duration,
-    /// Register chosen for the current command by `args.register`.
-    active_register: Option<usize>,
     /// Last delete or yank. It is also the unnamed register.
     unnamed_register: Register,
     /// Registers `a` to `z`.
     named_registers: [Register; 26],
-    /// Operator waiting for a motion or text object (`d`, `y`).
-    operator: Option<Operator>,
-    /// Count typed before the operator, applied to the motion.
-    operator_count: Option<u32>,
-    /// Text object waiting for its key (`i` or `a` after an operator).
-    text_object: Option<TextObjectKind>,
+    /// Operator or text object waiting for the next key.
+    pending: PendingInput,
     /// Last change, replayed by `.`.
     last_change: Option<Repeat>,
     /// Last Visual range. `gv` restores it.
     last_visual: Option<Range>,
-    /// Text inserted in the current Insert session, replayed by `.`.
-    insert_buffer: String,
-    /// The kind of Insert session started (e.g. `o` or `O`).
-    insert_kind: InsertKind,
+    /// Text inserted and how the current Insert session started, replayed by `.`.
+    insert_session: InsertSession,
     /// Column kept across vertical moves. Updated by horizontal moves and dropped by others.
     preferred_character: Option<u32>,
     /// Display column kept across visual/display vertical moves.
@@ -91,16 +85,12 @@ impl Editor {
             next_transaction_id: 0,
             last_edit: None,
             transaction_idle: TRANSACTION_IDLE,
-            active_register: None,
             unnamed_register: Register::default(),
             named_registers: std::array::from_fn(|_| Register::default()),
-            operator: None,
-            operator_count: None,
-            text_object: None,
+            pending: PendingInput::Idle,
             last_change: None,
             last_visual: None,
-            insert_buffer: String::new(),
-            insert_kind: InsertKind::Normal,
+            insert_session: InsertSession::default(),
             preferred_character: None,
             preferred_display_col: None,
             wrap_width: None,
@@ -116,8 +106,7 @@ impl Editor {
         self.mode = Mode::Normal;
         self.last_edit = None;
         self.last_visual = None;
-        self.insert_buffer.clear();
-        self.insert_kind = InsertKind::Normal;
+        self.insert_session.clear();
         self.preferred_character = None;
         self.preferred_display_col = None;
         self.select_one_char(Position::new(0, 0));
@@ -210,7 +199,7 @@ impl Editor {
     /// Text of the unnamed register. Only used by tests.
     #[cfg(test)]
     pub fn register_text(&self) -> &str {
-        &self.register().text
+        &self.register(None).text
     }
 
     /// Cursor used for drawing. The selection start in Normal, otherwise the end.
@@ -266,9 +255,7 @@ impl Editor {
             mode: self.mode,
             anchor: self.anchor,
             head: self.head,
-            operator: self.operator,
-            operator_count: self.operator_count,
-            text_object: self.text_object,
+            pending: self.pending,
             preferred_character: self.preferred_character,
             preferred_display_col: self.preferred_display_col,
         }
@@ -279,9 +266,7 @@ impl Editor {
         self.mode = state.mode;
         self.anchor = self.clamp(state.anchor);
         self.head = self.clamp(state.head);
-        self.operator = state.operator;
-        self.operator_count = state.operator_count;
-        self.text_object = state.text_object;
+        self.pending = state.pending;
         self.preferred_character = state.preferred_character;
         self.preferred_display_col = state.preferred_display_col;
 
@@ -337,44 +322,48 @@ impl Editor {
 
     /// Whether `d` or `y` is waiting for a motion or text object.
     pub fn operator_pending(&self) -> bool {
-        self.operator.is_some()
+        self.pending.operator_pending()
     }
 
     /// Whether `i` or `a` after an operator is waiting for the object key.
     pub fn text_object_pending(&self) -> bool {
-        self.text_object.is_some()
+        self.pending.text_object_pending()
     }
 
     /// Runs a built-in command. The keymap supplies the count and register.
     pub fn execute(&mut self, command: BuiltinCommand, args: KeymapArgs) -> Action {
         let count = args.count.unwrap_or(1).max(1);
-        self.active_register = args.register.and_then(register_index);
+        let register = args.register.and_then(register_index);
 
         // A pending operator consumes the next motion.
-        if let Some(operator) = self.operator {
+        if let Some(pending) = self.pending.operator() {
             if let Some(motion) = motion_of(command) {
-                let action = self.apply_operator_motion(operator, motion, args.count);
-                self.active_register = None;
-                return action;
+                self.pending.clear();
+                let count = combined_count(pending.count, args.count);
+                return self.apply_operator_motion(
+                    pending.operator,
+                    motion,
+                    count,
+                    pending.register.or(register),
+                );
             }
             if !is_operator_command(command) {
-                self.clear_operator();
+                self.pending.clear();
             }
         }
 
-        if self.text_object.is_some() && !is_text_object_command(command) {
+        if self.pending.text_object_pending() && !is_text_object_command(command) {
             let cancel = matches!(
                 command,
                 BuiltinCommand::OperatorDelete | BuiltinCommand::OperatorYank
             );
-            self.clear_operator();
+            self.pending.clear();
             if cancel {
-                self.active_register = None;
                 return Action::None;
             }
         }
 
-        let action = match command {
+        match command {
             BuiltinCommand::MoveLeft => {
                 self.apply_motion(Motion::Left, args.count);
                 Action::None
@@ -429,13 +418,13 @@ impl Editor {
             }
             BuiltinCommand::Delete => {
                 if self.mode.is_select() {
-                    self.delete_selection()
+                    self.delete_selection(register)
                 } else {
-                    self.delete_charwise(count)
+                    self.delete_charwise(count, register)
                 }
             }
-            BuiltinCommand::PasteAfter => self.paste(count, false),
-            BuiltinCommand::PasteBefore => self.paste(count, true),
+            BuiltinCommand::PasteAfter => self.paste(count, false, register),
+            BuiltinCommand::PasteBefore => self.paste(count, true, register),
             BuiltinCommand::Repeat => self.repeat_last(count),
             BuiltinCommand::LastVisual => self.select_last_visual(),
             BuiltinCommand::InsertHere => {
@@ -464,53 +453,11 @@ impl Editor {
             }
             BuiltinCommand::OpenBelow => self.open_below(),
             BuiltinCommand::OpenAbove => self.open_above(),
-            BuiltinCommand::SelectMode => {
-                if self.mode == Mode::Select {
-                    self.set_mode(Mode::Normal);
-                    self.select_one_char(self.head);
-                } else {
-                    let cursor = self.current();
-                    let was_normal = self.mode == Mode::Normal;
-                    self.set_mode(Mode::Select);
-                    if was_normal {
-                        self.anchor = cursor;
-                        self.head = cursor;
-                    }
-                }
-                Action::None
-            }
-            BuiltinCommand::SelectLineMode => {
-                if self.mode == Mode::SelectLine {
-                    self.set_mode(Mode::Normal);
-                    self.select_one_char(self.head);
-                } else {
-                    let cursor = self.current();
-                    let was_normal = self.mode == Mode::Normal;
-                    self.set_mode(Mode::SelectLine);
-                    if was_normal {
-                        self.anchor = cursor;
-                        self.head = cursor;
-                    }
-                }
-                Action::None
-            }
-            BuiltinCommand::SelectBlockMode => {
-                if self.mode == Mode::SelectBlock {
-                    self.set_mode(Mode::Normal);
-                    self.select_one_char(self.head);
-                } else {
-                    let cursor = self.current();
-                    let was_normal = self.mode == Mode::Normal;
-                    self.set_mode(Mode::SelectBlock);
-                    if was_normal {
-                        self.anchor = cursor;
-                        self.head = cursor;
-                    }
-                }
-                Action::None
-            }
+            BuiltinCommand::SelectMode => self.toggle_select_mode(Mode::Select),
+            BuiltinCommand::SelectLineMode => self.toggle_select_mode(Mode::SelectLine),
+            BuiltinCommand::SelectBlockMode => self.toggle_select_mode(Mode::SelectBlock),
             BuiltinCommand::NormalMode => {
-                self.clear_operator();
+                self.pending.clear();
                 if self.mode == Mode::Insert {
                     self.finish_insert();
                     self.set_mode(Mode::Normal);
@@ -555,9 +502,13 @@ impl Editor {
                 self.move_to(Position::new(self.head.line, length));
                 Action::None
             }
-            BuiltinCommand::OperatorDelete => self.start_operator(Operator::Delete, args.count),
-            BuiltinCommand::OperatorYank => self.start_operator(Operator::Yank, args.count),
-            BuiltinCommand::YankLine => self.yank_lines(count),
+            BuiltinCommand::OperatorDelete => {
+                self.start_operator(Operator::Delete, args.count, register)
+            }
+            BuiltinCommand::OperatorYank => {
+                self.start_operator(Operator::Yank, args.count, register)
+            }
+            BuiltinCommand::YankLine => self.yank_lines(count, register),
             BuiltinCommand::OperatorInner => self.begin_text_object(TextObjectKind::Inner),
             BuiltinCommand::OperatorAround => self.begin_text_object(TextObjectKind::Around),
             BuiltinCommand::TextObjectWord => self.apply_text_object(TextObject::Word),
@@ -571,16 +522,7 @@ impl Editor {
                 self.apply_text_object(TextObject::Quote('\''))
             }
             BuiltinCommand::TextObjectBacktick => self.apply_text_object(TextObject::Quote('`')),
-        };
-
-        self.active_register = None;
-        action
-    }
-
-    pub(super) fn clear_operator(&mut self) {
-        self.operator = None;
-        self.operator_count = None;
-        self.text_object = None;
+        }
     }
 
     pub(super) fn position_of(&self, index: usize) -> Position {
@@ -649,7 +591,7 @@ impl Editor {
 
         self.version = version;
         self.last_edit = None;
-        self.insert_buffer.clear();
+        self.insert_session.clear();
         self.mode = Mode::Normal;
 
         if let Some(selection) = selection.first().copied() {
@@ -667,7 +609,7 @@ impl Editor {
         let at = self.head;
         let edit = TextEdit::new(Range::empty(at), value);
         let new_head = self.advance(at, value);
-        self.insert_buffer.push_str(value);
+        self.insert_session.buffer.push_str(value);
         self.commit(vec![edit], new_head, Mode::Insert)
     }
 
@@ -677,7 +619,7 @@ impl Editor {
             return Action::None;
         };
         let edit = TextEdit::delete(Range::new(previous, caret));
-        self.insert_buffer.pop();
+        self.insert_session.buffer.pop();
         self.commit(vec![edit], previous, Mode::Insert)
     }
 
@@ -802,6 +744,23 @@ impl Editor {
         }
     }
 
+    /// Enters a Visual mode, or leaves it when that mode is already active.
+    pub(super) fn toggle_select_mode(&mut self, mode: Mode) -> Action {
+        if self.mode == mode {
+            self.set_mode(Mode::Normal);
+            self.select_one_char(self.head);
+        } else {
+            let cursor = self.current();
+            let was_normal = self.mode == Mode::Normal;
+            self.set_mode(mode);
+            if was_normal {
+                self.anchor = cursor;
+                self.head = cursor;
+            }
+        }
+        Action::None
+    }
+
     /// Current position: the selection start in Normal, the end in Insert and Select.
     pub(super) fn current(&self) -> Position {
         match self.mode {
@@ -861,8 +820,7 @@ impl Editor {
     }
 
     pub(super) fn open_below(&mut self) -> Action {
-        self.insert_buffer.clear();
-        self.insert_kind = InsertKind::OpenBelow;
+        self.insert_session.begin(InsertKind::OpenBelow);
         let line = self.current().line;
         let end = self.text.line_len_utf16(line as usize).unwrap_or(0);
         let at = Position::new(line, end);
@@ -875,8 +833,7 @@ impl Editor {
     }
 
     pub(super) fn open_above(&mut self) -> Action {
-        self.insert_buffer.clear();
-        self.insert_kind = InsertKind::OpenAbove;
+        self.insert_session.begin(InsertKind::OpenAbove);
         let line = self.current().line;
         let at = Position::new(line, 0);
         let cursor = Position::new(line, 0);

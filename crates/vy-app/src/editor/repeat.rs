@@ -38,8 +38,7 @@ pub(super) enum Repeat {
 impl Editor {
     /// Enters Insert mode with the caret collapsed at `at`.
     pub(super) fn begin_insert(&mut self, anchor: Position, at: Position) {
-        self.insert_kind = InsertKind::Normal;
-        self.insert_buffer.clear();
+        self.insert_session.begin(InsertKind::Normal);
         self.set_mode(Mode::Insert);
         self.anchor = anchor;
         self.head = at;
@@ -47,8 +46,9 @@ impl Editor {
 
     /// Ends the Insert session and remembers its text for `.`.
     pub(super) fn finish_insert(&mut self) {
-        let text = std::mem::take(&mut self.insert_buffer);
-        match self.insert_kind {
+        let kind = self.insert_session.kind;
+        let text = std::mem::take(&mut self.insert_session.buffer);
+        match kind {
             InsertKind::Normal => {
                 if !text.is_empty() {
                     self.last_change = Some(Repeat::Insert { text });
@@ -61,15 +61,14 @@ impl Editor {
                 self.last_change = Some(Repeat::OpenAbove { text });
             }
         }
-        self.insert_kind = InsertKind::Normal;
-        self.insert_buffer.clear();
+        self.insert_session.clear();
     }
 
     /// Repeats the last change `count` times.
     pub(super) fn repeat_last(&mut self, count: u32) -> Action {
         match self.last_change.clone() {
             Some(Repeat::Delete { count: deleted }) => {
-                self.delete_forward(deleted.saturating_mul(count))
+                self.delete_forward(deleted.saturating_mul(count), None)
             }
             Some(Repeat::Insert { text }) => {
                 let at = self.ordered().0;

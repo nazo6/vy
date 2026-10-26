@@ -30,13 +30,13 @@ pub(super) fn register_index(character: char) -> Option<usize> {
 }
 
 impl Editor {
-    pub(super) fn yank_selection(&mut self) -> Action {
+    pub(super) fn yank_selection(&mut self, register: Option<usize>) -> Action {
         match self.mode {
             Mode::SelectLine => {
                 let first = self.anchor.line.min(self.head.line);
                 let last = self.anchor.line.max(self.head.line);
                 let range = self.linewise_range(first, last);
-                self.apply_operator_range(Operator::Yank, range);
+                self.apply_operator_range(Operator::Yank, range, register);
                 let start = Position::new(first, 0);
                 self.set_mode(Mode::Normal);
                 self.select_one_char(start);
@@ -65,7 +65,7 @@ impl Editor {
                     yanked_lines.push(String::new());
                 }
                 let stored = yanked_lines.join("\n");
-                self.store_register(&stored, RegisterKind::Charwise);
+                self.store_register(&stored, RegisterKind::Charwise, register);
                 let start = Position::new(first_line, first_col);
                 self.set_mode(Mode::Normal);
                 self.select_one_char(start);
@@ -78,7 +78,7 @@ impl Editor {
                 }
 
                 let text = self.text.slice(Range::new(start, end)).unwrap_or_default();
-                self.store_register(&text, RegisterKind::Charwise);
+                self.store_register(&text, RegisterKind::Charwise, register);
                 self.set_mode(Mode::Normal);
                 self.select_one_char(start);
                 Action::None
@@ -87,8 +87,8 @@ impl Editor {
     }
 
     /// Pastes the selected register text after the cursor, or before with `before`.
-    pub(super) fn paste(&mut self, count: u32, before: bool) -> Action {
-        let register = self.register().clone();
+    pub(super) fn paste(&mut self, count: u32, before: bool, register: Option<usize>) -> Action {
+        let register = self.register(register).clone();
         if register.text.is_empty() {
             return Action::None;
         }
@@ -135,22 +135,34 @@ impl Editor {
         }
     }
 
-    pub(super) fn store_register(&mut self, text: &str, kind: RegisterKind) {
-        let register = Register {
+    pub(super) fn store_register(
+        &mut self,
+        text: &str,
+        kind: RegisterKind,
+        register: Option<usize>,
+    ) {
+        let stored = Register {
             text: text.to_string(),
             kind,
         };
-        self.unnamed_register = register.clone();
+        self.unnamed_register = stored.clone();
 
-        if let Some(index) = self.active_register {
-            self.named_registers[index] = register;
+        if let Some(index) = register {
+            self.named_registers[index] = stored;
         }
     }
 
-    pub(super) fn register(&self) -> &Register {
-        match self.active_register {
+    pub(super) fn register(&self, register: Option<usize>) -> &Register {
+        match register {
             Some(index) => &self.named_registers[index],
             None => &self.unnamed_register,
         }
+    }
+
+    /// Text of a named register. Only used by tests.
+    #[cfg(test)]
+    pub fn named_register_text(&self, name: char) -> &str {
+        let index = register_index(name).expect("a register name");
+        &self.named_registers[index].text
     }
 }
