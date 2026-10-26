@@ -1,12 +1,14 @@
 ---
 title: "作業ログ (Worklogs)"
 type: "guide"
-updated_at: 2026-10-26
+updated_at: 2026-10-27
 ---
 
 # 作業ログ (Worklogs)
 
 アーキテクチャの意思決定（ADR）ではないものの、**着手した**規模の大きな作業（リファクタリング、段階的移行、パフォーマンス改善、調査検証など）の計画と実施ログを記録する場所です。まだ着手していない計画は [`../proposals/`](../proposals/README.md) に置きます。
+
+ADR に書かれていた実装記録（検証した範囲、移行の各段階、つまずき）は、決定内容を残したままこのディレクトリへ移します。worklog は決定の根拠にはなりません。決定は ADR、規範は [`../specs/`](../specs/README.md) を参照してください。
 
 設計ドキュメントや仕様書が作業詳細メモで肥大化するのを防ぎ、後から「なぜ・どのようにその作業を進めたか」「どのような課題が発生してどう解決したか」を追跡できるようにします。
 
@@ -16,6 +18,7 @@ updated_at: 2026-10-26
 - [`2026-10-editor-ui-improvements.md`](./2026-10-editor-ui-improvements.md): UI・エディタ品質改善ログ
 - [`2026-10-runtime-safety-infrastructure.md`](./2026-10-runtime-safety-infrastructure.md): 実行時・基盤・セキュリティ負債整理ログ
 - [`2026-10-26-logic-state-refactor.md`](./2026-10-26-logic-state-refactor.md): 純粋ロジックの状態モデル整理ログ（Phase 0–C 完了）
+- [`2026-10-24-plugin-api-pipeline.md`](./2026-10-24-plugin-api-pipeline.md): プラグイン API の型・宣言・生成パイプライン整備ログ
 
 ## 命名規則
 

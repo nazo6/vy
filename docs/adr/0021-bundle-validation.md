@@ -12,6 +12,7 @@ superseded_by: null
 
 - 状態: 採用
 - 日付: 2026-10-24
+- 拡張子の扱い、サイズ上限、ハッシュの計算、`engines.vy` の規範は [`plugin-system.md`](../specs/plugin-system.md) を正とします。
 
 ## 文脈
 

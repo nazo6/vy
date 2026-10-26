@@ -5,10 +5,13 @@ type: "adr"
 status: "superseded"
 date: 2026-10-24
 supersedes: ["0007"]
-superseded_by: "0013"
+superseded_by: "0025"
 ---
 
 # ADR 0008: プラグイン API を宣言マクロで一本化する
+
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
 
 - 状態: 置き換え済み（名前空間の宣言方法は [0013](./0013-host-api-traits.md) で
   trait に置き換え。0007 のメソッド表・dispatch・codegen の一部を置き換え、型の

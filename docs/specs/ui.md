@@ -59,6 +59,8 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 
 ### 2.1 コンテキスト
 
+> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode` と `paneId` だけです。`paneKind`、`viewType`、`uiRole`、`uiFocus`、`overlay` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)、[proposals/0007](../proposals/0007-keyboard-first-plugin-ui.md)）。
+
 キーマップの `when` から参照できる値を増やします。`mode` と `paneId`
 は既存の値です。
 
@@ -83,6 +85,8 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 で別の名前を足して書きます。
 
 ### 2.2 アクションへの解決
+
+> **実装状況**: この節のアクションの語彙と既定キーは未実装です。ホストの既定動作とキーマップ経由の解決は [proposals/0007](../proposals/0007-keyboard-first-plugin-ui.md) の計画に従います。
 
 フォーカス中のウィジェットは、組み込みのコマンド名に対して自分のアクションを対応づけます。ホストの組み込みコマンドは、対応表にあるアクションを探して実行します。
 
@@ -414,6 +418,8 @@ await vy.panes.open({
     で次の入力可能要素へ移動します。
 
 ### 9.2 Esc のフォーカス層（Esc Layering）
+
+> **実装状況**: プラグイン UI を含む 5 層の解決は未実装です。決定は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)、規範と作業計画は [proposals/0007](../proposals/0007-keyboard-first-plugin-ui.md) にあります。
 
 複数の状態（モーダル、モード、ペイン）が重なった際の `Esc`
 の優先順位を以下のように層（Layer）として定義します:

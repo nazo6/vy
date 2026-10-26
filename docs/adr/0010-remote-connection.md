@@ -12,6 +12,7 @@ superseded_by: null
 
 - 状態: 採用
 - 日付: 2026-10-24
+- メッセージ、フィールド、プロトコル版の規範は [`protocol.md`](../specs/protocol.md) を正とします。
 
 ## 文脈
 

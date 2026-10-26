@@ -10,7 +10,7 @@ tags: ["remote", "plugins", "backend", "quickjs"]
 
 # [Proposal] Phase 6: リモートプラグイン
 
-`backend.ts` を接続先のコア（`vy-server`）で動かし、フロントエンドとはチャネルで通信する設計（ADR 0011）の検討と実装計画です。
+`backend.ts` を接続先のコア（`vy-server`）で動かし、フロントエンドとはチャネルで通信する設計は [ADR 0011](../adr/0011-backend-plugins-on-core.md) で決定済みです。この提案は、その実装スコープと未決定の論点だけを扱います。決定済みの内容は再掲しません。
 
 ---
 

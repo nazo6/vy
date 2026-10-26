@@ -266,12 +266,12 @@ vy-server ---> vy-core --->  ropey
 `ui`、`views`、`keymap`、`commands`、 `editor`
 などクライアント専用の型と宣言を持ちます。どちらもハンドラを持たず、
 クライアントは `vy-app/src/api`、コアは `vy-server/src/api` にハンドラを置きます
-（[ADR 0012](../adr/0012-shared-host-api.md)）。
+（[ADR 0025](../adr/0025-plugin-api-declaration-and-codegen.md)）。
 
 名前空間は trait として宣言し、`HostApi`（共有）と `ClientHostApi`（共有 +
 クライアント専用）の facade が `dispatch` をまとめます。ホスト構造体は名前空間
 trait を 実装するだけで、メソッドごとの adapter を持ちません
-（[ADR 0013](../adr/0013-host-api-traits.md)）。
+（[ADR 0025](../adr/0025-plugin-api-declaration-and-codegen.md)）。
 
 - `vy-app` だけが GPUI に依存します。CI で `cargo tree` を検査し、他のクレートが
   GPUI を引いたら失敗させます。

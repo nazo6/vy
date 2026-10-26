@@ -2,13 +2,16 @@
 id: "0012"
 title: "共有するホスト API の型と宣言は vy-host-api に置く"
 type: "adr"
-status: "accepted"
+status: "superseded"
 date: 2026-10-24
 supersedes: []
-superseded_by: null
+superseded_by: "0025"
 ---
 
 # ADR 0012: 共有するホスト API の型と宣言は `vy-host-api` に置く
+
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
 
 - 状態: 採用（型の置き場所は有効。宣言の共有方法は
   [0013](./0013-host-api-traits.md) の trait に置き換え。生成の分離は
@@ -87,24 +90,6 @@ facade と dispatch を生成します。詳細は
 
 `vy-server` は `vy-host-api` の trait をコア用のホストに実装します。
 ケイパビリティの検査はコア側で行います。
-
-## 今回の範囲
-
-API 宣言の切り出しを完了しました。
-
-- `vy-host-api` に共有API（`fs`、`workspace`、`process`、`document`、
-  `config.get` / `config.inspect`、`log`、`context`）を追加
-- `vy-client-api` にクライアント専用API（`ui`、`ui.statusline`、`ui.gutter`、
-  `ui.hover`、`ui.picker`、`views`、`keymap`、`commands`、`editor`、
-  `notifications`、`config.set`）を追加
-- API 境界を越える値型（`ThemeColor`、`WidgetNode`、`PickerItem`、`Mode`、
-  `StatuslineAlignment`）を `vy-client-api` に移し、`vy-app` から再エクスポート
-- `DocumentInfoReply` を `vy-host-api` に移し、`vy-js` から再エクスポート
-- `vy-app` の各 namespace はハンドラだけを持つ
-- 生成される TypeScript の型名とワイヤー名は変えない
-
-`vy-api-codegen` は [0014](./0014-api-codegen-cli.md) で追加しました。
-`backend.d.ts` は次の段階です。
 
 ## 帰結
 

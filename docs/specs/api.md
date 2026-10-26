@@ -36,9 +36,9 @@ Phase に分けます。
 - バッファの内容はコアが正とします。フロントは先に適用して `base_version`
   付きで送り、返ってきた version が合わなければ再同期します。
 - 境界の型は Rust を正とします。params / reply / イベント payload
-  型はハンドラの隣（`crates/vy-app/src/api/namespaces`）に置き、共有する値型は
-  `vy-app` の対応するモジュールに置きます。`packages/vy-api`（生成された型は
-  `packages/vy-api/types`）の宣言は、その宣言から生成します（[ADR 0009](../adr/0009-api-types-live-with-handlers.md)）。
+  型はハンドラの隣に置き、クライアントとコアで共有する型は `vy-host-api`、
+  クライアント専用の型は `vy-client-api` に置きます。`packages/vy-api`（生成された型は
+  `packages/vy-api/types/bindings.ts`）の宣言は、その宣言から生成します（[ADR 0025](../adr/0025-plugin-api-declaration-and-codegen.md)）。
 
 ## 2. 表記の約束
 
@@ -69,7 +69,7 @@ API と、コアが状態の正を持つ API です。
 つ渡します。`editor.setMode({ mode: "insert" })`、`config.get({ key: "ui.fontSize" })`、`ui.hover.show({ line, character, text })`
 のように、メソッドごとの params
 型がそのまま引数になります。パラメータの無いメソッドは引数を取りません（`editor.mode()`）。型は
-[`packages/vy-api/types`](../packages/vy-api/types)
+[`packages/vy-api/types`](../../packages/vy-api/types)
 に生成され、メソッド名と型の対応は `HostMethods` が持ちます。
 
 Phase 3 以降、すべてのメソッドは params オブジェクトを 1
@@ -617,7 +617,7 @@ Webview は最終手段です。Notebook の出力、HTML
 など）と、ウィジェットの語彙（`Gap` の `sm`/`md`/`lg`、`Font` の
 `mono`、`ButtonVariant` の `primary`/`danger`）は列挙です。未知の値は
 `InvalidParams`
-で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0007](../adr/0007-rust-typed-plugin-api.md)
+で失敗し、描画側が既定の見た目に化けることはありません。これらの語彙は閉じており、追加はクライアントの変更として行います（[ADR 0025](../adr/0025-plugin-api-declaration-and-codegen.md)
 §6）。
 
 ## 20. エラー
@@ -641,9 +641,9 @@ API の失敗は例外で返します。例外は `code` を持ちます。
 ## 21. Phase 2 の実装状況
 
 Phase 2 では `vy` から呼べる範囲を次のとおり実装しました。型は
-[`packages/vy-api/index.d.ts`](../packages/vy-api/index.d.ts)、
-[`packages/vy-api/api-base.d.ts`](../packages/vy-api/api-base.d.ts)、
-[`packages/vy-api/types`](../packages/vy-api/types) に生成され、引数の形は §2.1
+[`packages/vy-api/index.d.ts`](../../packages/vy-api/index.d.ts)、
+[`packages/vy-api/api-base.d.ts`](../../packages/vy-api/api-base.d.ts)、
+[`packages/vy-api/types`](../../packages/vy-api/types) に生成され、引数の形は §2.1
 のとおりです。表の名前は `vy.` を省いています。
 
 | 名前空間        | 実装済み                                                                                                |

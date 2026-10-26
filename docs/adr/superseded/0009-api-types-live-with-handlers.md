@@ -2,13 +2,16 @@
 id: "0009"
 title: "API の型はハンドラの隣に置き、生成は codegen に集める"
 type: "adr"
-status: "accepted"
+status: "superseded"
 date: 2026-10-24
 supersedes: ["0007", "0008"]
-superseded_by: null
+superseded_by: "0025"
 ---
 
 # ADR 0009: API の型はハンドラの隣に置き、生成は codegen に集める
+
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
 
 - 状態: 採用（[0007](./0007-rust-typed-plugin-api.md) の決定 1 と
   [0008](./0008-declare-plugin-api-with-macros.md) の型の置き場所を置き換え。

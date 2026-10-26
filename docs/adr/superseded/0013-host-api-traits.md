@@ -2,13 +2,16 @@
 id: "0013"
 title: "名前空間 trait と HostApi facade でホスト API を実装する"
 type: "adr"
-status: "accepted"
+status: "superseded"
 date: 2026-10-24
 supersedes: ["0008", "0012"]
-superseded_by: null
+superseded_by: "0025"
 ---
 
 # ADR 0013: 名前空間 trait と `HostApi` facade でホスト API を実装する
+
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
 
 - 状態: 採用（すべての名前空間を trait 化）
 - 日付: 2026-10-24
@@ -173,34 +176,6 @@ crate 内に閉じ、外部からは `emit_event` だけを使います。
 `host_api!` は `module::EVENTS` を集めるので、facade ごとの `events_fn` が
 共有イベントとクライアントイベントをまとめます。すべての名前空間を trait 化した
 ため、宣言専用の `method_decl!` / `event_decl!` は削除しました。
-
-## 検証した範囲
-
-すべての名前空間を trait 化しました。
-
-- 共有: `config`（読み取り）、`context`、`document`、`fs`、`log`、`process`、
-  `workspace`
-- クライアント: `commands`、`config`（書き込み）、`editor`、`keymap`、
-  `notifications`、`ui`、`ui.gutter`、`ui.hover`、`ui.picker`、`ui.statusline`、
-  `views`
-
-主な確認項目:
-
-- `fs` / `process` の `Reply::Deferred` と `ServerRpc`
-- `views` / `editor` の `HostAction`
-- `config` の共有 trait とクライアント trait の分割
-- `commands` の `manual`（JS shim が型を提供する境界）
-- `host_api!` による facade、dispatch、`METHODS` / `NAMESPACE` / `EVENTS` の収集
-- `HostEvent` marker と `ScriptHost::emit_event` による型付きイベント
-- `vy-server` の `CoreHost` による共有 trait の実装
-- `fs` のケイパビリティ許可と拒否
-- 生成される TypeScript が変わらないこと
-
-### 検証で見つかった点
-
-`fs` のケイパビリティは、宣言では `${workspace}/**` のようなパスを使いますが、
-API は `file:` URI を渡します。そのままでは glob が一致しないため、クライアントと
-`CoreHost` の両方で `file:` URI をパスに変換してから照合するようにしました。
 
 ## 帰結
 

@@ -59,7 +59,7 @@ Vy は、モーダル編集、GPU 描画、Webview
 
 UI フレームワークに GPUI を採用し、部品として gpui-kit / gpui-base を使います。
 
-- `gpui` はバージョンを完全に固定します（`=` 指定）。`gpui-kit` / `gpui-base 0.8.0` の要件に合わせ、`gpui-pre = "=0.3.9"` および `gpui-pre-platform = "=0.3.9"` に固定します。更新は独立した PR で行います。
+- `gpui` と関連クレートはバージョンを完全に固定します（`=` 指定）。更新は独立した PR で行います。現在の固定値は `Cargo.toml` と [`development.md`](../development.md) を正とします。
 - Webview は gpui-kit のクレートを使い、`vy-app`
   の中の薄いラッパ越しに呼びます。差し替えられるようにするためです。
 - Dock レイアウト、エディタの描画、アクセシビリティの実装は gpui-kit / gpui-base

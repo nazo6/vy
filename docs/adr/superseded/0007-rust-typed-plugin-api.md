@@ -2,18 +2,21 @@
 id: "0007"
 title: "プラグイン境界の型は Rust を正とする"
 type: "adr"
-status: "accepted"
+status: "superseded"
 date: 2026-10-24
 supersedes: []
-superseded_by: null
+superseded_by: "0025"
 ---
 
 # ADR 0007: プラグイン境界の型は Rust を正とする
 
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
+
 - 状態: 採用（メソッド宣言と dispatch は
   [0008](./0008-declare-plugin-api-with-macros.md)、型の置き場所は
   [0009](./0009-api-types-live-with-handlers.md) で置き換え。API の入口と
-  `CommandMap` の拡張点は [0019](./0019-global-vy-api.md) で変更）
+  `CommandMap` の拡張点は [0019](../0019-global-vy-api.md) で変更）
 - 日付: 2026-10-23
 
 ## 文脈
@@ -55,8 +58,8 @@ Phase 3 以降、API
 5. **レビュー容易性**:
    生成物が読めて、差分がレビューできること。手書きと同じくらい追跡できること。
 6. **方針との整合**:
-   クライアントとコアは別プロセス（[ADR 0002](./0002-process-model.md)）、UI
-   はウィジェット木（[ADR 0005](./0005-native-plugin-ui.md)）、位置は UTF-16
+   クライアントとコアは別プロセス（[ADR 0002](../0002-process-model.md)）、UI
+   はウィジェット木（[ADR 0005](../0005-native-plugin-ui.md)）、位置は UTF-16
    で数える。
 
 ## 検討した選択肢
@@ -204,17 +207,6 @@ tsconfig の `include` に加えます。宣言マージは同じ TS
 型は Oxc
 で除去され、実行時には存在しません。型と実装のズレを実行時に検出する仕組みは、この決定では持ちません（引数スキーマの導入は未決定事項）。
 
-### 7. 検証
-
-- メソッド表と `HostCall`
-  の名前が一致することをテストします。ディスパッチは列挙を網羅するため、表の全項目が必ず処理されます。
-- params の欠落・型違いが `InvalidParams` になることをテストします。
-- 生成物に差分が出ないことを確認します。
-- `examples/init.ts` を新しい API で書き、型検査の対象にします。
-- 拡張 d.ts を当てた場合と当てない場合の両方で、`init.ts`
-  が型検査を通ることを確認します（当てた場合は引数が型付きになり、当てない場合は
-  `unknown` に落ちる）。
-
 ## 帰結
 
 ### 良い面
@@ -285,7 +277,7 @@ tsconfig の `include` に加えます。宣言マージは同じ TS
   の関数を呼ぶ経路ができるまで API から削除した。Phase 3
   で戻すか、ホスト主導の問い合わせに変えるかを決めます。
 - `when` を文字列の式から構造化した条件木にするか。
-- イベント API の型生成方法と、購読の上限（[`api.md`](../specs/api.md) §22）。
+- イベント API の型生成方法と、購読の上限（[`api.md`](../../specs/api.md) §22）。
 - 生成物の差分を検査する CI の整備（現状は手元のコマンドのみ）。
 - 拡張 d.ts の配布方法。プラグインが同梱するか、`vy types sync`
   がインストール済みプラグインの宣言を集約するか。

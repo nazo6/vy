@@ -101,21 +101,19 @@ Rust 以外のファイルの整形は §8 に従います。
   クライアントとコアで共有する API の params / reply / イベント payload 型と
   メソッド宣言は `vy-host-api` に置きます。クライアント専用の型と宣言は
   `vy-client-api` に置きます。名前空間は `#[vy_api_trait]` で trait として宣言し、
-  `vy-app` / `vy-server` が実装します。共有する値型は `vy-client-api` に置き、
+  `vy-app` / `vy-server` が実装します。共有する値型も `vy-client-api` に置き、
   `vy-app` の対応するモジュール（`keymap`、`color`、`widget` など）から
-  再エクスポートします（[ADR 0012](./adr/0012-shared-host-api.md)）。`host_api!` が
-  生成する `HostApi` / `ClientHostApi` の `dispatch` から名前空間を呼びます。
-  イベントは trait 内の `#[vy_api_event]` 関連定数で宣言します
-  （[ADR 0013](./adr/0013-host-api-traits.md)）。
-  `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。`HostMethods.ts`、
-  `HostEvents.ts`、`packages/vy-api/types/index.ts`、`packages/vy-api/api-base.d.ts`
-  は、宣言が持つ `TypeCollector` から `vy-api-codegen` が生成します。`BuiltinCommandMap.ts`
-  と `SettingsKey.ts` も同じ CLI が生成します。JS 向けの型は
+  再エクスポートします。`host_api!` が生成する `HostApi` / `ClientHostApi` の
+  `dispatch` から名前空間を呼びます。イベントは trait 内の `#[vy_api_event]`
+  関連定数で宣言します（[ADR 0025](./adr/0025-plugin-api-declaration-and-codegen.md)）。
+  `vy-api-schema` はマクロのランタイム型と codegen だけを持ちます。型は Specta が
+  `packages/vy-api/types/bindings.ts` に、`HostMethods.ts`、`HostEvents.ts`、
+  `api-base.d.ts`、`index.d.ts` は `vy-api-codegen` が生成します。
+  `BuiltinCommandMap.ts` と `SettingsKey.ts` も同じ CLI が生成します。JS 向けの型は
   `crates/vy-js/src/shim.ts` から `tsc` で `packages/vy-api/shim.d.ts` に生成します。
   `shim.js` は評価時に `globalThis.vy` を代入するモジュールで、ユーザー向けの
   仮想モジュールではありません。
-  生成はテストではなく [ADR 0014](./adr/0014-api-codegen-cli.md) と
-  [ADR 0016](./adr/0016-command-types-and-ts-shim.md) のコマンドで行います。
+  生成はテストではなく `pnpm generate:api`（`vy-api-codegen` と `tsc`）で行います。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
@@ -150,16 +148,24 @@ pnpm docs:api
 
 ## 7. ドキュメントの構成と運用
 
-ドキュメントは目的とライフサイクルによって置き場所を明確に分離します。詳細は [`docs/README.md`](./README.md) にあります。
+ドキュメントは目的とライフサイクルによって置き場所を明確に分離します。詳細は [`docs/README.md`](./README.md) にあります。**置き場所は「決めたかどうか」で決め、実装済みかどうかでは決めません。**
 
 - **生きた仕様書 (Living Specs)**: `docs/specs/*.md`
-  現在のシステム仕様・アーキテクチャの唯一の正解（SSOT）です。確定した仕様のみを書き、常に最新にメンテナンスします。一覧は [`docs/specs/README.md`](./specs/README.md) にあります。
+  現在のコードベースの規範です。コードや利用者が参照する詳細（表、上限値、プロトコル、API 一覧）を置きます。一覧は [`docs/specs/README.md`](./specs/README.md) にあります。
 - **アーキテクチャ決定記録 (ADR)**: `docs/adr/`
-  設計判断の歴史的記録です。一度採択された ADR は原則として変更せず、変更時は新しい ADR を追加します。
+  決定とその理由の記録です。実装前でも ADR にします。決定内容は書き換えず、変えるときは新しい ADR を追加します。置き換えた ADR は `docs/adr/superseded/` へ移します。
 - **提案・設計検討 (Proposals)**: `docs/proposals/`
-  新機能のアイデア、未決定事項、まだ着手していない計画を置きます。合意された内容は ADR や仕様書へ反映されます。
+  まだ決めていないことと、決定済み事項の未着手の実装計画を置きます。決定済みの ADR を実装する提案は `related_adrs` で参照します。
 - **作業ログ (Worklogs)**: `docs/worklogs/`
-  着手した作業の計画と実施ログ（日付、実測値、つまずき）を記録します。未着手の計画は proposals に置きます。
+  着手した作業の計画と実施ログ（日付、実測値、つまずき、移行手順）を記録します。
+
+### ADR を書くときのチェックリスト
+
+- 決定は 1 ファイルに 1 つか。複数の決定が連鎖しているなら、現在有効な内容を新しい ADR に集約できないか。
+- 実装の進捗、テスト名、実測値、移行手順が混ざっていないか（worklogs へ）。
+- 仕様の表、上限値、プロトコル、API 一覧が混ざっていないか（specs へ。未実装なら proposals の計画へ）。
+- 実装状況は `implementation`（`done` / `partial` / `not-started`）で表しているか。
+- 決定を置き換える場合、置き換えられた ADR を `superseded/` へ移し、索引から外したか。
 
 ### メタデータ (frontmatter)
 

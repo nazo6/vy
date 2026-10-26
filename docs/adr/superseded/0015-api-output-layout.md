@@ -2,13 +2,16 @@
 id: "0015"
 title: "API の生成物は packages/vy-api にまとめる"
 type: "adr"
-status: "accepted"
+status: "superseded"
 date: 2026-10-24
 supersedes: ["0014"]
-superseded_by: null
+superseded_by: "0025"
 ---
 
 # ADR 0015: API の生成物は `packages/vy-api` にまとめる
+
+> この決定は [ADR 0025](../0025-plugin-api-declaration-and-codegen.md) に引き継ぎました。
+> 実装と検証の記録は [worklog](../../worklogs/2026-10-24-plugin-api-pipeline.md) にあります。
 
 - 状態: 採用（`overrides.d.ts` と `CommandId` は
   [0016](./0016-command-types-and-ts-shim.md) で置き換え）

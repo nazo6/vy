@@ -12,6 +12,8 @@ tags: ["webview", "notebook", "preview"]
 
 Markdown プレビューや Jupyter Notebook などの Web 文書・リッチコンテンツを表示するための最終段階の実装計画です。
 
+Webview の位置づけ（Web 文書の表示に限る）は [ADR 0005](../adr/0005-native-plugin-ui.md) で決定済みです。この提案は作業スコープと未決定の論点だけを扱います。
+
 ---
 
 ## 1. 方針と位置づけ
