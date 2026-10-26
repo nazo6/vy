@@ -1,7 +1,7 @@
 ---
 title: "アーキテクチャ決定記録 (ADR)"
 type: "guide"
-updated_at: 2026-10-25
+updated_at: 2026-10-27
 ---
 
 # アーキテクチャ決定記録 (ADR)
@@ -37,7 +37,7 @@ tags: ["api", "codegen"]
 | :-------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------- |
 | **プロセス・通信モデル**    | [0002](./0002-process-model.md) (別プロセス)<br>[0018](./0018-typed-rpc.md) (型付き RPC)<br>[0010](./0010-remote-connection.md) (SSH/再同期)                                                                                                      | -                                                                             |
 | **状態・アンドゥ管理**      | [0003](./0003-editor-state.md) (編集状態の分離)<br>[0004](./0004-undo-in-core.md) (コア所有アンドゥ)                                                                                                                                              | 0003 のアンドゥ部分は 0004 で置き換え                                         |
-| **UI・描画**                | [0001](./0001-ui-framework.md) (GPUI)<br>[0005](./0005-native-plugin-ui.md) (ネイティブ木)<br>[0006](./0006-user-controlled-ui-and-slots.md) (スロット)                                                                                           | -                                                                             |
+| **UI・描画**                | [0001](./0001-ui-framework.md) (GPUI)<br>[0005](./0005-native-plugin-ui.md) (ネイティブ木)<br>[0006](./0006-user-controlled-ui-and-slots.md) (スロット)<br>[0024](./0024-keyboard-first-plugin-ui.md) (キーボードファーストなプラグイン UI)       | -                                                                             |
 | **プラグイン API・基盤**    | [0019](./0019-global-vy-api.md) (グローバル vy 統一)<br>[0020](./0020-plugin-source-and-bundles.md) (ソース/バンドル)<br>[0021](./0021-bundle-validation.md) (バンドル検証)<br>[0011](./0011-backend-plugins-on-core.md) (バックエンドプラグイン) | 0016 の API 入口は 0019 で置き換え                                            |
 | **型生成・ホスト API 実装** | [0009](./0009-api-types-live-with-handlers.md) (型の配置)<br>[0012](./0012-shared-host-api.md) (vy-host-api)<br>[0013](./0013-host-api-traits.md) (名前空間 trait)<br>[0023](./0023-specta-api-types.md) (Specta 型生成)                          | 0007 / 0008 は 0013 で置き換え<br>0014 / 0015 / 0016 は 0023 で集約・置き換え |
 | **コマンド・CLI**           | [0017](./0017-cli-parsing-with-usage-rs.md) (usage-rs)<br>[0022](./0022-command-surfaces.md) (コマンド面分離)                                                                                                                                     | -                                                                             |
@@ -71,3 +71,4 @@ tags: ["api", "codegen"]
 | [0021](./0021-bundle-validation.md)              | バンドルとエントリをロード時に検証する                    | 採用                                           |
 | [0022](./0022-command-surfaces.md)               | コマンドの入口を役割で分け、設定を状態として分離する      | 採用                                           |
 | [0023](./0023-specta-api-types.md)               | 型生成を ts-rs から specta に移行し単一ファイルへ集約する | 採用                                           |
+| [0024](./0024-keyboard-first-plugin-ui.md)       | キーボードファーストなプラグイン UI                       | 採用（実装は未着手）                           |
