@@ -6,7 +6,7 @@ use gpui::{
 };
 use vy_app::editor::{Action, Mode};
 use vy_app::overlay::Overlay;
-use vy_app::text_layout::{byte_to_utf16, utf16_to_byte};
+use vy_app::text_layout::{DEFAULT_TAB_STOP, byte_to_utf16, cached_chunk_line, utf16_to_byte};
 
 use super::EditorView;
 use crate::theme::ActiveTheme;
@@ -418,11 +418,11 @@ impl EntityInputHandler for EditorView {
 
                     for l in pane.scroll_top..target_line {
                         let text = document.editor.line(l).unwrap_or_default();
-                        let chunks = vy_app::text_layout::chunk_line(&text, cols);
+                        let chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
                         let count = if l == pane.scroll_top {
-                            chunks.len().saturating_sub(pane.scroll_sub_line)
+                            chunks.chunks.len().saturating_sub(pane.scroll_sub_line)
                         } else {
-                            chunks.len()
+                            chunks.chunks.len()
                         };
                         visual_row += count;
                         if visual_row >= pane.viewport_rows {
@@ -431,7 +431,8 @@ impl EntityInputHandler for EditorView {
                     }
 
                     let text = document.editor.line(target_line).unwrap_or_default();
-                    let chunks = vy_app::text_layout::chunk_line(&text, cols);
+                    let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+                    let chunks = &line_chunks.chunks;
                     let target_utf16 = position.character as usize;
 
                     let (chunk_idx, chunk) = chunks.iter().enumerate().find(|(idx, chk)| {
@@ -556,13 +557,13 @@ impl EntityInputHandler for EditorView {
 
             'outer: while target_line < line_count {
                 let text = document.editor.line(target_line).unwrap_or_default();
-                let chunks = vy_app::text_layout::chunk_line(&text, cols);
+                let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
                 let start_chk = if target_line == pane.scroll_top {
                     pane.scroll_sub_line
                 } else {
                     0
                 };
-                for (_chk_idx, chunk) in chunks.iter().enumerate().skip(start_chk) {
+                for (_chk_idx, chunk) in line_chunks.chunks.iter().enumerate().skip(start_chk) {
                     if current_vrow == visual_row {
                         target_chunk = Some((target_line, chunk.clone()));
                         break 'outer;
@@ -572,19 +573,19 @@ impl EntityInputHandler for EditorView {
                 target_line += 1;
             }
 
-            let (line_idx, chunk) = target_chunk.unwrap_or_else(|| {
-                let last = line_count.saturating_sub(1);
-                let text = document.editor.line(last).unwrap_or_default();
-                let chunks = vy_app::text_layout::chunk_line(&text, cols);
-                let last_chk = chunks
-                    .last()
-                    .cloned()
-                    .unwrap_or(vy_app::text_layout::LineChunk {
-                        byte_range: 0..0,
-                        utf16_range: 0..0,
-                    });
-                (last, last_chk)
-            });
+            let (line_idx, chunk) =
+                target_chunk.unwrap_or_else(|| {
+                    let last = line_count.saturating_sub(1);
+                    let text = document.editor.line(last).unwrap_or_default();
+                    let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+                    let last_chk = line_chunks.chunks.last().cloned().unwrap_or(
+                        vy_app::text_layout::LineChunk {
+                            byte_range: 0..0,
+                            utf16_range: 0..0,
+                        },
+                    );
+                    (last, last_chk)
+                });
 
             let full_line = document.editor.line(line_idx).unwrap_or_default();
             let chunk_text = full_line.get(chunk.byte_range.clone()).unwrap_or("");

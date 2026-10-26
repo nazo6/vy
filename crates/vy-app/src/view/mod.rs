@@ -377,7 +377,7 @@ impl EditorView {
         let Some(document_id) = pane.document_id else {
             return;
         };
-        let last_visual = view.mode().is_select().then(|| view.selection());
+        let is_select = view.mode().is_select();
 
         let is_wrap = pane.is_wrap(&self.config);
         let wrap_width = if is_wrap {
@@ -390,7 +390,10 @@ impl EditorView {
             return;
         };
         document.editor.set_wrap_width(wrap_width);
-        if let Some(range) = last_visual {
+        if is_select {
+            let range = document
+                .editor
+                .range_for(view.mode(), view.anchor(), view.head());
             document.editor.set_last_visual(range);
         }
         document.editor.set_view_state(view);
@@ -815,7 +818,13 @@ impl EditorView {
                     let mut remaining = rows_delta as usize;
                     while remaining > 0 && cur_top < line_count {
                         let text = document.editor.line(cur_top).unwrap_or_default();
-                        let num_chunks = vy_app::text_layout::chunk_line(&text, cols).len();
+                        let num_chunks = vy_app::text_layout::cached_chunk_line(
+                            &text,
+                            cols,
+                            vy_app::text_layout::DEFAULT_TAB_STOP,
+                        )
+                        .chunks
+                        .len();
                         if cur_sub + 1 < num_chunks {
                             cur_sub += 1;
                             remaining -= 1;
@@ -843,7 +852,13 @@ impl EditorView {
                         } else if cur_top > 0 {
                             cur_top -= 1;
                             let text = document.editor.line(cur_top).unwrap_or_default();
-                            let num_chunks = vy_app::text_layout::chunk_line(&text, cols).len();
+                            let num_chunks = vy_app::text_layout::cached_chunk_line(
+                                &text,
+                                cols,
+                                vy_app::text_layout::DEFAULT_TAB_STOP,
+                            )
+                            .chunks
+                            .len();
                             cur_sub = num_chunks.saturating_sub(1);
                             remaining -= 1;
                         } else {

@@ -355,6 +355,35 @@ fn deletes_and_pastes_whole_lines() {
 }
 
 #[test]
+fn a_register_applies_to_one_command_only() {
+    let mut editor = Editor::with_text("one\ntwo", 0);
+
+    // `"a` names a register for the next command only.
+    press(&mut editor, "\"ayy");
+    assert_eq!(editor.register_text(), "one");
+
+    press(&mut editor, "jyy");
+    assert_eq!(editor.register_text(), "two");
+
+    // The paste reads the unnamed register, not `a`.
+    last_edit(&mut editor, Key::Char('p'));
+    assert_eq!(editor.text(), "one\ntwo\ntwo");
+}
+
+#[test]
+fn cancelling_a_text_object_clears_the_register() {
+    let mut editor = Editor::with_text("one\ntwo", 0);
+
+    press(&mut editor, "yy");
+    assert_eq!(editor.register_text(), "one");
+
+    // `d` while waiting for a text object cancels the operator and the register.
+    press(&mut editor, "\"adi");
+    press(&mut editor, "d");
+    assert_eq!(editor.register_text(), "one");
+}
+
+#[test]
 fn deletes_text_objects() {
     let mut editor = Editor::with_text("foo bar", 0);
     press(&mut editor, "diw");
@@ -542,6 +571,39 @@ fn clamps_a_stored_view_state_to_a_shorter_document() {
     editor.reset("a", 1);
     let clamped = editor.clamp_view_state(stored);
     assert_eq!(clamped.cursor(), at(0, 1));
+}
+
+#[test]
+fn derives_the_normal_cursor_from_the_earlier_endpoint() {
+    let state = ViewState {
+        anchor: at(1, 2),
+        head: at(0, 3),
+        ..ViewState::default()
+    };
+
+    assert_eq!(state.cursor(), at(0, 3));
+}
+
+#[test]
+fn a_restored_view_state_derives_its_range_from_the_current_text() {
+    let mut editor = Editor::with_text("abcdef\nsecond", 0);
+    press(&mut editor, "v");
+    press(&mut editor, "l");
+    let stored = editor.view_state();
+    assert_eq!(stored.mode(), Mode::Select);
+
+    // The text can shrink while another pane owns the stored state.
+    editor.reset("ab", 1);
+    let clamped = editor.clamp_view_state(stored);
+    editor.set_view_state(clamped);
+
+    let clamped = editor.view_state();
+    assert_eq!(clamped.cursor(), at(0, 1));
+    assert_eq!(
+        editor.selection(),
+        editor.range_for(clamped.mode(), clamped.anchor(), clamped.head())
+    );
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 2)));
 }
 
 #[test]

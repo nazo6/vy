@@ -9,8 +9,8 @@ use gpui::{
 
 use vy_app::overlay::Overlay;
 use vy_app::text_layout::{
-    DEFAULT_TAB_STOP, chunk_line, clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal,
-    utf16_to_display_col,
+    DEFAULT_TAB_STOP, cached_chunk_line, clamp_scroll_top, scroll_to_show,
+    scroll_to_show_horizontal, utf16_to_display_col,
 };
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
@@ -127,7 +127,8 @@ impl EditorView {
             }
         } else {
             let text = document.editor.line(cursor_line).unwrap_or_default();
-            let chunks = vy_app::text_layout::chunk_line(&text, cols);
+            let line_chunks = vy_app::text_layout::cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+            let chunks = &line_chunks.chunks;
             let cursor_chunk = chunks
                 .iter()
                 .enumerate()
@@ -159,7 +160,10 @@ impl EditorView {
 
                 while cur_l <= cursor_line {
                     let cur_text = document.editor.line(cur_l).unwrap_or_default();
-                    let cur_chunks_len = vy_app::text_layout::chunk_line(&cur_text, cols).len();
+                    let cur_chunks_len =
+                        vy_app::text_layout::cached_chunk_line(&cur_text, cols, DEFAULT_TAB_STOP)
+                            .chunks
+                            .len();
                     while cur_c < cur_chunks_len {
                         if cur_l == cursor_line && cur_c == cursor_chunk {
                             found = true;
@@ -187,8 +191,13 @@ impl EditorView {
                         } else if b_line > 0 {
                             b_line -= 1;
                             let prev_text = document.editor.line(b_line).unwrap_or_default();
-                            let prev_chunks =
-                                vy_app::text_layout::chunk_line(&prev_text, cols).len();
+                            let prev_chunks = vy_app::text_layout::cached_chunk_line(
+                                &prev_text,
+                                cols,
+                                DEFAULT_TAB_STOP,
+                            )
+                            .chunks
+                            .len();
                             b_chunk = prev_chunks.saturating_sub(1);
                             needed_steps -= 1;
                         } else {
@@ -710,7 +719,8 @@ impl EditorView {
 
                     while l_idx < total_lines && v_row < pane.viewport_rows {
                         let text = doc.editor.line(l_idx).unwrap_or_default();
-                        let chunks = chunk_line(&text, cols);
+                        let line_chunks = cached_chunk_line(&text, cols, DEFAULT_TAB_STOP);
+                        let chunks = &line_chunks.chunks;
                         let total_chunks = chunks.len();
 
                         while s_idx < total_chunks && v_row < pane.viewport_rows {

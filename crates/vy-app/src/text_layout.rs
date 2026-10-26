@@ -267,16 +267,6 @@ fn compute_line_chunks(text: &str, max_cols: usize, tab_stop: usize) -> LineChun
     }
 }
 
-/// Splits `text` into chunks of at most `max_cols` visual display cells without breaking characters or surrogate pairs.
-pub fn chunk_line(text: &str, max_cols: usize) -> Vec<LineChunk> {
-    chunk_line_with_tab_stop(text, max_cols, DEFAULT_TAB_STOP)
-}
-
-/// Splits `text` into chunks of at most `max_cols` visual display cells using `tab_stop`.
-pub fn chunk_line_with_tab_stop(text: &str, max_cols: usize, tab_stop: usize) -> Vec<LineChunk> {
-    cached_chunk_line(text, max_cols, tab_stop).chunks.clone()
-}
-
 /// Returns the cursor's character offset within `chunk` if it lies on this visual chunk.
 pub fn cursor_in_chunk(
     cursor: Position,
@@ -338,6 +328,13 @@ pub fn selection_in_chunk(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Owned chunks for assertions. Production code keeps the `Arc<LineChunks>`.
+    fn chunk_line(text: &str, max_cols: usize) -> Vec<LineChunk> {
+        cached_chunk_line(text, max_cols, DEFAULT_TAB_STOP)
+            .chunks
+            .clone()
+    }
 
     #[test]
     fn converts_utf16_units_to_byte_offsets() {

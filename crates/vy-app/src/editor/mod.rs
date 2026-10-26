@@ -264,7 +264,6 @@ impl Editor {
             mode: self.mode,
             anchor: self.anchor,
             head: self.head,
-            selection: self.selection(),
             operator: self.operator,
             operator_count: self.operator_count,
             text_object: self.text_object,
@@ -304,7 +303,6 @@ impl Editor {
     pub fn clamp_view_state(&self, mut state: ViewState) -> ViewState {
         state.anchor = self.clamp(state.anchor);
         state.head = self.clamp(state.head);
-        state.selection = self.range_for(state.mode, state.anchor, state.head);
         state
     }
 

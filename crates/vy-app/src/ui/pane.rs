@@ -120,6 +120,8 @@ pub struct EditorPaintData {
     pub theme: Arc<Theme>,
     pub line_count: usize,
     pub view: vy_app::editor::ViewState,
+    /// Selection range derived from the view and the document text.
+    pub selection: vy_core::Range,
     pub preedit: String,
     pub scroll_left: usize,
     pub wrap: bool,
@@ -149,11 +151,16 @@ pub fn prepare_editor_paint(
     }
 
     let wrap = pane.is_wrap(&config);
+    let view = pane.view;
+    let selection = document
+        .editor
+        .range_for(view.mode(), view.anchor(), view.head());
     EditorPaintData {
         config,
         theme,
         line_count: document.editor.line_count(),
-        view: pane.view,
+        view,
+        selection,
         preedit: pane.preedit.clone(),
         scroll_left: pane.scroll_left,
         wrap,
@@ -396,7 +403,7 @@ pub fn paint_editor(
                         }
                     }
                     _ => selection_in_chunk(
-                        data.view.selection(),
+                        data.selection,
                         row.line_number,
                         row.chunk_index,
                         row.total_chunks,

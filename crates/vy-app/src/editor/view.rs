@@ -1,7 +1,7 @@
 //! Pane-local view state (cursor, selection, mode, pending operators).
 
 use crate::keymap::Mode;
-use vy_core::{Position, Range};
+use vy_core::Position;
 
 use super::operator::{Operator, TextObjectKind};
 
@@ -15,7 +15,6 @@ pub struct ViewState {
     pub(super) mode: Mode,
     pub(super) anchor: Position,
     pub(super) head: Position,
-    pub(super) selection: Range,
     pub(super) operator: Option<Operator>,
     pub(super) operator_count: Option<u32>,
     pub(super) text_object: Option<TextObjectKind>,
@@ -29,7 +28,6 @@ impl Default for ViewState {
             mode: Mode::Normal,
             anchor: Position::new(0, 0),
             head: Position::new(0, 0),
-            selection: Range::new(Position::new(0, 0), Position::new(0, 0)),
             operator: None,
             operator_count: None,
             text_object: None,
@@ -52,16 +50,12 @@ impl ViewState {
         self.head
     }
 
-    /// Cursor used for drawing. The selection start in Normal, otherwise the end.
+    /// Cursor used for drawing. The earlier endpoint in Normal, otherwise the head.
     pub fn cursor(&self) -> Position {
         match self.mode {
-            Mode::Normal => self.selection.start,
+            Mode::Normal => self.anchor.min(self.head),
             _ => self.head,
         }
-    }
-
-    pub fn selection(&self) -> Range {
-        self.selection
     }
 
     pub fn operator_pending(&self) -> bool {
