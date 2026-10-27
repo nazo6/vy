@@ -394,6 +394,12 @@ define_command_enum! {
         UiFocusNext => ("vy.ui.focusNext", "UI Focus Next"),
         /// ADR 0032 Phase 2: move focus to the previous focusable widget.
         UiFocusPrev => ("vy.ui.focusPrev", "UI Focus Previous"),
+        /// ADR 0032 Phase 3: clear the current overlay input line (Ex `Ctrl-u`).
+        UiClearLine => ("vy.ui.clearLine", "UI Clear Line"),
+        /// ADR 0032 Phase 3: cycle Ex completion forward (`Tab`).
+        UiCompleteNext => ("vy.ui.completeNext", "UI Complete Next"),
+        /// ADR 0032 Phase 3: cycle Ex completion backward (`BackTab`).
+        UiCompletePrev => ("vy.ui.completePrev", "UI Complete Previous"),
         ScriptEval => ("vy.script.eval", "Script Evaluate"),
         ReconnectServer => ("vy.reconnect_server", "Reconnect Server"),
         ViewOpen => ("vy.view.open", "Open View"),
@@ -418,7 +424,10 @@ impl UiCommand {
             | Self::UiToggle
             | Self::UiYank
             | Self::UiFocusNext
-            | Self::UiFocusPrev => CommandMeta::hidden(CommandCategory::App),
+            | Self::UiFocusPrev
+            | Self::UiClearLine
+            | Self::UiCompleteNext
+            | Self::UiCompletePrev => CommandMeta::hidden(CommandCategory::App),
             Self::OpenSettings => CommandMeta::listed(CommandCategory::Settings, &["settings"]),
             Self::ScriptEval => CommandMeta::hidden(CommandCategory::App)
                 .with_ex_names(&["ts"])

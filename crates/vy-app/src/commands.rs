@@ -1104,6 +1104,9 @@ mod tests {
             ("vy.ui.yank", UiCommand::UiYank),
             ("vy.ui.focusNext", UiCommand::UiFocusNext),
             ("vy.ui.focusPrev", UiCommand::UiFocusPrev),
+            ("vy.ui.clearLine", UiCommand::UiClearLine),
+            ("vy.ui.completeNext", UiCommand::UiCompleteNext),
+            ("vy.ui.completePrev", UiCommand::UiCompletePrev),
         ] {
             assert_eq!(UiCommand::parse(id), Some(variant));
             let meta = variant.meta();
@@ -1111,7 +1114,7 @@ mod tests {
             assert_eq!(meta.category, CommandCategory::App);
             assert!(meta.ex_names.is_empty());
         }
-        assert_eq!(UiCommand::all().len(), 20);
+        assert_eq!(UiCommand::all().len(), 23);
     }
 
     #[test]
