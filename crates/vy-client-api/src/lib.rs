@@ -76,7 +76,9 @@ mod tests {
 
     #[test]
     fn ui_namespaces_are_grouped() {
-        assert!(namespaces::ui::METHODS.is_empty());
+        // ADR 0032 Phase 2 adds the only method on the bare `ui` namespace.
+        assert_eq!(namespaces::ui::METHODS.len(), 1);
+        assert_eq!(namespaces::ui::METHODS[0].method, "ui.focused");
         assert_eq!(namespaces::views::METHODS.len(), 4);
         assert_eq!(namespaces::ui_statusline::METHODS.len(), 3);
         assert_eq!(namespaces::ui_picker::METHODS.len(), 1);
@@ -181,7 +183,11 @@ mod tests {
         }
     }
 
-    impl namespaces::ui::UiApi for TestHost {}
+    impl namespaces::ui::UiApi for TestHost {
+        fn focused(&mut self) -> Result<Reply<Option<namespaces::ui::UiFocused>>, CallError> {
+            Ok(Reply::Value(None))
+        }
+    }
 
     impl namespaces::ui_statusline::UiStatuslineApi for TestHost {
         fn create_item(

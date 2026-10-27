@@ -370,6 +370,30 @@ define_command_enum! {
         CommandPalette => ("vy.ui.command_palette", "Command Palette"),
         ExCommandLine => ("vy.ui.ex_command_line", "Ex Command Line"),
         OpenSettings => ("vy.ui.open_settings", "Open Settings"),
+        /// ADR 0032 Phase 2: move to the next item in a plugin UI list.
+        UiNext => ("vy.ui.next", "UI Next"),
+        /// ADR 0032 Phase 2: move to the previous item in a plugin UI list.
+        UiPrev => ("vy.ui.prev", "UI Previous"),
+        /// ADR 0032 Phase 2: move one page down (no host default yet).
+        UiPageDown => ("vy.ui.pageDown", "UI Page Down"),
+        /// ADR 0032 Phase 2: move one page up (no host default yet).
+        UiPageUp => ("vy.ui.pageUp", "UI Page Up"),
+        /// ADR 0032 Phase 2: move to the first item in a plugin UI list.
+        UiFirst => ("vy.ui.first", "UI First"),
+        /// ADR 0032 Phase 2: move to the last item in a plugin UI list.
+        UiLast => ("vy.ui.last", "UI Last"),
+        /// ADR 0032 Phase 2: activate the focused widget.
+        UiActivate => ("vy.ui.activate", "UI Activate"),
+        /// ADR 0032 Phase 2: cancel temporary UI state.
+        UiCancel => ("vy.ui.cancel", "UI Cancel"),
+        /// ADR 0032 Phase 2: toggle the focused item (no host default yet).
+        UiToggle => ("vy.ui.toggle", "UI Toggle"),
+        /// ADR 0032 Phase 2: yank the focused item's text (no host default yet).
+        UiYank => ("vy.ui.yank", "UI Yank"),
+        /// ADR 0032 Phase 2: move focus to the next focusable widget.
+        UiFocusNext => ("vy.ui.focusNext", "UI Focus Next"),
+        /// ADR 0032 Phase 2: move focus to the previous focusable widget.
+        UiFocusPrev => ("vy.ui.focusPrev", "UI Focus Previous"),
         ScriptEval => ("vy.script.eval", "Script Evaluate"),
         ReconnectServer => ("vy.reconnect_server", "Reconnect Server"),
         ViewOpen => ("vy.view.open", "Open View"),
@@ -381,7 +405,20 @@ define_command_enum! {
 impl UiCommand {
     pub fn meta(self) -> CommandMeta {
         match self {
-            Self::CommandPalette | Self::ExCommandLine => CommandMeta::hidden(CommandCategory::App),
+            Self::CommandPalette
+            | Self::ExCommandLine
+            | Self::UiNext
+            | Self::UiPrev
+            | Self::UiPageDown
+            | Self::UiPageUp
+            | Self::UiFirst
+            | Self::UiLast
+            | Self::UiActivate
+            | Self::UiCancel
+            | Self::UiToggle
+            | Self::UiYank
+            | Self::UiFocusNext
+            | Self::UiFocusPrev => CommandMeta::hidden(CommandCategory::App),
             Self::OpenSettings => CommandMeta::listed(CommandCategory::Settings, &["settings"]),
             Self::ScriptEval => CommandMeta::hidden(CommandCategory::App)
                 .with_ex_names(&["ts"])
