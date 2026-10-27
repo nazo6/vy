@@ -1563,7 +1563,8 @@ impl EditorView {
         // If a pane with this view already exists, focus it
         if let Some((pane_id, pane)) = self.panes.iter_mut().find(|(_, p)| p.view_type == view_id) {
             if pane.widget_tree.is_none() {
-                pane.widget_tree = self.view_widget_trees.get(view_id).cloned();
+                let tree = self.view_widget_trees.get(view_id).cloned();
+                pane.set_widget_tree(tree);
             }
             let pid = *pane_id;
             self.active_pane = Some(pid);
