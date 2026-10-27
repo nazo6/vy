@@ -418,8 +418,9 @@ impl EditorView {
             let mut pane = PaneState::new(info.pane_id, None);
             // The core saves only the view id. The tree is client state, so put
             // back the last one a script rendered for this view.
-            pane.widget_tree = self.view_widget_trees.get(&info.view).cloned();
             pane.view_type = info.view;
+            let tree = self.view_widget_trees.get(&pane.view_type).cloned();
+            pane.set_widget_tree(tree);
             if let Some(document_id) = info.document_id {
                 if let std::collections::hash_map::Entry::Vacant(entry) =
                     documents.entry(document_id)
@@ -559,8 +560,9 @@ impl EditorView {
                 let pane = entry.get_mut();
                 pane.document_id = Some(document_id);
                 if let Some(view_type) = self.pending_view_for_next_open.take() {
-                    pane.widget_tree = self.view_widget_trees.get(&view_type).cloned();
+                    let tree = self.view_widget_trees.get(&view_type).cloned();
                     pane.view_type = view_type;
+                    pane.set_widget_tree(tree);
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -568,8 +570,9 @@ impl EditorView {
                 pane.view = inherited;
                 pane.scroll_top = inherited_scroll;
                 if let Some(view_type) = self.pending_view_for_next_open.take() {
-                    pane.widget_tree = self.view_widget_trees.get(&view_type).cloned();
+                    let tree = self.view_widget_trees.get(&view_type).cloned();
                     pane.view_type = view_type;
+                    pane.set_widget_tree(tree);
                 }
                 entry.insert(pane);
             }
