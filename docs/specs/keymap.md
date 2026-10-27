@@ -37,8 +37,14 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
   `EntityInputHandler` が受け取ります。印字キーでは
   `stop_propagation` を呼ばないでください。macOS では止めると入力メソッド
   （`insertText`）に渡らなくなり、ABC 配列で文字が入らなくなります。
-  Enter / Tab / Backspace / Esc / 矢印 / Ctrl 系は従来どおりオーバーレイ側で
-  処理し、伝播を止めます。
+  印字キー以外のキー（Enter / Tab / Backspace / Esc / 矢印 / Ctrl 系）は
+  キーマップを通り、`overlay` 条件付きの束縛で `vy.ui.*`
+  に解決されます（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 3）。
+  パレットは insert モードで開き、Esc で normal モードへ、normal での
+  Esc で閉じます。normal モードでは `j`／`k`／`g g`／`G` などが一覧操作に
+  なります。束縛に一致しないキーはモーダルにより止めますが、Backspace
+  だけは入力の削除にフォールバックします。ヒント表示のキー名もキーマップ
+  から生成します。
 - Normal / Select
   モードでは、文字キーはキーマップが照合して消費し、入力ハンドラへ渡しません。一致したコマンドだけを
   `crates/vy-app/src/editor/` が実行します。
@@ -166,7 +172,10 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 でどのペインからでも復元できます（[ADR 0003](../adr/0003-editor-state.md)）。
 
 コマンドパレットは `Space` で開きます。コマンド名と ID を単語単位で絞り込み、
-`Up` / `Down`（`Ctrl-p` / `Ctrl-n`）で選び、`Enter` で実行、`Esc` で閉じます。
+`Up` / `Down`（`Ctrl-p` / `Ctrl-n`）で選び、`Enter` で実行します。`Esc`
+は insert モードから normal モードへの切り替えに、normal モードでの
+`Esc` は閉じる動作になります。normal モードでは `j`／`k`／`g g`／`G`／
+`Ctrl-d`／`Ctrl-u` で一覧を操作できます。
 カテゴリの見出しと Ex 名を表示し、引数が必要なコマンドは選択後に1行の入力欄か
 ピッカーで引数を取ります。入力は Ex と同じテキストエンジンを使い、IME の前編集に
 も対応しています。

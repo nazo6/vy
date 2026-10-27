@@ -88,7 +88,7 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 
 ### 2.2 アクションへの解決
 
-> **実装状況**: アクションの語彙（`vy.ui.next` ほか 12 コマンド）は実装済みで、パレットと Ex には出ません。ボタン一覧向けのホスト既定動作（`next`／`prev`／`first`／`last`／`focusNext`／`focusPrev`／`activate`）も実装済みで、既定キーは `uiRole == 'button'` の条件で登録されています。`pageDown`／`pageUp`／`toggle`／`yank`／`cancel` にはまだホスト既定動作がなく、ビューのアクション対応表（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）も未実装のため、現状では何もしません。ネイティブの list／tree／table ノードが来るまで、`UiActionArgs` の選択・展開・クエリ関連の欄は空のままです（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 2a）。
+> **実装状況**: アクションの語彙（`vy.ui.next` ほか 12 コマンドと、Phase 3 で追加された `vy.ui.clearLine`／`vy.ui.completeNext`／`vy.ui.completePrev`）は実装済みです。ボタン一覧向けのホスト既定動作（`next`／`prev`／`first`／`last`／`focusNext`／`focusPrev`／`activate`）に加え、オーバーレイ向けの既定動作も実装済みです。オーバーレイが開いている間、キーはキーマップを通ります（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 3）。パレットは insert モードで開き、文字入力は検索に、Esc は normal モードへの切り替えに、normal での Esc は閉じる動作になります。normal モードでは `j`／`k`／`g g`／`G`／`Ctrl-d`／`Ctrl-u` が一覧操作に、`:` が Ex 行の呼び出しになります。Ex の `Tab`／`BackTab` は補完の循環、`Ctrl-u` は行クリアに割り当てられています。ヒント表示はキーマップから生成されます。`pageDown`／`pageUp` のオーバーレイ既定動作は 10 行移動です。`toggle`／`yank` と、ペイン側の `pageDown`／`pageUp`／`cancel` にはまだホスト既定動作がなく、ビューのアクション対応表（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）も未実装のため、現状では何もしません。ネイティブの list／tree／table ノードが来るまで、`UiActionArgs` の選択・展開・クエリ関連の欄は空のままです。
 
 フォーカス中のウィジェットは、組み込みのコマンド名に対して自分のアクションを対応づけます。ホストの組み込みコマンドは、対応表にあるアクションを探して実行します。
 
@@ -421,7 +421,7 @@ await vy.panes.open({
 
 ### 9.2 Esc のフォーカス層（Esc Layering）
 
-> **実装状況**: プラグイン UI を含む 5 層の解決は未実装です。決定と作業計画は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) にあります。
+> **実装状況**: 第 1 層のうちクライアントのオーバーレイ部分は実装済みです（パレットは insert から normal へ、normal のパレットとその他のオーバーレイは閉じる・戻る・拒否する）。プラグイン UI を含む残りの層の解決は未実装です。決定と作業計画は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) にあります。
 
 複数の状態（モーダル、モード、ペイン）が重なった際の `Esc`
 の優先順位を以下のように層（Layer）として定義します:

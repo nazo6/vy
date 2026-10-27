@@ -84,7 +84,10 @@ export interface BuiltinCommandMap {
   "vy.text_object.word": unknown;
   "vy.ui.activate": unknown;
   "vy.ui.cancel": unknown;
+  "vy.ui.clearLine": unknown;
   "vy.ui.command_palette": unknown;
+  "vy.ui.completeNext": unknown;
+  "vy.ui.completePrev": unknown;
   "vy.ui.ex_command_line": unknown;
   "vy.ui.first": unknown;
   "vy.ui.focusNext": unknown;
