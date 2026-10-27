@@ -59,7 +59,7 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 
 ### 2.1 コンテキスト
 
-> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode`、`paneId`、`paneKind`、`viewType`、`overlay`、`surfaceId`、`uiRole`、`uiFocus` です。`surfaceId` はサーフェスが導入される ADR 0032 Phase 4 までは常に未設定で、`uiRole` と `uiFocus` はフォーカス可能なウィジェット（`button`、`textInput`）がある場合にだけ設定されます。`webviewFocus` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)、[ADR 0032](../adr/0032-floating-surfaces.md) Phase 1）。
+> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode`、`paneId`、`paneKind`、`viewType`、`overlay`、`surfaceId`、`uiRole`、`uiFocus` です。`surfaceId` は ADR 0032 Phase 4 で導入され、サーフェスが開いている間は最前面のサーフェスの `id` が設定され、なければ未設定です。`uiRole` と `uiFocus` はフォーカス可能なウィジェット（`button`、`textInput`）がある場合にだけ設定されます。`webviewFocus` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)、[ADR 0032](../adr/0032-floating-surfaces.md) Phase 1）。
 
 キーマップの `when` から参照できる値を増やします。`mode`、`paneId`、`paneKind`、`viewType`、`overlay` はクライアントが設定します。
 
@@ -70,7 +70,7 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 | `viewType`     | `ui`、`editor`、`list` など                                         | クライアント |
 | `paneId`       | フォーカス中のペイン                                                | クライアント |
 | `overlay`      | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings` | クライアント |
-| `surfaceId`    | 最前面のサーフェスの `id`（Phase 4 まで未設定）                     | クライアント |
+| `surfaceId`    | 最前面のサーフェスの `id`（なければ未設定）                         | クライアント |
 | `uiRole`       | `list`、`textInput`、`button` など                                  | UI ホスト    |
 | `uiFocus`      | フォーカス中のウィジェットの `id`                                   | UI ホスト    |
 | `webviewFocus` | `true` か `false`                                                   | UI ホスト    |
@@ -88,7 +88,7 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 
 ### 2.2 アクションへの解決
 
-> **実装状況**: アクションの語彙（`vy.ui.next` ほか 12 コマンドと、Phase 3 で追加された `vy.ui.clearLine`／`vy.ui.completeNext`／`vy.ui.completePrev`）は実装済みです。ボタン一覧向けのホスト既定動作（`next`／`prev`／`first`／`last`／`focusNext`／`focusPrev`／`activate`）に加え、オーバーレイ向けの既定動作も実装済みです。オーバーレイが開いている間、キーはキーマップを通ります（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 3）。パレットは insert モードで開き、文字入力は検索に、Esc は normal モードへの切り替えに、normal での Esc は閉じる動作になります。normal モードでは `j`／`k`／`g g`／`G`／`Ctrl-d`／`Ctrl-u` が一覧操作に、`:` が Ex 行の呼び出しになります。Ex の `Tab`／`BackTab` は補完の循環、`Ctrl-u` は行クリアに割り当てられています。ヒント表示はキーマップから生成されます。`pageDown`／`pageUp` のオーバーレイ既定動作は 10 行移動です。`toggle`／`yank` と、ペイン側の `pageDown`／`pageUp`／`cancel` にはまだホスト既定動作がなく、ビューのアクション対応表（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）も未実装のため、現状では何もしません。ネイティブの list／tree／table ノードが来るまで、`UiActionArgs` の選択・展開・クエリ関連の欄は空のままです。
+> **実装状況**: アクションの語彙（`vy.ui.next` ほか 12 コマンドと、Phase 3 で追加された `vy.ui.clearLine`／`vy.ui.completeNext`／`vy.ui.completePrev`）は実装済みです。ボタン一覧向けのホスト既定動作（`next`／`prev`／`first`／`last`／`focusNext`／`focusPrev`／`activate`）に加え、オーバーレイ向けの既定動作も実装済みです。オーバーレイが開いている間、キーはキーマップを通ります（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 3）。パレットは insert モードで開き、文字入力は検索に、Esc は normal モードへの切り替えに、normal での Esc は閉じる動作になります。normal モードでは `j`／`k`／`g g`／`G`／`Ctrl-d`／`Ctrl-u` が一覧操作に、`:` が Ex 行の呼び出しになります。Ex の `Tab`／`BackTab` は補完の循環、`Ctrl-u` は行クリアに割り当てられています。ヒント表示はキーマップから生成されます。`pageDown`／`pageUp` のオーバーレイ既定動作は 10 行移動です。`toggle`／`yank` と、ペイン側の `pageDown`／`pageUp`／`cancel` にはまだホスト既定動作がなく、ビューのアクション対応表（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）も未実装のため、現状では何もしません。ネイティブの list／tree／table ノードが来るまで、`UiActionArgs` の選択・展開・クエリ関連の欄は空のままです。ADR 0032 Phase 4 で、単一のオーバーレイがサーフェスのスタックに置き換わりました。プロンプトや設定の選択・入力は下のサーフェスに積み、Esc や確定で下のサーフェスに戻ります（従来の `back` 欄は廃止）。サーフェスごとにスクロール状態を持ち、Ex は `bottomBar`、それ以外は中央に配置されます。ジオメトリ計算の集約とホバー／メニューのサーフェス化は Phase 4 の残りです。
 
 フォーカス中のウィジェットは、組み込みのコマンド名に対して自分のアクションを対応づけます。ホストの組み込みコマンドは、対応表にあるアクションを探して実行します。
 
