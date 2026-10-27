@@ -563,6 +563,18 @@ export type TextEdit = {
  */
 export type ThemeColor = "default" | "muted" | "subtle" | "accent" | "prompt" | "primary" | "info" | "success" | "warning" | "danger" | "error" | "secondary";
 
+/**
+ *  The focused widget of the active UI pane, as returned by `ui.focused()`.
+ * 
+ *  This is `null` for editor panes and for UI panes with no focusable widget.
+ */
+export type UiFocused = {
+	viewId: string,
+	paneId: number,
+	role: string,
+	focusId: string,
+};
+
 /**  A value that points at a document. `file:` is a real file; `vy:` has no backing file. */
 export type Uri = string;
 

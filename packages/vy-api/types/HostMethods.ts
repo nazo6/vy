@@ -65,6 +65,7 @@ import type {
   StatuslineCreateParams,
   StatuslineDisposeParams,
   StatuslineUpdateParams,
+  UiFocused,
   ViewCloseParams,
   ViewOpenParams,
   ViewToggleParams,
@@ -155,6 +156,8 @@ export interface HostMethods {
   "process.spawn": { params: ProcessSpawnParams; result: ProcessSpawnReply };
   /** Writes data to a child process standard input. */
   "process.writeStdin": { params: ProcessStdinParams; result: ProcessStdinReply };
+  /** Returns the focused widget of the active UI pane, or null. */
+  "ui.focused": { params: Record<string, never>; result: UiFocused | null };
   /** Removes every gutter item. */
   "ui.gutter.clear": { params: Record<string, never>; result: null };
   /** Creates a gutter item and returns its id. */
