@@ -94,26 +94,42 @@ pub fn render_picker_row(theme: &Theme, item: &PickerItem, is_selected: bool) ->
 struct OverlayLabels {
     count: String,
     empty: &'static str,
-    hint: &'static str,
+    hint: String,
 }
 
-fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
+/// Builds overlay labels, with hint keys taken from the keymap when a
+/// binding matches the current overlay context, and hard-coded keys
+/// otherwise (ADR 0032 Phase 3). `lookup` maps a command id to its
+/// display keys, or [`None`] when unbound.
+fn overlay_labels(
+    overlay: &Overlay,
+    filtered_count: usize,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> OverlayLabels {
+    // Key names for the overlay actions; fall back to the keys the old
+    // hard-coded hints showed when a command is unbound.
+    let activate = lookup("vy.ui.activate").unwrap_or_else(|| "Enter".to_string());
+    let cancel = lookup("vy.ui.cancel").unwrap_or_else(|| "Esc".to_string());
+    let prev = lookup("vy.ui.prev").unwrap_or_else(|| "Up".to_string());
+    let next = lookup("vy.ui.next").unwrap_or_else(|| "Down".to_string());
     match overlay {
         Overlay::Palette(palette) => match &palette.mode {
             PaletteMode::Commands => OverlayLabels {
                 count: format!("{filtered_count} commands"),
                 empty: "no matching commands",
-                hint: "Enter run  ·  : for named commands  ·  Esc close  ·  Up/Down move",
+                hint: format!(
+                    "{activate} run  ·  : for named commands  ·  {cancel} close  ·  {prev}/{next} move"
+                ),
             },
             PaletteMode::Documents => OverlayLabels {
                 count: format!("{filtered_count} documents"),
                 empty: "no matching documents",
-                hint: "Enter switch  ·  Esc close  ·  Up/Down move",
+                hint: format!("{activate} switch  ·  {cancel} close  ·  {prev}/{next} move"),
             },
             PaletteMode::Custom { .. } => OverlayLabels {
                 count: format!("{filtered_count} items"),
                 empty: "no matching items",
-                hint: "Enter select  ·  Esc close  ·  Up/Down move",
+                hint: format!("{activate} select  ·  {cancel} close  ·  {prev}/{next} move"),
             },
         },
         Overlay::Prompt(prompt) => OverlayLabels {
@@ -123,32 +139,32 @@ fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
                 Some(_) => "no matching choices",
                 None => "argument",
             },
-            hint: "Enter confirm  ·  Esc back",
+            hint: format!("{activate} confirm  ·  {cancel} back"),
         },
         Overlay::Approval(approval) => OverlayLabels {
             count: format!("{} permission(s)", approval.missing.len()),
             empty: "no matching options",
-            hint: "Enter choose  ·  Esc deny  ·  Up/Down move",
+            hint: format!("{activate} choose  ·  {cancel} deny  ·  {prev}/{next} move"),
         },
         Overlay::Settings(_) => OverlayLabels {
             count: format!("{filtered_count} settings"),
             empty: "no matching settings",
-            hint: "Enter change  ·  Esc close  ·  Up/Down move",
+            hint: format!("{activate} change  ·  {cancel} close  ·  {prev}/{next} move"),
         },
         Overlay::SettingChoice(_) => OverlayLabels {
             count: format!("{filtered_count} choices"),
             empty: "no matching choices",
-            hint: "Enter select  ·  Esc back  ·  Up/Down move",
+            hint: format!("{activate} select  ·  {cancel} back  ·  {prev}/{next} move"),
         },
         Overlay::SettingPrompt(_) => OverlayLabels {
             count: "set value".to_string(),
             empty: "type a value and press Enter",
-            hint: "Enter apply  ·  Esc back",
+            hint: format!("{activate} apply  ·  {cancel} back"),
         },
         Overlay::Ex(_) => OverlayLabels {
             count: String::new(),
             empty: "",
-            hint: "",
+            hint: String::new(),
         },
     }
 }
@@ -179,7 +195,7 @@ pub fn render_overlay(
     let filtered = filtered_picker_indices(items, input.value());
     let filtered_count = filtered.len();
     let rows = palette_rows(items, &filtered, shows_palette_headings(input.value()));
-    let labels = overlay_labels(overlay, filtered_count);
+    let labels = overlay_labels(overlay, filtered_count, &|command| view.key_hint(command));
 
     let query = div()
         .flex()

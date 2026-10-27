@@ -477,5 +477,85 @@
     "keys": "up",
     "command": "vy.ui.prev",
     "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "up",
+    "command": "vy.ui.prev",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "down",
+    "command": "vy.ui.next",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "ctrl-p",
+    "command": "vy.ui.prev",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "ctrl-n",
+    "command": "vy.ui.next",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "enter",
+    "command": "vy.ui.activate",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "esc",
+    "command": "vy.ui.cancel",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "tab",
+    "command": "vy.ui.completeNext",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "backtab",
+    "command": "vy.ui.completePrev",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "ctrl-u",
+    "command": "vy.ui.clearLine",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "j",
+    "command": "vy.ui.next",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "k",
+    "command": "vy.ui.prev",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "g g",
+    "command": "vy.ui.first",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "G",
+    "command": "vy.ui.last",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "ctrl-d",
+    "command": "vy.ui.pageDown",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "ctrl-u",
+    "command": "vy.ui.pageUp",
+    "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": ":",
+    "command": "vy.ui.ex_command_line",
+    "when": "overlay == 'palette' && mode == 'normal'"
   }
 ]

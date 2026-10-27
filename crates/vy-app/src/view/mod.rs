@@ -17,11 +17,11 @@ mod render;
 mod rpc;
 
 use gpui::{
-    Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollWheelEvent, SharedString,
-    Window, px,
+    Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollStrategy, ScrollWheelEvent,
+    SharedString, Window, px,
 };
 use gpui_base::VirtualListScrollHandle;
-use vy_app::commands::{CommandRegistry, Invocation};
+use vy_app::commands::{CommandRegistry, Invocation, UiCommand};
 use vy_app::config::Config;
 use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState, VisualRow};
@@ -68,50 +68,98 @@ pub(super) struct PluginRuntime {
     pub(super) started: bool,
 }
 
-/// How the open overlay handles a key before the editor sees it.
+/// What the overlay path does with a key the keymap did not consume.
+///
+/// This is the fallback after `Keymap::feed` returns `Ignored`, and the
+/// whole decision for keystrokes `convert_key` drops (notably
+/// Option-composed characters on macOS, which arrive with no `Key`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OverlayTarget {
-    /// `:` in an empty palette switches to the Ex line.
-    OpenEx,
-    /// Printable text reaches the input handler.
-    Text,
-    /// The overlay handles the key itself.
-    Key,
+enum OverlayFallback {
+    /// Let the input handler insert the character. Never stop propagation:
+    /// on macOS, stopping marks the key as handled and GPUI never calls
+    /// the input method (`insertText`), so overlay text input breaks.
+    Input,
+    /// Stop propagation; the key does nothing (modal overlay owns it).
+    Stop,
+    /// Switch a normal-mode palette back to insert mode, then let the
+    /// input handler insert the character.
+    SwitchToInsert,
+    /// Delete the last input character (Backspace), as the old handlers did.
+    PopChar,
 }
 
-/// Classifies an overlay keystroke without touching overlay state.
+/// Fallback for an overlay key the keymap ignored.
 ///
-/// `opens_ex` is computed by the caller from `opens_ex_from_palette` and
-/// takes precedence over text: `:` in an empty palette must switch to the
-/// Ex line instead of being inserted as text.
+/// `palette` says the open overlay is a palette; `insert` says it is in
+/// insert mode (palettes) or, for single-mode overlays, always true.
+/// A `Char` in a normal-mode palette switches back to insert mode and
+/// types (type-to-search); anywhere else it is plain input. Backspace
+/// always edits. Anything else is swallowed by the modal overlay.
 ///
-/// A converted `Key::Char` is text. A keystroke that `convert_key` drops
-/// (notably Option-modified keys on macOS) is still text when it carries a
-/// `key_char` and neither Control nor Command is held: that is how
-/// Option-composed characters and dead keys reach the input handler.
-/// Control and Command keystrokes are never text here; `Cmd+V` paste is a
-/// separate, unimplemented feature.
-fn classify_overlay_keystroke(
+/// Note: a lone sequence prefix (`g` of `g g`) is swallowed by the
+/// keymap while it waits, so typing `go` in a normal-mode palette
+/// inserts only `o`. That is the usual prefix-key trade-off.
+fn overlay_fallback(
+    palette: bool,
+    insert: bool,
     key: Option<Key>,
     key_char: Option<&str>,
     modifiers: &Modifiers,
-    opens_ex: bool,
-) -> OverlayTarget {
-    if opens_ex {
-        return OverlayTarget::OpenEx;
+) -> OverlayFallback {
+    match key {
+        None => {
+            if !modifiers.control
+                && !modifiers.platform
+                && let Some(character) = key_char
+                && !character.is_empty()
+            {
+                OverlayFallback::Input
+            } else {
+                OverlayFallback::Stop
+            }
+        }
+        Some(Key::Char(_)) => {
+            if palette && !insert {
+                OverlayFallback::SwitchToInsert
+            } else {
+                OverlayFallback::Input
+            }
+        }
+        Some(Key::Backspace) => OverlayFallback::PopChar,
+        Some(_) => OverlayFallback::Stop,
     }
-    if matches!(key, Some(Key::Char(_))) {
-        return OverlayTarget::Text;
-    }
-    if key.is_none()
-        && !modifiers.control
-        && !modifiers.platform
-        && let Some(character) = key_char
-        && !character.is_empty()
-    {
-        return OverlayTarget::Text;
-    }
-    OverlayTarget::Key
+}
+
+/// Whether a keymap command may run while a modal overlay is open.
+///
+/// Overlay keys run only overlay actions (`vy.ui.*` movement, activation,
+/// cancel, completion, clear, and the Ex line). Editor, pane, document,
+/// and overlay-opening commands (`vy.ui.command_palette`,
+/// `vy.ui.open_settings`) are ignored: while a modal overlay is open,
+/// global and editor bindings must not leak through and edit the
+/// document behind it or abandon a picker reply.
+fn is_overlay_action_command(id: &str) -> bool {
+    matches!(
+        UiCommand::parse(id),
+        Some(
+            UiCommand::UiNext
+                | UiCommand::UiPrev
+                | UiCommand::UiPageDown
+                | UiCommand::UiPageUp
+                | UiCommand::UiFirst
+                | UiCommand::UiLast
+                | UiCommand::UiActivate
+                | UiCommand::UiCancel
+                | UiCommand::UiToggle
+                | UiCommand::UiYank
+                | UiCommand::UiFocusNext
+                | UiCommand::UiFocusPrev
+                | UiCommand::UiClearLine
+                | UiCommand::UiCompleteNext
+                | UiCommand::UiCompletePrev
+                | UiCommand::ExCommandLine
+        )
+    )
 }
 
 /// Active drag operation resizing a split.
@@ -175,6 +223,11 @@ pub struct EditorView {
     fallback: DocumentState,
     /// Modal overlay currently open (palette, Ex line, prompt, or approval).
     pub(crate) overlay: Option<Overlay>,
+    /// Palette input mode (ADR 0032 Phase 3): palettes open in insert mode,
+    /// where typed characters filter; `Esc` switches to normal mode, where
+    /// list keys move the selection. Only meaningful while the overlay is
+    /// a palette; other overlays are single-mode.
+    palette_insert: bool,
     /// Commands run from the palette, most recent first. Session-local.
     recent_commands: Vec<String>,
     ex_history: ExHistory,
@@ -311,6 +364,7 @@ impl EditorView {
             documents: HashMap::new(),
             fallback,
             overlay: initial_overlay,
+            palette_insert: true,
             recent_commands: Vec::new(),
             ex_history: ExHistory::new(),
             command_queue: VecDeque::new(),
@@ -707,34 +761,72 @@ impl EditorView {
         self.cursor_visible = true;
         let key = ui::key::convert_key(&event.keystroke);
 
+        // ADR 0032 Phase 3: overlay keys go through the keymap. The old
+        // early return (classify, then `handle_overlay_key`) is gone:
+        // non-text keys feed `Keymap::feed` and run overlay actions, while
+        // text still reaches the input handler via `replace_text_in_range`
+        // without stopping propagation (macOS input-method invariant).
         if self.overlay.is_some() {
-            let opens_ex = key
-                .map(|key| self.opens_ex_from_palette(key))
-                .unwrap_or(false);
-            let target = classify_overlay_keystroke(
-                key,
-                event.keystroke.key_char.as_deref(),
-                &event.keystroke.modifiers,
-                opens_ex,
-            );
-            match target {
-                OverlayTarget::OpenEx => self.open_ex(),
-                // Printable text reaches the input handler via `replace_text_in_range`.
-                // Do not stop propagation here: on macOS, stopping marks the key
-                // as handled and GPUI never calls the input method (`insertText`),
-                // so palette/Ex text input breaks with an ABC layout. The
-                // `Key::Char` branches in `handle_*_key` are therefore unreachable
-                // for text today; they are kept intentionally until ADR 0032
-                // Phase 3 migrates overlay keys to the keymap.
-                OverlayTarget::Text => {}
-                OverlayTarget::Key => {
-                    if let Some(key) = key {
-                        self.handle_overlay_key(key);
+            let is_palette = matches!(self.overlay, Some(Overlay::Palette(_)));
+            // Single-mode overlays (Ex, prompt, approval, settings) always
+            // behave like insert mode for characters.
+            let insert = !is_palette || self.palette_insert;
+            let key_char = event.keystroke.key_char.as_deref();
+            let modifiers = &event.keystroke.modifiers;
+            // Preserved affordance: `:` in an empty command palette opens
+            // the Ex line instead of inserting text. In a normal-mode
+            // palette `:` goes through the keymap binding instead.
+            let mut stop = true;
+            if is_palette
+                && insert
+                && key == Some(Key::Char(':'))
+                && self.opens_ex_from_palette(Key::Char(':'))
+            {
+                self.open_ex();
+            } else {
+                match key {
+                    None => {
+                        // Dropped keystrokes (Option-composed characters):
+                        // input when they carry a character, else swallowed.
+                        stop = overlay_fallback(is_palette, insert, None, key_char, modifiers)
+                            != OverlayFallback::Input;
+                    }
+                    Some(key) => {
+                        if matches!(key, Key::Char(_)) && insert {
+                            // Insert-mode text goes straight to the input
+                            // handler; it must not stop propagation.
+                            stop = false;
+                        } else {
+                            let context = self.key_context();
+                            match self.keymap.feed(key, &context) {
+                                KeymapOutcome::Command { id, args, values } => {
+                                    if is_overlay_action_command(&id) {
+                                        self.enqueue_command(Invocation::keymap_with_args(
+                                            id, args, values,
+                                        ));
+                                    } else {
+                                        // A non-overlay command matched (an
+                                        // editor or global binding): fall
+                                        // through to the fallback as if
+                                        // the keymap ignored the key.
+                                        stop = self.apply_overlay_fallback(
+                                            is_palette, insert, key, key_char, modifiers,
+                                        );
+                                    }
+                                }
+                                KeymapOutcome::Pending => {}
+                                KeymapOutcome::Ignored => {
+                                    stop = self.apply_overlay_fallback(
+                                        is_palette, insert, key, key_char, modifiers,
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
             self.sync_modal_focus(window, cx);
-            if target != OverlayTarget::Text {
+            if stop {
                 cx.stop_propagation();
             }
             cx.notify();
@@ -778,6 +870,46 @@ impl EditorView {
         }
     }
 
+    /// Applies the fallback for an overlay key the keymap ignored (or
+    /// matched to a non-overlay command). Returns whether to stop
+    /// propagation.
+    fn apply_overlay_fallback(
+        &mut self,
+        is_palette: bool,
+        insert: bool,
+        key: Key,
+        key_char: Option<&str>,
+        modifiers: &Modifiers,
+    ) -> bool {
+        match overlay_fallback(is_palette, insert, Some(key), key_char, modifiers) {
+            OverlayFallback::Input => false,
+            OverlayFallback::SwitchToInsert => {
+                self.palette_insert = true;
+                false
+            }
+            OverlayFallback::PopChar => {
+                self.pop_overlay_char();
+                true
+            }
+            OverlayFallback::Stop => true,
+        }
+    }
+
+    /// Deletes the last overlay input character, as the old handlers did.
+    /// Palette and settings lists scroll back to the top after an edit.
+    fn pop_overlay_char(&mut self) {
+        if let Some(overlay) = self.overlay.as_mut() {
+            overlay.pop_char();
+        }
+        if matches!(
+            self.overlay,
+            Some(Overlay::Palette(_)) | Some(Overlay::Settings(_))
+        ) {
+            self.palette_scroll_handle
+                .scroll_to_item(0, ScrollStrategy::Top);
+        }
+    }
+
     /// `:` in an empty command palette closes it and opens the Ex command line.
     fn opens_ex_from_palette(&self, key: Key) -> bool {
         if !matches!(key, Key::Char(':')) {
@@ -789,6 +921,21 @@ impl EditorView {
                     && matches!(palette.mode, vy_app::palette::PaletteMode::Commands)
             })
         })
+    }
+
+    /// Key hint for a command in the current overlay context, from the
+    /// keymap (ADR 0032 Phase 3). Returns [`None`] when no binding
+    /// matches, so overlay hints can fall back to hard-coded keys.
+    /// Sequences are joined with a space (`g g`).
+    pub(crate) fn key_hint(&self, command: &str) -> Option<String> {
+        let context = self.key_context();
+        let keys = self.keymap.keys_for(command, &context)?;
+        Some(
+            keys.iter()
+                .map(|key| key.display_name())
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
     }
 
     /// Builds the `when` context for the active pane (ADR 0032 Phase 1).
@@ -820,8 +967,21 @@ impl EditorView {
             },
             None => (None, None),
         };
+        // While a palette is open, the keymap sees the palette input mode,
+        // not the editor mode: `mode == 'normal'` bindings move the list,
+        // `mode == 'insert'` bindings (and plain typing) filter it.
+        let mode = match self.overlay.as_ref() {
+            Some(Overlay::Palette(_)) => {
+                if self.palette_insert {
+                    Mode::Insert
+                } else {
+                    Mode::Normal
+                }
+            }
+            _ => self.editor().mode(),
+        };
         KeyContext {
-            mode: self.editor().mode(),
+            mode,
             has_selection: {
                 let selection = self.editor().selection();
                 selection.start != selection.end
@@ -1062,92 +1222,114 @@ mod tests {
     }
 
     #[test]
-    fn classify_overlay_keystroke_routes_text_and_keys() {
+    fn overlay_fallback_routes_text_and_keys() {
         // Plain printable text goes to the input handler.
         assert_eq!(
-            classify_overlay_keystroke(Some(Key::Char('a')), Some("a"), &plain(), false),
-            OverlayTarget::Text
+            overlay_fallback(false, true, Some(Key::Char('a')), Some("a"), &plain()),
+            OverlayFallback::Input
         );
         // Shifted text is still text.
         assert_eq!(
-            classify_overlay_keystroke(
+            overlay_fallback(
+                false,
+                true,
                 Some(Key::Char('A')),
                 Some("A"),
                 &Modifiers {
                     shift: true,
                     ..plain()
                 },
-                false,
             ),
-            OverlayTarget::Text
+            OverlayFallback::Input
         );
-        // `:` in an empty palette switches to Ex instead of inserting text.
+        // A normal-mode palette switches back to insert and types.
         assert_eq!(
-            classify_overlay_keystroke(Some(Key::Char(':')), Some(":"), &plain(), true),
-            OverlayTarget::OpenEx
+            overlay_fallback(true, false, Some(Key::Char('j')), Some("j"), &plain()),
+            OverlayFallback::SwitchToInsert
         );
-        // `:` elsewhere is ordinary text.
+        // An insert-mode palette types directly.
         assert_eq!(
-            classify_overlay_keystroke(Some(Key::Char(':')), Some(":"), &plain(), false),
-            OverlayTarget::Text
+            overlay_fallback(true, true, Some(Key::Char('j')), Some("j"), &plain()),
+            OverlayFallback::Input
         );
         // Option-modified input (e.g. Option-s -> ß on macOS) is dropped by
         // `convert_key`, so it arrives with no `Key` but a `key_char`.
         assert_eq!(
-            classify_overlay_keystroke(
+            overlay_fallback(
+                false,
+                true,
                 None,
                 Some("ß"),
                 &Modifiers {
                     alt: true,
                     ..plain()
                 },
-                false,
             ),
-            OverlayTarget::Text
+            OverlayFallback::Input
         );
-        // Navigation and editing keys are handled by the overlay itself.
+        // Navigation and editing keys are swallowed by the modal overlay.
         assert_eq!(
-            classify_overlay_keystroke(Some(Key::Enter), None, &plain(), false),
-            OverlayTarget::Key
-        );
-        assert_eq!(
-            classify_overlay_keystroke(Some(Key::Backspace), None, &plain(), false),
-            OverlayTarget::Key
+            overlay_fallback(false, true, Some(Key::Enter), None, &plain()),
+            OverlayFallback::Stop
         );
         assert_eq!(
-            classify_overlay_keystroke(Some(Key::Tab), None, &plain(), false),
-            OverlayTarget::Key
+            overlay_fallback(false, true, Some(Key::Tab), None, &plain()),
+            OverlayFallback::Stop
+        );
+        // Backspace edits the input.
+        assert_eq!(
+            overlay_fallback(false, true, Some(Key::Backspace), None, &plain()),
+            OverlayFallback::PopChar
         );
         // Control keys stay with the overlay (e.g. Ctrl-p / Ctrl-n selection).
         assert_eq!(
-            classify_overlay_keystroke(
+            overlay_fallback(
+                false,
+                true,
                 Some(Key::Ctrl('u')),
                 None,
                 &Modifiers {
                     control: true,
                     ..plain()
                 },
-                false,
             ),
-            OverlayTarget::Key
+            OverlayFallback::Stop
         );
         // Cmd+V is not text here; paste is out of scope for this fix.
         assert_eq!(
-            classify_overlay_keystroke(
+            overlay_fallback(
+                false,
+                true,
                 None,
                 None,
                 &Modifiers {
                     platform: true,
                     ..plain()
                 },
-                false,
             ),
-            OverlayTarget::Key
+            OverlayFallback::Stop
         );
         // An empty `key_char` with no converted key is not text.
         assert_eq!(
-            classify_overlay_keystroke(None, Some(""), &plain(), false),
-            OverlayTarget::Key
+            overlay_fallback(false, true, None, Some(""), &plain()),
+            OverlayFallback::Stop
         );
+    }
+
+    #[test]
+    fn overlay_action_commands_are_vy_ui_actions() {
+        // Overlay actions run through the keymap; editor, pane, and
+        // overlay-opening commands must not leak through a modal overlay.
+        assert!(is_overlay_action_command("vy.ui.next"));
+        assert!(is_overlay_action_command("vy.ui.activate"));
+        assert!(is_overlay_action_command("vy.ui.cancel"));
+        assert!(is_overlay_action_command("vy.ui.clearLine"));
+        assert!(is_overlay_action_command("vy.ui.completeNext"));
+        assert!(is_overlay_action_command("vy.ui.ex_command_line"));
+        assert!(!is_overlay_action_command("vy.ui.command_palette"));
+        assert!(!is_overlay_action_command("vy.ui.open_settings"));
+        assert!(!is_overlay_action_command("vy.motion.down"));
+        assert!(!is_overlay_action_command("vy.editor.open"));
+        assert!(!is_overlay_action_command("vy.ui.unknown"));
     }
 }

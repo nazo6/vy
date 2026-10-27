@@ -76,6 +76,31 @@ impl Key {
     }
 }
 
+/// Displays one key the way bindings write it (`enter`, `ctrl-n`,
+/// `g`), except that special keys keep their hint capitalisation
+/// (`Enter`, `Esc`, `Up`). Used for overlay hints.
+impl Key {
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Char(' ') => "space".to_string(),
+            Self::Char(character) => character.to_string(),
+            Self::Ctrl(character) => format!("ctrl-{character}"),
+            Self::Esc => "Esc".to_string(),
+            Self::Enter => "Enter".to_string(),
+            Self::Backspace => "Backspace".to_string(),
+            Self::Delete => "Delete".to_string(),
+            Self::Tab => "Tab".to_string(),
+            Self::BackTab => "BackTab".to_string(),
+            Self::Left => "Left".to_string(),
+            Self::Right => "Right".to_string(),
+            Self::Up => "Up".to_string(),
+            Self::Down => "Down".to_string(),
+            Self::Home => "Home".to_string(),
+            Self::End => "End".to_string(),
+        }
+    }
+}
+
 /// Parses a space-separated sequence such as `g g` or `space f f`.
 pub fn parse_sequence(keys: &str) -> Result<Vec<Key>, KeymapError> {
     let mut sequence = Vec::new();
@@ -486,6 +511,20 @@ impl Keymap {
     fn reset(&mut self) {
         self.prefix = Prefix::None;
         self.last_key = None;
+    }
+
+    /// Keys of the binding that would win for `command` in `context`,
+    /// mirroring `feed_binding`'s last-wins rule. Returns [`None`] when no
+    /// binding for the command matches, so callers can fall back to a
+    /// hard-coded hint.
+    pub fn keys_for(&self, command: &str, context: &KeyContext) -> Option<Vec<Key>> {
+        let mut found = None;
+        for binding in &self.bindings {
+            if binding.command == command && self.matches(binding, context) {
+                found = Some(binding.keys.clone());
+            }
+        }
+        found
     }
 
     fn matches(&self, binding: &Binding, context: &KeyContext) -> bool {
@@ -911,6 +950,116 @@ mod tests {
             keymap3.feed(Key::Char('Q'), &normal()),
             KeymapOutcome::Ignored
         );
+    }
+
+    #[test]
+    fn default_overlay_bindings_resolve() {
+        // ADR 0032 Phase 3: overlay keys are keymap bindings. The default
+        // keymap must resolve them in the right overlay and mode, and
+        // must not resolve list keys while a palette is filtering.
+        let mut keymap = keymap();
+
+        let mut palette_normal = normal();
+        palette_normal.overlay = "palette".to_string();
+        palette_normal.mode = Mode::Normal;
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &palette_normal)).0,
+            "vy.ui.next"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('k'), &palette_normal)).0,
+            "vy.ui.prev"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('G'), &palette_normal)).0,
+            "vy.ui.last"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Esc, &palette_normal)).0,
+            "vy.ui.cancel"
+        );
+        // `g g` is a sequence: the first `g` waits, the second resolves.
+        assert_eq!(
+            keymap.feed(Key::Char('g'), &palette_normal),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('g'), &palette_normal)).0,
+            "vy.ui.first"
+        );
+
+        let mut palette_insert = normal();
+        palette_insert.overlay = "palette".to_string();
+        palette_insert.mode = Mode::Insert;
+        // List keys are filter text while inserting.
+        assert_eq!(
+            keymap.feed(Key::Char('j'), &palette_insert),
+            KeymapOutcome::Ignored
+        );
+        // Movement keys still resolve while inserting.
+        assert_eq!(
+            command(keymap.feed(Key::Up, &palette_insert)).0,
+            "vy.ui.prev"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Enter, &palette_insert)).0,
+            "vy.ui.activate"
+        );
+
+        let mut ex = normal();
+        ex.overlay = "ex".to_string();
+        assert_eq!(command(keymap.feed(Key::Tab, &ex)).0, "vy.ui.completeNext");
+        assert_eq!(
+            command(keymap.feed(Key::BackTab, &ex)).0,
+            "vy.ui.completePrev"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Ctrl('u'), &ex)).0,
+            "vy.ui.clearLine"
+        );
+
+        // Without an overlay, Esc stays the global mode command.
+        assert_eq!(
+            command(keymap.feed(Key::Esc, &normal())).0,
+            "vy.mode.normal"
+        );
+    }
+
+    #[test]
+    fn keys_for_returns_the_winning_binding() {
+        let mut keymap = keymap();
+        keymap
+            .bind("w", "user.cmd", None, Owner::Init)
+            .expect("bind");
+        keymap
+            .bind("q", "user.cmd", Some("overlay == 'palette'"), Owner::Init)
+            .expect("bind");
+        let display = |keymap: &Keymap, command: &str, context: &KeyContext| {
+            keymap.keys_for(command, context).map(|keys| {
+                keys.iter()
+                    .map(|key| key.display_name())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+        };
+        assert_eq!(
+            display(&keymap, "user.cmd", &normal()),
+            Some("w".to_string())
+        );
+        let mut palette = normal();
+        palette.overlay = "palette".to_string();
+        assert_eq!(
+            display(&keymap, "user.cmd", &palette),
+            Some("q".to_string())
+        );
+        assert_eq!(display(&keymap, "user.missing", &normal()), None);
+        assert_eq!(Key::Char('a').display_name(), "a");
+        assert_eq!(Key::Char(' ').display_name(), "space");
+        assert_eq!(Key::Ctrl('n').display_name(), "ctrl-n");
+        assert_eq!(Key::Enter.display_name(), "Enter");
+        assert_eq!(Key::Esc.display_name(), "Esc");
+        assert_eq!(Key::Up.display_name(), "Up");
+        assert_eq!(Key::BackTab.display_name(), "BackTab");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use vy_app::commands::{
     SettingCommand, UiCommand, ViewCommand, argument_error, ex_name_candidates, parse_ex_args,
     parse_ex_line, resolve_ex_name, validate_json_args,
 };
-use vy_app::editor::{Action, Key};
+use vy_app::editor::Action;
 use vy_app::ex::ExState;
 use vy_app::focus_path::FocusPath;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
@@ -564,6 +564,281 @@ impl EditorView {
     }
 
     /// Moves the selected row of the active overlay's list.
+    /// Number of rows one overlay page moves. Phase 4 geometry will derive
+    /// this from the visible rows; until then it is a fixed page.
+    const OVERLAY_PAGE_SIZE: isize = 10;
+
+    /// Runs a `vy.ui.*` action on the open overlay (ADR 0032 Phase 3).
+    /// Count prefixes are ignored for overlay movement, as they are for
+    /// pane focus movement in Phase 2a. Actions with no meaning for the
+    /// open overlay (focus movement, toggle, yank) return false.
+    fn apply_overlay_action(&mut self, args: &UiActionArgs) -> bool {
+        match args.action.as_str() {
+            "next" => self.overlay_move(1),
+            "prev" => self.overlay_move(-1),
+            "first" => self.overlay_set_selection(0),
+            "last" => {
+                let len = self.overlay_filtered_len();
+                if len == 0 {
+                    false
+                } else {
+                    self.overlay_set_selection(len - 1)
+                }
+            }
+            "pageDown" => self.overlay_move_page(Self::OVERLAY_PAGE_SIZE),
+            "pageUp" => self.overlay_move_page(-Self::OVERLAY_PAGE_SIZE),
+            "activate" => self.apply_overlay_activate(),
+            "cancel" => self.apply_overlay_cancel(),
+            "clearLine" => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.clear();
+                    true
+                } else {
+                    false
+                }
+            }
+            "completeNext" => {
+                if matches!(self.overlay, Some(Overlay::Ex(_))) {
+                    self.complete_ex_name(false);
+                    true
+                } else {
+                    false
+                }
+            }
+            "completePrev" => {
+                if matches!(self.overlay, Some(Overlay::Ex(_))) {
+                    self.complete_ex_name(true);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Moves the open overlay's selection (or Ex history) by `delta`.
+    /// Ex history and list selection share the sign: next is +1, prev -1.
+    fn overlay_move(&mut self, delta: isize) -> bool {
+        if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
+            self.ex_history.navigate(ex, delta);
+            return true;
+        }
+        if self
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.selected().is_some())
+        {
+            self.move_overlay_selection(delta);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Moves the open overlay's selection by a page, if it has a list.
+    fn overlay_move_page(&mut self, delta: isize) -> bool {
+        if self
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.selected().is_some())
+        {
+            self.move_overlay_selection(delta);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Sets the open overlay's selection to an absolute filtered index.
+    fn overlay_set_selection(&mut self, index: usize) -> bool {
+        let len = self.overlay_filtered_len();
+        if len == 0 {
+            return false;
+        }
+        let items = self.overlay_items();
+        let input = self.overlay_input_value().to_string();
+        let filtered = filtered_picker_indices(&items, &input);
+        let headings = shows_palette_headings(&input);
+        let Some(overlay) = self.overlay.as_mut() else {
+            return false;
+        };
+        let Some(selected) = overlay.selected_mut() else {
+            return false;
+        };
+        *selected = index.min(len - 1);
+        let row = palette_row_index(&items, &filtered, headings, *selected);
+        self.palette_scroll_handle
+            .scroll_to_item(row, ScrollStrategy::Nearest);
+        true
+    }
+
+    /// Runs the open overlay's `Enter` action: the old `handle_*_key`
+    /// `Enter` arms, now driven by the `vy.ui.activate` keymap binding.
+    fn apply_overlay_activate(&mut self) -> bool {
+        match self.overlay.as_ref() {
+            Some(Overlay::Palette(_)) => {
+                let Some(id) = self.overlay_selected_id() else {
+                    return false;
+                };
+                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
+                    return false;
+                };
+                match palette.mode {
+                    PaletteMode::Commands => self.begin_palette_command(id, palette),
+                    PaletteMode::Documents => {
+                        self.request::<EditorOpen>(
+                            EditorOpenParams {
+                                uri: id,
+                                pane_id: None,
+                            },
+                            Pending::EditorOpen,
+                        );
+                    }
+                    PaletteMode::Custom { reply, .. } => {
+                        if let Some(request) = reply {
+                            request.respond_value(serde_json::json!({ "selectedId": id }));
+                        }
+                    }
+                }
+                true
+            }
+            Some(Overlay::Ex(_)) => {
+                let Some(Overlay::Ex(ex)) = self.overlay.take() else {
+                    return false;
+                };
+                let line = ex.input.value().trim().to_string();
+                if line.is_empty() {
+                    // Enter on an empty Ex line closes it, as before.
+                    return true;
+                }
+                self.ex_history.record(line.clone());
+                self.execute_ex_line(&line);
+                true
+            }
+            Some(Overlay::Prompt(_)) => {
+                self.confirm_prompt_argument();
+                true
+            }
+            Some(Overlay::Approval(_)) => {
+                let Some(id) = self.overlay_selected_id() else {
+                    return false;
+                };
+                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
+                    return false;
+                };
+                if id == "trust" {
+                    if let Err(err) = self.plugin_manager.approve(&approval.plugin_id) {
+                        self.status = format!("Error approving plugin: {err}").into();
+                    } else {
+                        self.status =
+                            format!("Approved and enabled plugin {}", approval.plugin_name).into();
+                        self.on_plugin_approved(&approval.plugin_id);
+                    }
+                    self.show_next_approval_prompt();
+                } else if id == "deny" {
+                    self.plugin_manager.deny(&approval.plugin_id);
+                    self.status =
+                        format!("Denied capabilities for plugin {}", approval.plugin_name).into();
+                    self.show_next_approval_prompt();
+                } else {
+                    // The user selected an info row; keep the dialog open.
+                    self.overlay = Some(Overlay::Approval(approval));
+                }
+                true
+            }
+            Some(Overlay::Settings(_)) => {
+                let Some(key) = self.overlay_selected_id() else {
+                    return false;
+                };
+                self.begin_setting_change(&key);
+                true
+            }
+            Some(Overlay::SettingChoice(_)) => {
+                let Some(value) = self.overlay_selected_id() else {
+                    return false;
+                };
+                let Some(Overlay::SettingChoice(choice)) = self.overlay.as_ref() else {
+                    return false;
+                };
+                let key = choice.key.clone();
+                self.apply_setting(&key, serde_json::Value::String(value), None);
+                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
+                    return false;
+                };
+                self.overlay = Some(Overlay::Settings(choice.back));
+                true
+            }
+            Some(Overlay::SettingPrompt(_)) => {
+                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.as_ref() else {
+                    return false;
+                };
+                let key = prompt.key.clone();
+                let Ok(decl) = settings::resolve(&key) else {
+                    return false;
+                };
+                let Some(value) = decl.kind.parse(prompt.input.value()) else {
+                    self.status =
+                        format!("invalid value for {key}: {}", prompt.input.value()).into();
+                    return false;
+                };
+                self.apply_setting(&key, value, None);
+                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
+                    return false;
+                };
+                self.overlay = Some(Overlay::Settings(prompt.back));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Runs the open overlay's `Esc` action (Esc layer 1): a palette in
+    /// insert mode switches to normal mode instead of closing; every other
+    /// case closes or steps back, as the old `Esc` arms did.
+    fn apply_overlay_cancel(&mut self) -> bool {
+        if matches!(self.overlay, Some(Overlay::Palette(_))) && self.palette_insert {
+            self.palette_insert = false;
+            return true;
+        }
+        match self.overlay.take() {
+            Some(Overlay::Palette(palette)) => {
+                if let PaletteMode::Custom {
+                    reply: Some(request),
+                    ..
+                } = palette.mode
+                {
+                    request.respond_value(serde_json::Value::Null);
+                }
+                true
+            }
+            Some(Overlay::Ex(_)) => true,
+            Some(Overlay::Prompt(prompt)) => {
+                self.overlay = Some(Overlay::Palette(prompt.back));
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+                true
+            }
+            Some(Overlay::Approval(approval)) => {
+                self.plugin_manager.deny(&approval.plugin_id);
+                self.status =
+                    format!("Denied capabilities for plugin {}", approval.plugin_name).into();
+                self.show_next_approval_prompt();
+                true
+            }
+            Some(Overlay::Settings(_)) => true,
+            Some(Overlay::SettingChoice(choice)) => {
+                self.overlay = Some(Overlay::Settings(choice.back));
+                true
+            }
+            Some(Overlay::SettingPrompt(prompt)) => {
+                self.overlay = Some(Overlay::Settings(prompt.back));
+                true
+            }
+            None => false,
+        }
+    }
+
     fn move_overlay_selection(&mut self, delta: isize) {
         let len = self.overlay_filtered_len();
         let items = self.overlay_items();
@@ -592,6 +867,8 @@ impl EditorView {
 
     fn open_palette_mode(&mut self, mode: PaletteMode, status: &str) {
         self.clear_preedit();
+        // Palettes open in insert mode (ADR 0024): typed characters filter.
+        self.palette_insert = true;
         self.overlay = Some(Overlay::Palette(PaletteState::with_mode(mode)));
         self.palette_scroll_handle
             .scroll_to_item(0, ScrollStrategy::Top);
@@ -728,58 +1005,6 @@ impl EditorView {
             Err(error) => {
                 self.status = argument_error(&command_id, &spec, &error).into();
             }
-        }
-    }
-
-    pub(super) fn handle_ex_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                self.overlay = None;
-                return;
-            }
-            Key::Enter => {
-                let Some(Overlay::Ex(ex)) = self.overlay.take() else {
-                    return;
-                };
-                let line = ex.input.value().trim().to_string();
-                if line.is_empty() {
-                    return;
-                }
-                self.ex_history.record(line.clone());
-                self.execute_ex_line(&line);
-                return;
-            }
-            Key::Up | Key::Ctrl('p') => {
-                if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
-                    self.ex_history.navigate(ex, -1);
-                }
-                return;
-            }
-            Key::Down | Key::Ctrl('n') => {
-                if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
-                    self.ex_history.navigate(ex, 1);
-                }
-                return;
-            }
-            Key::Tab => {
-                self.complete_ex_name(false);
-                return;
-            }
-            Key::BackTab => {
-                self.complete_ex_name(true);
-                return;
-            }
-            _ => {}
-        }
-
-        let Some(overlay) = self.overlay.as_mut() else {
-            return;
-        };
-        match key {
-            Key::Backspace => overlay.pop_char(),
-            Key::Ctrl('u') => overlay.clear(),
-            Key::Char(character) => overlay.push_char(character),
-            _ => {}
         }
     }
 
@@ -920,192 +1145,6 @@ impl EditorView {
         }
     }
 
-    /// Dispatches one key to the active overlay.
-    pub(super) fn handle_overlay_key(&mut self, key: Key) {
-        match self.overlay.as_ref() {
-            Some(Overlay::Palette(_)) => self.handle_palette_key(key),
-            Some(Overlay::Ex(_)) => self.handle_ex_key(key),
-            Some(Overlay::Prompt(_)) => self.handle_prompt_key(key),
-            Some(Overlay::Approval(_)) => self.handle_approval_key(key),
-            Some(Overlay::Settings(_)) => self.handle_settings_key(key),
-            Some(Overlay::SettingChoice(_)) => self.handle_setting_choice_key(key),
-            Some(Overlay::SettingPrompt(_)) => self.handle_setting_prompt_key(key),
-            None => {}
-        }
-    }
-
-    fn handle_palette_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
-                    return;
-                };
-                if let PaletteMode::Custom {
-                    reply: Some(request),
-                    ..
-                } = palette.mode
-                {
-                    request.respond_value(serde_json::Value::Null);
-                }
-            }
-            Key::Enter => {
-                let Some(id) = self.overlay_selected_id() else {
-                    return;
-                };
-                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
-                    return;
-                };
-                match palette.mode {
-                    PaletteMode::Commands => self.begin_palette_command(id, palette),
-                    PaletteMode::Documents => {
-                        self.request::<EditorOpen>(
-                            EditorOpenParams {
-                                uri: id,
-                                pane_id: None,
-                            },
-                            Pending::EditorOpen,
-                        );
-                    }
-                    PaletteMode::Custom { reply, .. } => {
-                        if let Some(request) = reply {
-                            request.respond_value(serde_json::json!({ "selectedId": id }));
-                        }
-                    }
-                }
-            }
-            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
-            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_prompt_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                let Some(Overlay::Prompt(prompt)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::Palette(prompt.back));
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            Key::Enter => self.confirm_prompt_argument(),
-            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
-            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_approval_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
-                    return;
-                };
-                self.plugin_manager.deny(&approval.plugin_id);
-                self.status =
-                    format!("Denied capabilities for plugin {}", approval.plugin_name).into();
-                self.show_next_approval_prompt();
-            }
-            Key::Enter => {
-                let Some(id) = self.overlay_selected_id() else {
-                    return;
-                };
-                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
-                    return;
-                };
-                if id == "trust" {
-                    if let Err(err) = self.plugin_manager.approve(&approval.plugin_id) {
-                        self.status = format!("Error approving plugin: {err}").into();
-                    } else {
-                        self.status =
-                            format!("Approved and enabled plugin {}", approval.plugin_name).into();
-                        self.on_plugin_approved(&approval.plugin_id);
-                    }
-                    self.show_next_approval_prompt();
-                } else if id == "deny" {
-                    self.plugin_manager.deny(&approval.plugin_id);
-                    self.status =
-                        format!("Denied capabilities for plugin {}", approval.plugin_name).into();
-                    self.show_next_approval_prompt();
-                } else {
-                    // The user selected an info row; keep the dialog open.
-                    self.overlay = Some(Overlay::Approval(approval));
-                }
-            }
-            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
-            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_settings_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => self.overlay = None,
-            Key::Enter => {
-                let Some(key) = self.overlay_selected_id() else {
-                    return;
-                };
-                self.begin_setting_change(&key);
-            }
-            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
-            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
-            }
-            _ => {}
-        }
-    }
-
     /// Opens a picker or prompt for the selected setting, or toggles a bool.
     fn begin_setting_change(&mut self, key: &str) {
         let Ok(decl) = settings::resolve(key) else {
@@ -1144,85 +1183,6 @@ impl EditorView {
                     .unwrap_or_default();
                 self.status = format!("{key}: {current} >").into();
             }
-        }
-    }
-
-    fn handle_setting_choice_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::Settings(choice.back));
-            }
-            Key::Enter => {
-                let Some(value) = self.overlay_selected_id() else {
-                    return;
-                };
-                let Some(Overlay::SettingChoice(choice)) = self.overlay.as_ref() else {
-                    return;
-                };
-                let key = choice.key.clone();
-                self.apply_setting(&key, serde_json::Value::String(value), None);
-                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::Settings(choice.back));
-            }
-            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
-            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_setting_prompt_key(&mut self, key: Key) {
-        match key {
-            Key::Esc => {
-                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::Settings(prompt.back));
-            }
-            Key::Enter => {
-                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.as_ref() else {
-                    return;
-                };
-                let key = prompt.key.clone();
-                let Ok(decl) = settings::resolve(&key) else {
-                    return;
-                };
-                let Some(value) = decl.kind.parse(prompt.input.value()) else {
-                    self.status =
-                        format!("invalid value for {key}: {}", prompt.input.value()).into();
-                    return;
-                };
-                self.apply_setting(&key, value, None);
-                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::Settings(prompt.back));
-            }
-            Key::Backspace => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.pop_char();
-                }
-            }
-            Key::Char(character) => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.push_char(character);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -1565,6 +1525,15 @@ impl EditorView {
             UiCommand::UiFocusPrev => {
                 self.apply_ui_action(&self.ui_action_args("focusPrev", invocation));
             }
+            UiCommand::UiClearLine => {
+                self.apply_ui_action(&self.ui_action_args("clearLine", invocation));
+            }
+            UiCommand::UiCompleteNext => {
+                self.apply_ui_action(&self.ui_action_args("completeNext", invocation));
+            }
+            UiCommand::UiCompletePrev => {
+                self.apply_ui_action(&self.ui_action_args("completePrev", invocation));
+            }
         }
     }
 
@@ -1618,8 +1587,13 @@ impl EditorView {
     /// Editor panes, panes with no widget tree, and actions with no host
     /// default yet return false and change nothing.
     fn apply_ui_action(&mut self, args: &UiActionArgs) -> bool {
+        // A modal overlay owns the key: overlay actions run first, even
+        // over an editor pane behind the overlay.
+        if self.overlay.is_some() {
+            return self.apply_overlay_action(args);
+        }
         // Host defaults only apply to UI panes; editor panes keep their
-        // own keymap, and overlays handle their keys before the keymap.
+        // own keymap.
         let Some(pane) = self.active_pane_state() else {
             return false;
         };
