@@ -17,7 +17,8 @@ mod render;
 mod rpc;
 
 use gpui::{
-    Context, FocusHandle, KeyDownEvent, Pixels, Point, ScrollWheelEvent, SharedString, Window, px,
+    Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollWheelEvent, SharedString,
+    Window, px,
 };
 use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
@@ -76,6 +77,41 @@ enum OverlayTarget {
     Text,
     /// The overlay handles the key itself.
     Key,
+}
+
+/// Classifies an overlay keystroke without touching overlay state.
+///
+/// `opens_ex` is computed by the caller from `opens_ex_from_palette` and
+/// takes precedence over text: `:` in an empty palette must switch to the
+/// Ex line instead of being inserted as text.
+///
+/// A converted `Key::Char` is text. A keystroke that `convert_key` drops
+/// (notably Option-modified keys on macOS) is still text when it carries a
+/// `key_char` and neither Control nor Command is held: that is how
+/// Option-composed characters and dead keys reach the input handler.
+/// Control and Command keystrokes are never text here; `Cmd+V` paste is a
+/// separate, unimplemented feature.
+fn classify_overlay_keystroke(
+    key: Option<Key>,
+    key_char: Option<&str>,
+    modifiers: &Modifiers,
+    opens_ex: bool,
+) -> OverlayTarget {
+    if opens_ex {
+        return OverlayTarget::OpenEx;
+    }
+    if matches!(key, Some(Key::Char(_))) {
+        return OverlayTarget::Text;
+    }
+    if key.is_none()
+        && !modifiers.control
+        && !modifiers.platform
+        && let Some(character) = key_char
+        && !character.is_empty()
+    {
+        return OverlayTarget::Text;
+    }
+    OverlayTarget::Key
 }
 
 /// Active drag operation resizing a split.
@@ -650,18 +686,35 @@ impl EditorView {
         let key = ui::key::convert_key(&event.keystroke);
 
         if self.overlay.is_some() {
-            match key.map(|key| self.overlay_target(key)) {
-                Some(OverlayTarget::OpenEx) => self.open_ex(),
+            let opens_ex = key
+                .map(|key| self.opens_ex_from_palette(key))
+                .unwrap_or(false);
+            let target = classify_overlay_keystroke(
+                key,
+                event.keystroke.key_char.as_deref(),
+                &event.keystroke.modifiers,
+                opens_ex,
+            );
+            match target {
+                OverlayTarget::OpenEx => self.open_ex(),
                 // Printable text reaches the input handler via `replace_text_in_range`.
-                Some(OverlayTarget::Text) => {}
-                Some(OverlayTarget::Key) | None => {
+                // Do not stop propagation here: on macOS, stopping marks the key
+                // as handled and GPUI never calls the input method (`insertText`),
+                // so palette/Ex text input breaks with an ABC layout. The
+                // `Key::Char` branches in `handle_*_key` are therefore unreachable
+                // for text today; they are kept intentionally until ADR 0032
+                // Phase 3 migrates overlay keys to the keymap.
+                OverlayTarget::Text => {}
+                OverlayTarget::Key => {
                     if let Some(key) = key {
                         self.handle_overlay_key(key);
                     }
                 }
             }
             self.sync_modal_focus(window, cx);
-            cx.stop_propagation();
+            if target != OverlayTarget::Text {
+                cx.stop_propagation();
+            }
             cx.notify();
             return;
         }
@@ -691,17 +744,6 @@ impl EditorView {
         if self.apply_key(key) {
             self.sync_modal_focus(window, cx);
             cx.notify();
-        }
-    }
-
-    /// How the open overlay handles `key`.
-    fn overlay_target(&self, key: Key) -> OverlayTarget {
-        if self.opens_ex_from_palette(key) {
-            OverlayTarget::OpenEx
-        } else if matches!(key, Key::Char(_)) {
-            OverlayTarget::Text
-        } else {
-            OverlayTarget::Key
         }
     }
 
@@ -877,5 +919,104 @@ fn remote_env_for(connection: &ConnectionSpec, name: &str) -> RemoteEnv {
         } else {
             std::path::MAIN_SEPARATOR.to_string()
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain() -> Modifiers {
+        Modifiers::default()
+    }
+
+    #[test]
+    fn classify_overlay_keystroke_routes_text_and_keys() {
+        // Plain printable text goes to the input handler.
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Char('a')), Some("a"), &plain(), false),
+            OverlayTarget::Text
+        );
+        // Shifted text is still text.
+        assert_eq!(
+            classify_overlay_keystroke(
+                Some(Key::Char('A')),
+                Some("A"),
+                &Modifiers {
+                    shift: true,
+                    ..plain()
+                },
+                false,
+            ),
+            OverlayTarget::Text
+        );
+        // `:` in an empty palette switches to Ex instead of inserting text.
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Char(':')), Some(":"), &plain(), true),
+            OverlayTarget::OpenEx
+        );
+        // `:` elsewhere is ordinary text.
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Char(':')), Some(":"), &plain(), false),
+            OverlayTarget::Text
+        );
+        // Option-modified input (e.g. Option-s -> ß on macOS) is dropped by
+        // `convert_key`, so it arrives with no `Key` but a `key_char`.
+        assert_eq!(
+            classify_overlay_keystroke(
+                None,
+                Some("ß"),
+                &Modifiers {
+                    alt: true,
+                    ..plain()
+                },
+                false,
+            ),
+            OverlayTarget::Text
+        );
+        // Navigation and editing keys are handled by the overlay itself.
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Enter), None, &plain(), false),
+            OverlayTarget::Key
+        );
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Backspace), None, &plain(), false),
+            OverlayTarget::Key
+        );
+        assert_eq!(
+            classify_overlay_keystroke(Some(Key::Tab), None, &plain(), false),
+            OverlayTarget::Key
+        );
+        // Control keys stay with the overlay (e.g. Ctrl-p / Ctrl-n selection).
+        assert_eq!(
+            classify_overlay_keystroke(
+                Some(Key::Ctrl('u')),
+                None,
+                &Modifiers {
+                    control: true,
+                    ..plain()
+                },
+                false,
+            ),
+            OverlayTarget::Key
+        );
+        // Cmd+V is not text here; paste is out of scope for this fix.
+        assert_eq!(
+            classify_overlay_keystroke(
+                None,
+                None,
+                &Modifiers {
+                    platform: true,
+                    ..plain()
+                },
+                false,
+            ),
+            OverlayTarget::Key
+        );
+        // An empty `key_char` with no converted key is not text.
+        assert_eq!(
+            classify_overlay_keystroke(None, Some(""), &plain(), false),
+            OverlayTarget::Key
+        );
     }
 }
