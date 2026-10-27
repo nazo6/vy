@@ -158,18 +158,9 @@ impl KeyContext {
             "paneKind" => Some(Value::Text(self.pane_kind.clone())),
             "viewType" => Some(Value::Text(self.view_type.clone())),
             "overlay" => Some(Value::Text(self.overlay.clone())),
-            "surfaceId" => self
-                .surface_id
-                .as_ref()
-                .map(|id| Value::Text(id.clone())),
-            "uiRole" => self
-                .ui_role
-                .as_ref()
-                .map(|role| Value::Text(role.clone())),
-            "uiFocus" => self
-                .ui_focus
-                .as_ref()
-                .map(|id| Value::Text(id.clone())),
+            "surfaceId" => self.surface_id.as_ref().map(|id| Value::Text(id.clone())),
+            "uiRole" => self.ui_role.as_ref().map(|role| Value::Text(role.clone())),
+            "uiFocus" => self.ui_focus.as_ref().map(|id| Value::Text(id.clone())),
             _ => None,
         }
     }

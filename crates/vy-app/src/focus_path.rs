@@ -51,17 +51,9 @@ impl FocusPath {
         out
     }
 
-    fn collect(
-        node: &WidgetNode,
-        ancestors: &mut Vec<String>,
-        out: &mut Vec<FocusableNode>,
-    ) {
+    fn collect(node: &WidgetNode, ancestors: &mut Vec<String>, out: &mut Vec<FocusableNode>) {
         match node {
-            WidgetNode::Container {
-                id,
-                children,
-                ..
-            } => {
+            WidgetNode::Container { id, children, .. } => {
                 let pushed = id.is_some();
                 if let Some(id) = id {
                     ancestors.push(id.clone());
@@ -126,7 +118,10 @@ impl FocusPath {
                 return node.path.clone();
             }
         }
-        list.into_iter().next().map(|node| node.path).unwrap_or_default()
+        list.into_iter()
+            .next()
+            .map(|node| node.path)
+            .unwrap_or_default()
     }
 
     /// Next focusable widget in depth-first order, wrapping around.
@@ -204,26 +199,18 @@ mod tests {
     #[test]
     fn focus_path_collects_focusable_nodes_in_depth_first_order() {
         let paths = FocusPath::focusable(&tree());
-        let ids: Vec<Vec<String>> = paths
-            .iter()
-            .map(|node| node.path.ids().to_vec())
-            .collect();
+        let ids: Vec<Vec<String>> = paths.iter().map(|node| node.path.ids().to_vec()).collect();
         assert_eq!(
             ids,
             vec![
                 vec!["root".to_string(), "ok".to_string()],
-                vec![
-                    "root".to_string(),
-                    "form".to_string(),
-                    "name".to_string()
-                ],
+                vec!["root".to_string(), "form".to_string(), "name".to_string()],
             ]
         );
         assert_eq!(paths[0].role, "button");
         assert_eq!(paths[1].role, "textInput");
         assert_eq!(
-            FocusPath::new(vec!["root".to_string(), "ok".to_string()])
-                .focused_role(&tree()),
+            FocusPath::new(vec!["root".to_string(), "ok".to_string()]).focused_role(&tree()),
             Some("button")
         );
     }
@@ -268,5 +255,4 @@ mod tests {
         assert_eq!(first.prev(&tree()), second);
         assert_eq!(second.prev(&tree()), first);
     }
-
 }

@@ -6,8 +6,8 @@ use std::time::Duration;
 use vy_core::PaneId;
 
 use crate::config::{Config, SettingSource};
-use crate::focus_path::FocusPath;
 use crate::editor::{Editor, ViewState};
+use crate::focus_path::FocusPath;
 use crate::widget::WidgetNode;
 
 /// Default rows drawn before measuring the window.
