@@ -1090,6 +1090,28 @@ mod tests {
         assert_eq!(UiCommand::parse("vy.ui.unknown"), None);
         assert_eq!(UiCommand::CommandPalette.title(), "Command Palette");
         assert_eq!(UiCommand::ExCommandLine.title(), "Ex Command Line");
+        // ADR 0032 Phase 2 vocabulary: hidden, no Ex names.
+        for (id, variant) in [
+            ("vy.ui.next", UiCommand::UiNext),
+            ("vy.ui.prev", UiCommand::UiPrev),
+            ("vy.ui.pageDown", UiCommand::UiPageDown),
+            ("vy.ui.pageUp", UiCommand::UiPageUp),
+            ("vy.ui.first", UiCommand::UiFirst),
+            ("vy.ui.last", UiCommand::UiLast),
+            ("vy.ui.activate", UiCommand::UiActivate),
+            ("vy.ui.cancel", UiCommand::UiCancel),
+            ("vy.ui.toggle", UiCommand::UiToggle),
+            ("vy.ui.yank", UiCommand::UiYank),
+            ("vy.ui.focusNext", UiCommand::UiFocusNext),
+            ("vy.ui.focusPrev", UiCommand::UiFocusPrev),
+        ] {
+            assert_eq!(UiCommand::parse(id), Some(variant));
+            let meta = variant.meta();
+            assert_eq!(meta.palette, PaletteVisibility::Hidden);
+            assert_eq!(meta.category, CommandCategory::App);
+            assert!(meta.ex_names.is_empty());
+        }
+        assert_eq!(UiCommand::all().len(), 20);
     }
 
     #[test]

@@ -337,6 +337,10 @@ pub struct RequestContext<'a> {
     pub statusline: Option<&'a mut Statusline>,
     pub gutter: Option<&'a mut GutterRegistry>,
     pub hover: Option<&'a mut Option<HoverState>>,
+    /// Snapshot of the active UI pane's focused widget for `ui.focused()`.
+    /// `None` outside the editor view (tests, script host) and for editor
+    /// panes, where `ui.focused()` answers null.
+    pub ui_focus: Option<vy_client_api::namespaces::ui::UiFocused>,
 }
 
 /// The effect of one request on the client.
@@ -422,6 +426,7 @@ mod tests {
             statusline: None,
             gutter: None,
             hover: None,
+            ui_focus: None,
         }
     }
 
@@ -611,6 +616,7 @@ vy.commands.registerCommand("user.hello", async () => {
                     statusline: None,
                     gutter: None,
                     hover: None,
+                    ui_focus: None,
                 };
                 let outcome = handle_request(context, request);
                 assert!(outcome.action == HostAction::None);
@@ -775,6 +781,7 @@ vy.commands.registerCommand("user.hello", async () => {
                     statusline: None,
                     gutter: None,
                     hover: None,
+                    ui_focus: None,
                 };
                 let _ = handle_request(context, request);
             }
