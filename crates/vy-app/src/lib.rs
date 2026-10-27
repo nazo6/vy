@@ -10,6 +10,7 @@ pub mod config;
 pub mod connection;
 pub mod editor;
 pub mod ex;
+pub mod focus_path;
 pub mod geometry;
 pub mod keymap;
 pub mod overlay;

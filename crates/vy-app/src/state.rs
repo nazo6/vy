@@ -6,6 +6,7 @@ use std::time::Duration;
 use vy_core::PaneId;
 
 use crate::config::{Config, SettingSource};
+use crate::focus_path::FocusPath;
 use crate::editor::{Editor, ViewState};
 use crate::widget::WidgetNode;
 
@@ -70,6 +71,10 @@ pub struct PaneState {
     pub view_type: String,
     /// Root of the custom widget tree if this is a "ui" view.
     pub widget_tree: Option<WidgetNode>,
+    /// Keyboard focus inside this pane's widget tree, as ids from the
+    /// tree root to the focused widget. Empty for editor panes and for
+    /// panes with no focusable widget.
+    pub focus_path: FocusPath,
 }
 
 impl PaneState {
@@ -88,6 +93,26 @@ impl PaneState {
             settings: BTreeMap::new(),
             view_type: "editor".to_string(),
             widget_tree: None,
+            focus_path: FocusPath::default(),
+        }
+    }
+
+    /// Replaces this pane's widget tree and resolves its focus path
+    /// against the new tree (ADR 0024 §3, ADR 0032 Phase 1). A tree
+    /// that appears with no prior focus starts on its first focusable
+    /// widget; a tree that disappears clears the focus path.
+    pub fn set_widget_tree(&mut self, tree: Option<WidgetNode>) {
+        self.widget_tree = tree;
+        self.resolve_focus();
+    }
+
+    /// Re-resolves the focus path against the current widget tree, for
+    /// example after a re-render replaced the tree.
+    pub fn resolve_focus(&mut self) {
+        if let Some(tree) = &self.widget_tree {
+            self.focus_path = self.focus_path.resolve(tree);
+        } else {
+            self.focus_path = FocusPath::default();
         }
     }
 

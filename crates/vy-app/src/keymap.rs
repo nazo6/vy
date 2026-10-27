@@ -98,6 +98,26 @@ pub struct KeyContext {
     pub operator_pending: bool,
     pub text_object_pending: bool,
     pub remote: bool,
+    /// Active pane id, when there is one. This is a number in `when`
+    /// expressions, for example `paneId == 3`.
+    pub pane_id: Option<u64>,
+    /// Kind of the active pane: `editor`, `ui`, `webview`, or `terminal`.
+    /// Plugin views are `ui`; unknown view ids also map to `ui`.
+    pub pane_kind: String,
+    /// View id of the active pane, for example `editor` or a plugin view id.
+    pub view_type: String,
+    /// Open overlay kind: `none`, `palette`, `picker`, `ex`, `prompt`,
+    /// `approval`, or `settings`. No surface exists yet (Phase 4), so this
+    /// is the overlay, not a surface kind.
+    pub overlay: String,
+    /// Id of the frontmost surface. Always `None` until Phase 4 introduces
+    /// surfaces; `surfaceId` is then visible to `when` expressions.
+    pub surface_id: Option<String>,
+    /// Role of the focused widget, for example `button` or `textInput`.
+    /// `None` when no focusable widget has focus.
+    pub ui_role: Option<String>,
+    /// Id of the focused widget. `None` when no focusable widget has focus.
+    pub ui_focus: Option<String>,
 }
 
 impl Default for KeyContext {
@@ -109,6 +129,13 @@ impl Default for KeyContext {
             operator_pending: false,
             text_object_pending: false,
             remote: false,
+            pane_id: None,
+            pane_kind: "editor".to_string(),
+            view_type: "editor".to_string(),
+            overlay: "none".to_string(),
+            surface_id: None,
+            ui_role: None,
+            ui_focus: None,
         }
     }
 }
@@ -127,6 +154,22 @@ impl KeyContext {
             "operatorPending" => Some(Value::Bool(self.operator_pending)),
             "textObjectPending" => Some(Value::Bool(self.text_object_pending)),
             "remote" => Some(Value::Bool(self.remote)),
+            "paneId" => self.pane_id.map(|id| Value::Number(id as f64)),
+            "paneKind" => Some(Value::Text(self.pane_kind.clone())),
+            "viewType" => Some(Value::Text(self.view_type.clone())),
+            "overlay" => Some(Value::Text(self.overlay.clone())),
+            "surfaceId" => self
+                .surface_id
+                .as_ref()
+                .map(|id| Value::Text(id.clone())),
+            "uiRole" => self
+                .ui_role
+                .as_ref()
+                .map(|role| Value::Text(role.clone())),
+            "uiFocus" => self
+                .ui_focus
+                .as_ref()
+                .map(|id| Value::Text(id.clone())),
             _ => None,
         }
     }
@@ -789,6 +832,92 @@ mod tests {
         // `unbind` removes the default too, so the key is no longer bound.
         assert_eq!(
             keymap.feed(Key::Char('h'), &normal()),
+            KeymapOutcome::Ignored
+        );
+    }
+
+    #[test]
+    fn context_fields_are_visible_to_when() {
+        // `paneKind`: the default context is an editor pane, so an
+        // editor-only binding matches there and not in a `ui` pane.
+        let mut keymap = keymap();
+        keymap
+            .bind(
+                "Q",
+                "user.editor_only",
+                Some("paneKind == 'editor'"),
+                Owner::Init,
+            )
+            .expect("bind");
+        assert_eq!(
+            command(keymap.feed(Key::Char('Q'), &normal())).0,
+            "user.editor_only"
+        );
+        let mut ui = normal();
+        ui.pane_kind = "ui".to_string();
+        ui.view_type = "ui".to_string();
+        ui.editor_focus = false;
+        assert_eq!(keymap.feed(Key::Char('Q'), &ui), KeymapOutcome::Ignored);
+
+        // `overlay` and `surfaceId`: a palette-only binding matches only
+        // while a palette overlay is open.
+        let mut keymap = keymap();
+        keymap
+            .bind(
+                "Q",
+                "user.palette_only",
+                Some("overlay == 'palette'"),
+                Owner::Init,
+            )
+            .expect("bind");
+        let mut palette = normal();
+        palette.overlay = "palette".to_string();
+        assert_eq!(
+            command(keymap.feed(Key::Char('Q'), &palette)).0,
+            "user.palette_only"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('Q'), &normal()),
+            KeymapOutcome::Ignored
+        );
+        let mut surface = normal();
+        surface.surface_id = Some("surface-1".to_string());
+        keymap
+            .bind(
+                "W",
+                "user.surface_only",
+                Some("surfaceId == 'surface-1'"),
+                Owner::Init,
+            )
+            .expect("bind");
+        assert_eq!(
+            command(keymap.feed(Key::Char('W'), &surface)).0,
+            "user.surface_only"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('W'), &normal()),
+            KeymapOutcome::Ignored
+        );
+
+        // `uiRole` / `uiFocus`: only set while a focusable widget has focus.
+        let mut keymap = keymap();
+        keymap
+            .bind(
+                "Q",
+                "user.button_only",
+                Some("uiRole == 'button' && uiFocus == 'ok'"),
+                Owner::Init,
+            )
+            .expect("bind");
+        let mut button = normal();
+        button.ui_role = Some("button".to_string());
+        button.ui_focus = Some("ok".to_string());
+        assert_eq!(
+            command(keymap.feed(Key::Char('Q'), &button)).0,
+            "user.button_only"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('Q'), &normal()),
             KeymapOutcome::Ignored
         );
     }
