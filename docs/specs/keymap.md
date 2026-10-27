@@ -33,6 +33,12 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 - Insert モードの文字は、キーマップではなく
   `EntityInputHandler`（`replace_text_in_range`）が受け取ります（
   [`ui.md`](./ui.md) §2）。
+- オーバーレイ（パレット / Ex など）の印字キーも、キーマップではなく
+  `EntityInputHandler` が受け取ります。印字キーでは
+  `stop_propagation` を呼ばないでください。macOS では止めると入力メソッド
+  （`insertText`）に渡らなくなり、ABC 配列で文字が入らなくなります。
+  Enter / Tab / Backspace / Esc / 矢印 / Ctrl 系は従来どおりオーバーレイ側で
+  処理し、伝播を止めます。
 - Normal / Select
   モードでは、文字キーはキーマップが照合して消費し、入力ハンドラへ渡しません。一致したコマンドだけを
   `crates/vy-app/src/editor/` が実行します。
