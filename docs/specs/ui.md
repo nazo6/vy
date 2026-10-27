@@ -63,17 +63,17 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 
 キーマップの `when` から参照できる値を増やします。`mode`、`paneId`、`paneKind`、`viewType`、`overlay` はクライアントが設定します。
 
-| コンテキスト   | 値                                 | 設定する層   |
-| :------------- | :--------------------------------- | :----------- |
-| `mode`         | `normal`、`insert`、`select`       | クライアント |
-| `paneKind`     | `editor`、`ui`、`webview`、`terminal` | クライアント |
-| `viewType`     | `ui`、`editor`、`list` など        | クライアント |
-| `paneId`       | フォーカス中のペイン               | クライアント |
+| コンテキスト   | 値                                                                  | 設定する層   |
+| :------------- | :------------------------------------------------------------------ | :----------- |
+| `mode`         | `normal`、`insert`、`select`                                        | クライアント |
+| `paneKind`     | `editor`、`ui`、`webview`、`terminal`                               | クライアント |
+| `viewType`     | `ui`、`editor`、`list` など                                         | クライアント |
+| `paneId`       | フォーカス中のペイン                                                | クライアント |
 | `overlay`      | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings` | クライアント |
-| `surfaceId`    | 最前面のサーフェスの `id`（Phase 4 まで未設定） | クライアント |
-| `uiRole`       | `list`、`textInput`、`button` など | UI ホスト    |
-| `uiFocus`      | フォーカス中のウィジェットの `id`  | UI ホスト    |
-| `webviewFocus` | `true` か `false`                  | UI ホスト    |
+| `surfaceId`    | 最前面のサーフェスの `id`（Phase 4 まで未設定）                     | クライアント |
+| `uiRole`       | `list`、`textInput`、`button` など                                  | UI ホスト    |
+| `uiFocus`      | フォーカス中のウィジェットの `id`                                   | UI ホスト    |
+| `webviewFocus` | `true` か `false`                                                   | UI ホスト    |
 
 ```typescript
 vy.keymap.bind("normal", "j", "vy.ui.next", { when: "uiRole == 'list'" });
