@@ -7,6 +7,7 @@ category: "feature"
 date: 2026-10-27
 supersedes: []
 superseded_by: null
+related_adrs: ["0003", "0005", "0006", "0022", "0030", "0032"]
 tags: ["ui", "keymap", "plugin", "focus"]
 ---
 
@@ -233,15 +234,16 @@ oil.nvim のようにバッファ自体が UI になる方式は、キーボー�
 - [0003](./0003-editor-state.md): 編集状態をコアとクライアントに分ける（ペイン間フォーカスはコア、ペイン内はクライアント）。
 - [0005](./0005-native-plugin-ui.md): プラグイン UI はネイティブのウィジェット木で作る（生キーを渡さない）。
 - [0006](./0006-user-controlled-ui-and-slots.md): ユーザー制御 UI とスロット。
-- [0013](./0013-host-api-traits.md): 名前空間 trait と `HostApi` facade で実装する。
 - [0022](./0022-command-surfaces.md): コマンドの入口と設定の分離。
+- [0025](./0025-plugin-api-declaration-and-codegen.md): プラグイン API の宣言・型・生成（名前空間 trait と `HostApi` facade を含む）。
+- [0032](./0032-floating-surfaces.md): 浮遊 UI をサーフェスとフローティングペインの 2 層に分ける（オーバーレイのキー経路とプレビュー）。
 
 ## 関連する未決定事項
 
 - oil 型の編集可能な一覧の方式（仮想ドキュメントか、一覧のインライン編集か）。
 - UI ペインのステータスラインとモード表示（`docs/adr/0006` の `ui.statusline.mode` と連動）。
 - 一覧とツリーでの範囲選択（`v` による視覚選択、テキストオブジェクトに相当する操作）。
-- フローティングペインと、プラグインが独自に開くオーバーレイ（`docs/specs/ui.md` §8 の制約の再検討）。
+- フローティングペインの実装時期と保存規則（[0032](./0032-floating-surfaces.md) §10）。プラグインが独自に開くオーバーレイは 0032 §9 で非モーダルに限って決定した。
 - picker の非同期検索のキャンセルと、古い結果を破棄する規則（`requestId` の扱い）。
 - プラグイン固有のアクション名を `actions` に許すか、閉じた語彙の上書きだけにするか。
 
