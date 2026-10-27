@@ -691,9 +691,7 @@ impl EditorView {
         // Tab moves widget focus inside a `ui` pane (ADR 0024 §3,
         // ADR 0032 Phase 1). Editor panes fall through to the keymap,
         // so insert-mode Tab still inserts a tab there.
-        if matches!(key, Key::Tab | Key::BackTab)
-            && self.move_widget_focus(key == Key::Tab)
-        {
+        if matches!(key, Key::Tab | Key::BackTab) && self.move_widget_focus(key == Key::Tab) {
             self.sync_modal_focus(window, cx);
             cx.notify();
             return;
@@ -976,15 +974,14 @@ fn pane_kind_for(view_type: &str) -> String {
 fn overlay_name(overlay: &Overlay) -> &'static str {
     match overlay {
         Overlay::Palette(palette) => match &palette.mode {
-            vy_app::palette::PaletteMode::Commands
-            | vy_app::palette::PaletteMode::Documents => "palette",
+            vy_app::palette::PaletteMode::Commands | vy_app::palette::PaletteMode::Documents => {
+                "palette"
+            }
             vy_app::palette::PaletteMode::Custom { .. } => "picker",
         },
         Overlay::Ex(_) => "ex",
         Overlay::Prompt(_) => "prompt",
         Overlay::Approval(_) => "approval",
-        Overlay::Settings(_)
-        | Overlay::SettingChoice(_)
-        | Overlay::SettingPrompt(_) => "settings",
+        Overlay::Settings(_) | Overlay::SettingChoice(_) | Overlay::SettingPrompt(_) => "settings",
     }
 }
