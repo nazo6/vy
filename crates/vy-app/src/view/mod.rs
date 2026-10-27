@@ -174,6 +174,22 @@ pub(super) struct SplitDragState {
     pub(super) current_ratio: f32,
 }
 
+/// A pane's rectangle within the content area, in pixels, computed by
+/// the single layout walk in `update_pane_viewports` (ADR 0032 Phase 4:
+/// geometry lives in one place). Used by the surface layer (hover) to
+/// position anchored popups without a second layout walk.
+/// Full pane geometry; hover uses only the origin today, but
+/// anchored surfaces (menus, plugin surfaces) need the whole rect.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PaneRect {
+    pub(super) x: f32,
+    pub(super) y: f32,
+    #[allow(dead_code)]
+    pub(super) width: f32,
+    #[allow(dead_code)]
+    pub(super) height: f32,
+}
+
 pub struct EditorView {
     client: Option<Client>,
     /// Bumped for every connection attempt. Old reader tasks ignore messages.
@@ -224,6 +240,8 @@ pub struct EditorView {
     /// Surface stack, frontmost last (ADR 0032 Phase 4). Empty means no
     /// modal surface is open; the frontmost modal surface owns input.
     pub(crate) surfaces: Vec<surface::Surface>,
+    /// Leaf pane rectangles from the latest layout walk, keyed by pane.
+    pane_geometries: std::collections::HashMap<PaneId, PaneRect>,
     /// Counter for disambiguating duplicate surface ids.
     next_surface_id: u64,
     /// Palette input mode (ADR 0032 Phase 3): palettes open in insert mode,
@@ -374,6 +392,7 @@ impl EditorView {
             documents: HashMap::new(),
             fallback,
             surfaces: initial_surfaces,
+            pane_geometries: std::collections::HashMap::new(),
             next_surface_id: 0,
             palette_insert: true,
             recent_commands: Vec::new(),

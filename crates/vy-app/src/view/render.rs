@@ -12,7 +12,7 @@ use vy_app::overlay::{SurfaceKind, SurfacePlacement};
 use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
-use super::{EditorView, Pending};
+use super::{EditorView, PaneRect, Pending};
 use crate::theme::{ActiveTheme, Theme};
 use crate::ui;
 
@@ -31,6 +31,21 @@ impl EditorView {
     /// zero when line numbers are turned off.
     pub(super) fn gutter_width(&self, line_count: usize) -> f32 {
         ui::pane::gutter_width(&self.config, line_count, self.char_width)
+    }
+
+    /// One split's child sizes from the parent size. The single place
+    /// that applies a split ratio (ADR 0032 Phase 4: geometry lives in one
+    /// place); both the viewport walk and the render walk use it.
+    fn split_sizes(
+        direction: SplitDirection,
+        ratio: f32,
+        width: f32,
+        height: f32,
+    ) -> (f32, f32, f32, f32) {
+        match direction {
+            SplitDirection::Horizontal => (width * ratio, height, width * (1.0 - ratio), height),
+            SplitDirection::Vertical => (width, height * ratio, width, height * (1.0 - ratio)),
+        }
     }
 
     /// Updates the row and column capacity of all panes based on their allocated dimensions.
@@ -53,12 +68,29 @@ impl EditorView {
             return;
         };
 
-        self.update_node_viewports(&layout, width, height);
+        self.pane_geometries.clear();
+        self.update_node_viewports(&layout, 0.0, 0.0, width, height);
     }
 
-    fn update_node_viewports(&mut self, node: &LayoutNode, width: f32, height: f32) {
+    fn update_node_viewports(
+        &mut self,
+        node: &LayoutNode,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
         match node {
             LayoutNode::Leaf { pane_id } => {
+                self.pane_geometries.insert(
+                    *pane_id,
+                    PaneRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                );
                 let lh = self.line_height();
                 let ch_w = self.char_width;
                 let doc_lines = self
@@ -80,16 +112,20 @@ impl EditorView {
                 ratio,
                 first,
                 second,
-            } => match direction {
-                SplitDirection::Horizontal => {
-                    self.update_node_viewports(first, width * ratio, height);
-                    self.update_node_viewports(second, width * (1.0 - ratio), height);
+            } => {
+                let (first_w, first_h, second_w, second_h) =
+                    Self::split_sizes(*direction, *ratio, width, height);
+                match direction {
+                    SplitDirection::Horizontal => {
+                        self.update_node_viewports(first, x, y, first_w, first_h);
+                        self.update_node_viewports(second, x + first_w, y, second_w, second_h);
+                    }
+                    SplitDirection::Vertical => {
+                        self.update_node_viewports(first, x, y, first_w, first_h);
+                        self.update_node_viewports(second, x, y + first_h, second_w, second_h);
+                    }
                 }
-                SplitDirection::Vertical => {
-                    self.update_node_viewports(first, width, height * ratio);
-                    self.update_node_viewports(second, width, height * (1.0 - ratio));
-                }
-            },
+            }
         }
     }
 
@@ -270,6 +306,7 @@ impl Render for EditorView {
                     .flex_1()
                     .overflow_hidden()
                     .child(content)
+                    .children(self.hover_element(&theme))
                     .children(
                         self.surface_top()
                             .filter(|surface| surface.placement == SurfacePlacement::Center)
@@ -367,21 +404,11 @@ impl EditorView {
                     SplitDirection::Vertical => div().flex().flex_col(),
                 };
 
-                let (first_w, first_h, second_w, second_h, split_total_pixels) = match direction {
-                    SplitDirection::Horizontal => (
-                        total_w * ratio,
-                        total_h,
-                        total_w * (1.0 - ratio),
-                        total_h,
-                        total_w,
-                    ),
-                    SplitDirection::Vertical => (
-                        total_w,
-                        total_h * ratio,
-                        total_w,
-                        total_h * (1.0 - ratio),
-                        total_h,
-                    ),
+                let (first_w, first_h, second_w, second_h) =
+                    Self::split_sizes(*direction, *ratio, total_w, total_h);
+                let split_total_pixels = match direction {
+                    SplitDirection::Horizontal => total_w,
+                    SplitDirection::Vertical => total_h,
                 };
 
                 let first_wrapper = match direction {
@@ -491,6 +518,78 @@ impl EditorView {
         )
     }
 
+    /// Hover popup in the surface layer (ADR 0032 Phase 4): above the
+    /// panes, below modal surfaces, positioned from the active pane's
+    /// rectangle and the anchor's offset within it. It is not a stack
+    /// surface: it owns no input and never blocks keys, so the modal
+    /// stack is untouched. Previously this lived inside the pane and
+    /// was clipped at pane edges.
+    fn hover_element(&self, theme: &Theme) -> Option<Div> {
+        let hover = self.hover.as_ref()?;
+        let pane_id = self.active_pane?;
+        let rect = self.pane_geometries.get(&pane_id)?;
+        let pane = self.panes.get(&pane_id)?;
+        let document = pane.document_id.and_then(|id| self.documents.get(&id))?;
+        let lh = self.line_height();
+        let ch_w = self.char_width;
+        let gutter = self.gutter_width(document.editor.line_count());
+        let hover_position = vy_core::Position::new(hover.line as u32, hover.character as u32);
+
+        let (top, left) = if !pane.is_wrap(&self.config) {
+            if hover.line >= pane.scroll_top && hover.line < pane.scroll_top + pane.viewport_rows {
+                let display_col = document
+                    .editor
+                    .visual_index_with(None)
+                    .display_col(hover_position);
+                let scroll_left_px = pane.scroll_left as f32 * ch_w;
+                let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
+                let left = gutter + display_col as f32 * ch_w - scroll_left_px;
+                Some((top, left))
+            } else {
+                None
+            }
+        } else {
+            let cols = pane.viewport_cols.max(1);
+            let index = document.editor.visual_index_with(Some(cols));
+            let scroll_row = VisualRow {
+                line: pane.scroll_top as u32,
+                chunk: pane.scroll_sub_line,
+            };
+            let target = index.row_of(hover_position);
+            let v_row = index.rows_between(scroll_row, target);
+
+            if v_row >= pane.viewport_rows {
+                None
+            } else {
+                let col_in_chunk = index.display_col(hover_position);
+                let top = v_row as f32 * lh + lh;
+                let left = gutter + col_in_chunk as f32 * ch_w;
+                Some((top, left))
+            }
+        }?;
+        if left < gutter {
+            return None;
+        }
+
+        Some(
+            div()
+                .absolute()
+                .top(px(rect.y + top))
+                .left(px(rect.x + left))
+                .max_w(px(400.0))
+                .px_2()
+                .py_1()
+                .rounded_sm()
+                .bg(theme.background.surface)
+                .border_1()
+                .border_color(theme.border.subtle)
+                .shadow_md()
+                .text_xs()
+                .text_color(theme.foreground.default)
+                .child(hover.text.clone()),
+        )
+    }
+
     fn render_floating_overlay(&self, theme: &Theme, cx: &Context<Self>) -> Div {
         ui::palette::render_overlay(
             theme,
@@ -505,9 +604,6 @@ impl EditorView {
     fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, _window: &mut Window) -> Div {
         let theme = cx.theme().clone();
         let pane = self.panes.get(&pane_id);
-        let document = pane
-            .and_then(|pane| pane.document_id)
-            .and_then(|id| self.documents.get(&id));
         let active = self.active_pane == Some(pane_id);
 
         if let Some(pane) = pane
@@ -609,82 +705,11 @@ impl EditorView {
         )
         .size_full();
 
-        let mut area = div()
+        let area = div()
             .relative()
             .flex_1()
             .overflow_hidden()
             .child(editor_canvas);
-
-        if active {
-            // Render hover popup if active
-            if let Some(hover) = &self.hover
-                && let Some(pane) = pane
-                && let Some(doc) = document
-            {
-                let lh = self.line_height();
-                let ch_w = self.char_width;
-                let gutter = self.gutter_width(doc.editor.line_count());
-                let hover_position =
-                    vy_core::Position::new(hover.line as u32, hover.character as u32);
-
-                let pos = if !pane.is_wrap(&self.config) {
-                    if hover.line >= pane.scroll_top
-                        && hover.line < pane.scroll_top + pane.viewport_rows
-                    {
-                        let display_col = doc
-                            .editor
-                            .visual_index_with(None)
-                            .display_col(hover_position);
-                        let scroll_left_px = pane.scroll_left as f32 * ch_w;
-                        let top = (hover.line - pane.scroll_top) as f32 * lh + lh;
-                        let left = gutter + display_col as f32 * ch_w - scroll_left_px;
-                        Some((top, left))
-                    } else {
-                        None
-                    }
-                } else {
-                    let cols = pane.viewport_cols.max(1);
-                    let index = doc.editor.visual_index_with(Some(cols));
-                    let scroll_row = VisualRow {
-                        line: pane.scroll_top as u32,
-                        chunk: pane.scroll_sub_line,
-                    };
-                    let target = index.row_of(hover_position);
-                    let v_row = index.rows_between(scroll_row, target);
-
-                    if v_row >= pane.viewport_rows {
-                        None
-                    } else {
-                        let col_in_chunk = index.display_col(hover_position);
-                        let top = v_row as f32 * lh + lh;
-                        let left = gutter + col_in_chunk as f32 * ch_w;
-                        Some((top, left))
-                    }
-                };
-
-                if let Some((top, left)) = pos
-                    && left >= gutter
-                {
-                    area = area.child(
-                        div()
-                            .absolute()
-                            .top(px(top))
-                            .left(px(left))
-                            .max_w(px(400.0))
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .bg(theme.background.surface)
-                            .border_1()
-                            .border_color(theme.border.subtle)
-                            .shadow_md()
-                            .text_xs()
-                            .text_color(theme.foreground.default)
-                            .child(hover.text.clone()),
-                    );
-                }
-            }
-        }
 
         let border = if active && self.panes.len() > 1 {
             theme.background.split_active
@@ -751,5 +776,18 @@ impl EditorView {
             }
             None => eprintln!("vy: frame gap=- build={build:.2}ms"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn split_sizes_cover_the_parent() {
+        let (fw, fh, sw, sh) =
+            super::EditorView::split_sizes(vy_core::SplitDirection::Horizontal, 0.25, 800.0, 600.0);
+        assert_eq!((fw, fh, sw, sh), (200.0, 600.0, 600.0, 600.0));
+        let (fw, fh, sw, sh) =
+            super::EditorView::split_sizes(vy_core::SplitDirection::Vertical, 0.5, 800.0, 600.0);
+        assert_eq!((fw, fh, sw, sh), (800.0, 300.0, 800.0, 300.0));
     }
 }
