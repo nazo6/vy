@@ -12,192 +12,192 @@
   {
     "keys": "h",
     "command": "vy.motion.left",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "left",
     "command": "vy.motion.left",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "l",
     "command": "vy.motion.right",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "right",
     "command": "vy.motion.right",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "j",
     "command": "vy.motion.down",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "down",
     "command": "vy.motion.down",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "k",
     "command": "vy.motion.up",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "up",
     "command": "vy.motion.up",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "w",
     "command": "vy.motion.word_forward",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "b",
     "command": "vy.motion.word_backward",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "e",
     "command": "vy.motion.word_end",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "0",
     "command": "vy.motion.line_start",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "home",
     "command": "vy.motion.line_start",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "$",
     "command": "vy.motion.line_end",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "end",
     "command": "vy.motion.line_end",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g g",
     "command": "vy.motion.document_start",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g j",
     "command": "vy.motion.display_down",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g down",
     "command": "vy.motion.display_down",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g k",
     "command": "vy.motion.display_up",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g up",
     "command": "vy.motion.display_up",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "g v",
     "command": "vy.edit.last_visual",
-    "when": "normalMode"
+    "when": "normalMode && paneKind == 'editor'"
   },
   {
     "keys": "G",
     "command": "vy.motion.document_end",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "x",
     "command": "vy.edit.delete",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "d",
     "command": "vy.operator.delete",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "y",
     "command": "vy.operator.yank",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "Y",
     "command": "vy.edit.yank_line",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "p",
     "command": "vy.edit.paste_after",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "P",
     "command": "vy.edit.paste_before",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": ".",
     "command": "vy.edit.repeat",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "i",
     "command": "vy.mode.insert",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "I",
     "command": "vy.mode.insert_line_start",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "a",
     "command": "vy.mode.insert_after",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "A",
     "command": "vy.mode.insert_line_end",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "o",
     "command": "vy.mode.open_below",
-    "when": "normalMode"
+    "when": "normalMode && paneKind == 'editor'"
   },
   {
     "keys": "O",
     "command": "vy.mode.open_above",
-    "when": "normalMode"
+    "when": "normalMode && paneKind == 'editor'"
   },
   {
     "keys": "v",
     "command": "vy.mode.select",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "V",
     "command": "vy.mode.select_line",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "ctrl-v",
     "command": "vy.mode.select_block",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "esc",
@@ -206,167 +206,167 @@
   {
     "keys": "u",
     "command": "vy.history.undo",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "ctrl-r",
     "command": "vy.history.redo",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "ctrl-d",
     "command": "vy.view.scroll_half_page_down",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "ctrl-u",
     "command": "vy.view.scroll_half_page_up",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "z z",
     "command": "vy.view.center_cursor",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "z t",
     "command": "vy.view.scroll_cursor_top",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "z b",
     "command": "vy.view.scroll_cursor_bottom",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "z h",
     "command": "vy.view.scroll_right",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "z l",
     "command": "vy.view.scroll_left",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "enter",
     "command": "vy.insert.newline",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "tab",
     "command": "vy.insert.tab",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "backspace",
     "command": "vy.insert.backspace",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "left",
     "command": "vy.insert.left",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "right",
     "command": "vy.insert.right",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "up",
     "command": "vy.insert.up",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "down",
     "command": "vy.insert.down",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "home",
     "command": "vy.insert.home",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "end",
     "command": "vy.insert.end",
-    "when": "mode == 'insert'"
+    "when": "mode == 'insert' && paneKind == 'editor'"
   },
   {
     "keys": "i",
     "command": "vy.operator.inner",
-    "when": "operatorPending"
+    "when": "operatorPending && paneKind == 'editor'"
   },
   {
     "keys": "a",
     "command": "vy.operator.around",
-    "when": "operatorPending"
+    "when": "operatorPending && paneKind == 'editor'"
   },
   {
     "keys": "w",
     "command": "vy.text_object.word",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "p",
     "command": "vy.text_object.paragraph",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "(",
     "command": "vy.text_object.paren",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": ")",
     "command": "vy.text_object.paren",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "[",
     "command": "vy.text_object.bracket",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "]",
     "command": "vy.text_object.bracket",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "{",
     "command": "vy.text_object.brace",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "}",
     "command": "vy.text_object.brace",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "<",
     "command": "vy.text_object.angle",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": ">",
     "command": "vy.text_object.angle",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "\"",
     "command": "vy.text_object.double_quote",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "'",
     "command": "vy.text_object.single_quote",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "`",
     "command": "vy.text_object.backtick",
-    "when": "textObjectPending"
+    "when": "textObjectPending && paneKind == 'editor'"
   },
   {
     "keys": "ctrl-w h",
