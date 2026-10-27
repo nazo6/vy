@@ -421,6 +421,20 @@ impl Keymap {
             self.reset();
         }
 
+        // ADR 0032 review M1: in a normal-mode palette, digits and `"` are
+        // filter text, not count/register prefixes. Ignoring them here lets
+        // the overlay fallback type them (type-to-search) instead of
+        // swallowing them as a Pending prefix. A binding that starts with
+        // the key still goes through the normal path below.
+        if matches!(key, Key::Char(character) if character.is_ascii_digit() || character == '"')
+            && matches!(context.mode, Mode::Normal)
+            && (context.overlay == "palette" || context.overlay == "picker")
+            && !self.has_prefix(&[key], context)
+        {
+            self.reset();
+            return KeymapOutcome::Ignored;
+        }
+
         if let Prefix::Register { count } = &self.prefix {
             let count = *count;
             return self.feed_register(key, count);
@@ -637,6 +651,64 @@ mod tests {
             assert_eq!(id, expected, "key {key:?} in {mode:?}");
             assert_eq!(args, KeymapArgs::default());
         }
+    }
+
+    #[test]
+    fn normal_palette_digits_and_register_are_not_prefixes() {
+        // ADR 0032 review M1: in a normal-mode palette, digits and `"`
+        // must not be swallowed as count/register prefixes; the overlay
+        // fallback types them instead, so `feed` ignores them here.
+        let mut keymap = keymap();
+        for overlay in ["palette", "picker"] {
+            let context = KeyContext {
+                mode: Mode::Normal,
+                overlay: overlay.to_string(),
+                ..normal()
+            };
+            assert!(
+                matches!(
+                    keymap.feed(Key::Char('5'), &context),
+                    KeymapOutcome::Ignored
+                ),
+                "{overlay}: '5' must be ignored, not a count prefix"
+            );
+            // '0' still resolves to the line_start motion binding over an
+            // editor pane, which the overlay path then falls back to typing;
+            // what matters is that it is never swallowed as a prefix.
+            assert!(
+                !matches!(
+                    keymap.feed(Key::Char('0'), &context),
+                    KeymapOutcome::Pending
+                ),
+                "{overlay}: '0' must not be swallowed as a prefix"
+            );
+            assert!(
+                matches!(
+                    keymap.feed(Key::Char('"'), &context),
+                    KeymapOutcome::Ignored
+                ),
+                "{overlay}: '\"' must be ignored, not a register prefix"
+            );
+        }
+        // Other keys still go through the keymap (palette normal mode).
+        let palette = KeyContext {
+            mode: Mode::Normal,
+            overlay: "palette".to_string(),
+            ..normal()
+        };
+        assert!(matches!(
+            keymap.feed(Key::Char('j'), &palette),
+            KeymapOutcome::Command { .. }
+        ));
+        // Outside a normal palette, digits still build a count.
+        let editor = KeyContext {
+            mode: Mode::Normal,
+            ..normal()
+        };
+        assert!(matches!(
+            keymap.feed(Key::Char('5'), &editor),
+            KeymapOutcome::Pending
+        ));
     }
 
     #[test]

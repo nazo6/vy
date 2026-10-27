@@ -51,6 +51,18 @@ impl Surface {
     }
 }
 
+/// Answers a discarded Custom picker's pending request with `Null`, so a
+/// replaced or cleared picker never leaves its caller waiting. Cancel and
+/// confirm reply from the popped surface first, so they must not call this.
+fn discard_picker_reply(kind: &mut SurfaceKind) {
+    if let SurfaceKind::Palette(palette) = kind
+        && let vy_app::palette::PaletteMode::Custom { reply, .. } = &mut palette.mode
+        && let Some(request) = reply.take()
+    {
+        request.respond_value(serde_json::Value::Null);
+    }
+}
+
 /// Base id for a kind. Kinds appear at most once in the stack today
 /// (top-level opens replace the top, drill-ins push a different kind),
 /// so the base id is unique unless a caller pushes a duplicate.
@@ -111,11 +123,15 @@ impl EditorView {
     }
 
     /// Replaces the frontmost surface (top-level opens: palette, Ex,
-    /// settings, picker). An empty stack just pushes.
+    /// settings, picker). An empty stack just pushes. A replaced Custom
+    /// picker is answered with `Null` first (ADR 0032 review M2).
     pub(crate) fn replace_top_surface(&mut self, kind: SurfaceKind) {
         if self.surfaces.is_empty() {
             self.push_surface(kind);
         } else {
+            if let Some(top) = self.surfaces.last_mut() {
+                discard_picker_reply(&mut top.kind);
+            }
             let restore = self.surfaces.last().and_then(|surface| surface.restore);
             let base = base_id(&kind);
             let id = if self
@@ -134,12 +150,55 @@ impl EditorView {
         }
     }
 
-    /// Empties the stack, restoring the bottom surface's pane.
+    /// Empties the stack, restoring the bottom surface's pane. Any
+    /// discarded Custom picker is answered with `Null` first
+    /// (ADR 0032 review M2).
     pub(crate) fn clear_surfaces(&mut self) {
         let restore = self.surfaces.first().and_then(|surface| surface.restore);
+        for surface in &mut self.surfaces {
+            discard_picker_reply(&mut surface.kind);
+        }
         self.surfaces.clear();
         if let Some(pane) = restore {
             self.active_pane = Some(pane);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vy_app::palette::{PaletteMode, PaletteState};
+
+    fn custom_picker(reply: Option<vy_js::HostRequest>) -> SurfaceKind {
+        SurfaceKind::Palette(PaletteState::with_mode(PaletteMode::Custom {
+            id: "test".to_string(),
+            items: vec![],
+            placeholder: None,
+            reply,
+        }))
+    }
+
+    #[test]
+    fn discard_picker_reply_answers_pending_request_with_null() {
+        let (request, receiver) =
+            vy_js::HostRequest::new("ui.picker.open", serde_json::Value::Null);
+        let mut kind = custom_picker(Some(request));
+        discard_picker_reply(&mut kind);
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(vy_js::HostReply::Ok(serde_json::Value::Null))
+        ));
+        // The reply is taken: a second discard answers nothing.
+        discard_picker_reply(&mut kind);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn discard_picker_reply_ignores_missing_reply_and_other_kinds() {
+        let mut kind = custom_picker(None);
+        discard_picker_reply(&mut kind);
+        let mut kind = SurfaceKind::Ex(vy_app::ex::ExState::default());
+        discard_picker_reply(&mut kind);
     }
 }
