@@ -688,6 +688,17 @@ impl EditorView {
             cx.stop_propagation();
         }
 
+        // Tab moves widget focus inside a `ui` pane (ADR 0024 §3,
+        // ADR 0032 Phase 1). Editor panes fall through to the keymap,
+        // so insert-mode Tab still inserts a tab there.
+        if matches!(key, Key::Tab | Key::BackTab)
+            && self.move_widget_focus(key == Key::Tab)
+        {
+            self.sync_modal_focus(window, cx);
+            cx.notify();
+            return;
+        }
+
         if self.apply_key(key) {
             self.sync_modal_focus(window, cx);
             cx.notify();
@@ -718,6 +729,83 @@ impl EditorView {
         })
     }
 
+    /// Builds the `when` context for the active pane (ADR 0032 Phase 1).
+    /// `surfaceId` stays unset until Phase 4 introduces surfaces, and
+    /// `uiRole` / `uiFocus` are set only while a focusable widget in the
+    /// active pane's widget tree has focus.
+    fn key_context(&self) -> KeyContext {
+        let pane = self.active_pane_state();
+        let (pane_kind, view_type) = match pane {
+            Some(pane) => (
+                pane_kind_for(pane.view_type.as_str()),
+                pane.view_type.clone(),
+            ),
+            None => ("editor".to_string(), "editor".to_string()),
+        };
+        let overlay = match self.overlay.as_ref() {
+            None => "none",
+            Some(overlay) => overlay_name(overlay),
+        };
+        let (ui_role, ui_focus) = match pane {
+            Some(pane) => match &pane.widget_tree {
+                Some(tree) => (
+                    pane.focus_path
+                        .focused_role(tree)
+                        .map(|role| role.to_string()),
+                    pane.focus_path.last().cloned(),
+                ),
+                None => (None, None),
+            },
+            None => (None, None),
+        };
+        KeyContext {
+            mode: self.editor().mode(),
+            has_selection: {
+                let selection = self.editor().selection();
+                selection.start != selection.end
+            },
+            editor_focus: pane_kind.as_str() == "editor",
+            operator_pending: self.editor().operator_pending(),
+            text_object_pending: self.editor().text_object_pending(),
+            pane_id: self.active_pane,
+            pane_kind,
+            view_type,
+            overlay: overlay.to_string(),
+            surface_id: None,
+            ui_role,
+            ui_focus,
+            ..KeyContext::default()
+        }
+    }
+
+    /// Moves widget focus inside the active pane, if it is a `ui` pane
+    /// with a widget tree. Returns false for editor panes and for panes
+    /// with no focusable widget, so the key falls through to the keymap.
+    fn move_widget_focus(&mut self, forward: bool) -> bool {
+        let Some(pane_id) = self.active_pane else {
+            return false;
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return false;
+        };
+        if pane_kind_for(pane.view_type.as_str()).as_str() == "editor" {
+            return false;
+        }
+        let Some(tree) = pane.widget_tree.clone() else {
+            return false;
+        };
+        let next = if forward {
+            pane.focus_path.next(&tree)
+        } else {
+            pane.focus_path.prev(&tree)
+        };
+        if next.is_empty() {
+            return false;
+        }
+        pane.focus_path = next;
+        true
+    }
+
     /// Passes the key to the keymap and runs the command it resolves to.
     fn apply_key(&mut self, key: Key) -> bool {
         self.activate_active_view();
@@ -726,14 +814,7 @@ impl EditorView {
         let before_version = self.editor().version();
         let before_overlay = self.overlay.is_some();
 
-        let selection = self.editor().selection();
-        let context = KeyContext {
-            mode: self.editor().mode(),
-            has_selection: selection.start != selection.end,
-            operator_pending: self.editor().operator_pending(),
-            text_object_pending: self.editor().text_object_pending(),
-            ..KeyContext::default()
-        };
+        let context = self.key_context();
 
         match self.keymap.feed(key, &context) {
             KeymapOutcome::Command { id, args, values } => {
@@ -877,5 +958,33 @@ fn remote_env_for(connection: &ConnectionSpec, name: &str) -> RemoteEnv {
         } else {
             std::path::MAIN_SEPARATOR.to_string()
         },
+    }
+}
+
+/// Maps a pane's view id to the `paneKind` `when` value. Plugin views
+/// are `ui` views; only the four known kinds keep their own name.
+fn pane_kind_for(view_type: &str) -> String {
+    match view_type {
+        "editor" | "ui" | "webview" | "terminal" => view_type.to_string(),
+        _ => "ui".to_string(),
+    }
+}
+
+/// Maps an open overlay to the `overlay` `when` value (ADR 0032 §6).
+/// The palette covers command and document lists; a plugin picker is
+/// the `Custom` palette mode. Settings variants share `settings`.
+fn overlay_name(overlay: &Overlay) -> &'static str {
+    match overlay {
+        Overlay::Palette(palette) => match &palette.mode {
+            vy_app::palette::PaletteMode::Commands
+            | vy_app::palette::PaletteMode::Documents => "palette",
+            vy_app::palette::PaletteMode::Custom { .. } => "picker",
+        },
+        Overlay::Ex(_) => "ex",
+        Overlay::Prompt(_) => "prompt",
+        Overlay::Approval(_) => "approval",
+        Overlay::Settings(_)
+        | Overlay::SettingChoice(_)
+        | Overlay::SettingPrompt(_) => "settings",
     }
 }

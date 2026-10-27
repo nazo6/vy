@@ -548,7 +548,7 @@ impl EditorView {
                 self.activate_plugins_for_view(&view_id);
                 for pane in self.panes.values_mut() {
                     if pane.view_type == view_id {
-                        pane.widget_tree = Some(tree.clone());
+                        pane.set_widget_tree(Some(tree.clone()));
                     }
                 }
                 self.view_widget_trees.insert(view_id, tree);
