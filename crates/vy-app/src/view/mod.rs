@@ -15,19 +15,19 @@ mod input;
 mod plugin;
 mod render;
 mod rpc;
+mod surface;
 
 use gpui::{
     Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollStrategy, ScrollWheelEvent,
     SharedString, Window, px,
 };
-use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation, UiCommand};
 use vy_app::config::Config;
 use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState, VisualRow};
 use vy_app::ex::ExHistory;
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
-use vy_app::overlay::{ApprovalState, Overlay};
+use vy_app::overlay::{ApprovalState, SurfaceKind};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
@@ -221,8 +221,11 @@ pub struct EditorView {
     documents: HashMap<u64, DocumentState>,
     /// Used when no pane has a document yet, so drawing has a valid editor.
     fallback: DocumentState,
-    /// Modal overlay currently open (palette, Ex line, prompt, or approval).
-    pub(crate) overlay: Option<Overlay>,
+    /// Surface stack, frontmost last (ADR 0032 Phase 4). Empty means no
+    /// modal surface is open; the frontmost modal surface owns input.
+    pub(crate) surfaces: Vec<surface::Surface>,
+    /// Counter for disambiguating duplicate surface ids.
+    next_surface_id: u64,
     /// Palette input mode (ADR 0032 Phase 3): palettes open in insert mode,
     /// where typed characters filter; `Esc` switches to normal mode, where
     /// list keys move the selection. Only meaningful while the overlay is
@@ -237,7 +240,6 @@ pub struct EditorView {
     running_command: Option<String>,
     pub focus_handle: FocusHandle,
     pub overlay_focus_handle: FocusHandle,
-    pub palette_scroll_handle: VirtualListScrollHandle,
     pub focus_stack: FocusStack,
     status: SharedString,
     frame_log: bool,
@@ -302,14 +304,22 @@ impl EditorView {
             eprintln!("vy: plugins: {warning}");
         }
 
-        let initial_overlay = plugin_manager.next_approval_request().map(|req| {
-            Overlay::Approval(ApprovalState::new(
-                req.plugin_id.clone(),
-                req.plugin_name.clone(),
-                req.plugin_version.clone(),
-                req.missing_capabilities.clone(),
-            ))
-        });
+        let initial_surfaces = plugin_manager
+            .next_approval_request()
+            .map(|req| {
+                surface::Surface::new(
+                    "approval".to_string(),
+                    SurfaceKind::Approval(ApprovalState::new(
+                        req.plugin_id.clone(),
+                        req.plugin_name.clone(),
+                        req.plugin_version.clone(),
+                        req.missing_capabilities.clone(),
+                    )),
+                    None,
+                )
+            })
+            .into_iter()
+            .collect();
 
         let uri = document_uri(
             startup.initial_file.as_deref(),
@@ -363,7 +373,8 @@ impl EditorView {
             panes: HashMap::new(),
             documents: HashMap::new(),
             fallback,
-            overlay: initial_overlay,
+            surfaces: initial_surfaces,
+            next_surface_id: 0,
             palette_insert: true,
             recent_commands: Vec::new(),
             ex_history: ExHistory::new(),
@@ -371,7 +382,6 @@ impl EditorView {
             running_command: None,
             focus_handle: cx.focus_handle(),
             overlay_focus_handle: cx.focus_handle(),
-            palette_scroll_handle: VirtualListScrollHandle::new(),
             focus_stack: FocusStack::new(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -744,7 +754,7 @@ impl EditorView {
 
     /// Synchronizes window focus with the modal overlay via the focus stack.
     pub(super) fn sync_modal_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.overlay.is_some() {
+        if !self.surfaces.is_empty() {
             let target = self.overlay_focus_handle.clone();
             if self.focus_stack.is_empty() {
                 let previous = self.focus_handle.clone();
@@ -766,8 +776,8 @@ impl EditorView {
         // non-text keys feed `Keymap::feed` and run overlay actions, while
         // text still reaches the input handler via `replace_text_in_range`
         // without stopping propagation (macOS input-method invariant).
-        if self.overlay.is_some() {
-            let is_palette = matches!(self.overlay, Some(Overlay::Palette(_)));
+        if self.surface_top().is_some_and(|surface| surface.modal) {
+            let is_palette = matches!(self.surface_top_kind(), Some(SurfaceKind::Palette(_)));
             // Single-mode overlays (Ex, prompt, approval, settings) always
             // behave like insert mode for characters.
             let insert = !is_palette || self.palette_insert;
@@ -898,15 +908,15 @@ impl EditorView {
     /// Deletes the last overlay input character, as the old handlers did.
     /// Palette and settings lists scroll back to the top after an edit.
     fn pop_overlay_char(&mut self) {
-        if let Some(overlay) = self.overlay.as_mut() {
-            overlay.pop_char();
+        if let Some(surface) = self.surface_top_mut() {
+            surface.kind.pop_char();
         }
         if matches!(
-            self.overlay,
-            Some(Overlay::Palette(_)) | Some(Overlay::Settings(_))
-        ) {
-            self.palette_scroll_handle
-                .scroll_to_item(0, ScrollStrategy::Top);
+            self.surface_top_kind(),
+            Some(SurfaceKind::Palette(_)) | Some(SurfaceKind::Settings(_))
+        ) && let Some(surface) = self.surface_top_mut()
+        {
+            surface.scroll.scroll_to_item(0, ScrollStrategy::Top);
         }
     }
 
@@ -915,8 +925,8 @@ impl EditorView {
         if !matches!(key, Key::Char(':')) {
             return false;
         }
-        self.overlay.as_ref().is_some_and(|overlay| {
-            overlay.palette().is_some_and(|palette| {
+        self.surface_top_kind().is_some_and(|kind| {
+            kind.palette().is_some_and(|palette| {
                 palette.input.is_empty()
                     && matches!(palette.mode, vy_app::palette::PaletteMode::Commands)
             })
@@ -951,10 +961,11 @@ impl EditorView {
             ),
             None => ("editor".to_string(), "editor".to_string()),
         };
-        let overlay = match self.overlay.as_ref() {
+        let overlay = match self.surface_top_kind() {
             None => "none",
-            Some(overlay) => overlay_name(overlay),
+            Some(kind) => overlay_name(kind),
         };
+        let surface_id = self.surface_top().map(|surface| surface.id.clone());
         let (ui_role, ui_focus) = match pane {
             Some(pane) => match &pane.widget_tree {
                 Some(tree) => (
@@ -970,8 +981,8 @@ impl EditorView {
         // While a palette is open, the keymap sees the palette input mode,
         // not the editor mode: `mode == 'normal'` bindings move the list,
         // `mode == 'insert'` bindings (and plain typing) filter it.
-        let mode = match self.overlay.as_ref() {
-            Some(Overlay::Palette(_)) => {
+        let mode = match self.surface_top_kind() {
+            Some(SurfaceKind::Palette(_)) => {
                 if self.palette_insert {
                     Mode::Insert
                 } else {
@@ -993,7 +1004,7 @@ impl EditorView {
             pane_kind,
             view_type,
             overlay: overlay.to_string(),
-            surface_id: None,
+            surface_id,
             ui_role,
             ui_focus,
             ..KeyContext::default()
@@ -1034,7 +1045,7 @@ impl EditorView {
         let before = self.active_view();
         let before_scroll = self.active_pane_state().map(scroll_position);
         let before_version = self.editor().version();
-        let before_overlay = self.overlay.is_some();
+        let before_overlay = !self.surfaces.is_empty();
 
         let context = self.key_context();
         // Focus moves via `vy.ui.*` change no editor state, so compare the
@@ -1063,7 +1074,7 @@ impl EditorView {
         before != self.active_view()
             || before_scroll != self.active_pane_state().map(scroll_position)
             || before_version != self.editor().version()
-            || before_overlay != self.overlay.is_some()
+            || before_overlay != !self.surfaces.is_empty()
             || before_focus != self.active_pane_state().map(|pane| pane.focus_path.clone())
     }
 
@@ -1199,18 +1210,20 @@ fn pane_kind_for(view_type: &str) -> String {
 /// Maps an open overlay to the `overlay` `when` value (ADR 0032 §6).
 /// The palette covers command and document lists; a plugin picker is
 /// the `Custom` palette mode. Settings variants share `settings`.
-fn overlay_name(overlay: &Overlay) -> &'static str {
-    match overlay {
-        Overlay::Palette(palette) => match &palette.mode {
+fn overlay_name(kind: &SurfaceKind) -> &'static str {
+    match kind {
+        SurfaceKind::Palette(palette) => match &palette.mode {
             vy_app::palette::PaletteMode::Commands | vy_app::palette::PaletteMode::Documents => {
                 "palette"
             }
             vy_app::palette::PaletteMode::Custom { .. } => "picker",
         },
-        Overlay::Ex(_) => "ex",
-        Overlay::Prompt(_) => "prompt",
-        Overlay::Approval(_) => "approval",
-        Overlay::Settings(_) | Overlay::SettingChoice(_) | Overlay::SettingPrompt(_) => "settings",
+        SurfaceKind::Ex(_) => "ex",
+        SurfaceKind::Prompt(_) => "prompt",
+        SurfaceKind::Approval(_) => "approval",
+        SurfaceKind::Settings(_)
+        | SurfaceKind::SettingChoice(_)
+        | SurfaceKind::SettingPrompt(_) => "settings",
     }
 }
 #[cfg(test)]

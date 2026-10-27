@@ -1,8 +1,12 @@
-//! Modal overlay state and the shared single-line input.
+//! Surface kinds and the shared single-line input (ADR 0032 Phase 4).
 //!
-//! Only one overlay owns input and focus at a time. The palette, the Ex command
+//! One surface owns input and focus at a time. The palette, the Ex command
 //! line, the argument prompt, and capability approvals share [`TextInput`], so
 //! IME composition, caret drawing, and completion behave the same everywhere.
+//!
+//! The stack itself lives in the view: a [`SurfaceKind`] is the content of
+//! one surface, while id, placement, modality, restore target, and scroll
+//! state belong to the surface wrapping it.
 
 use serde_json::{Map, Value};
 
@@ -10,13 +14,13 @@ use crate::commands::{ArgList, CommandArg};
 use crate::ex::ExState;
 use crate::palette::PaletteState;
 
-/// The modal overlay currently owning input and focus.
+/// The content of one surface in the surface stack (ADR 0032 Phase 4).
 ///
-/// Exactly one overlay exists at a time, so the size difference between
-/// variants is not worth boxing.
+/// Exactly one surface owns input and focus at a time, so the size
+/// difference between variants is not worth boxing.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum Overlay {
+pub enum SurfaceKind {
     /// Command, document, or plugin picker.
     Palette(PaletteState),
     /// Ex command line at the bottom of the window.
@@ -33,7 +37,16 @@ pub enum Overlay {
     SettingPrompt(SettingPromptState),
 }
 
-impl Overlay {
+/// Where a surface renders in the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfacePlacement {
+    /// Centred floating panel (palette, prompt, approval, settings).
+    Center,
+    /// Bottom bar (Ex command line).
+    BottomBar,
+}
+
+impl SurfaceKind {
     /// The editable line of this overlay.
     pub fn input(&self) -> &TextInput {
         match self {
@@ -127,8 +140,13 @@ impl Overlay {
     /// Whether this overlay floats inside the editor area.
     ///
     /// The Ex line is drawn below the statusline instead.
-    pub fn is_floating(&self) -> bool {
-        !matches!(self, Self::Ex(_))
+    /// Where the surface renders: centred like a palette, or as the
+    /// bottom bar like the Ex line. This replaces `is_floating`.
+    pub fn placement(&self) -> SurfacePlacement {
+        match self {
+            Self::Ex(_) => SurfacePlacement::BottomBar,
+            _ => SurfacePlacement::Center,
+        }
     }
 
     /// Text drawn before the input, shared by rendering and caret placement.
@@ -423,17 +441,10 @@ pub struct PromptState {
     pub index: usize,
     pub input: TextInput,
     pub selected: usize,
-    /// Palette to restore when the prompt is cancelled.
-    pub back: PaletteState,
 }
 
 impl PromptState {
-    pub fn new(
-        command_id: impl Into<String>,
-        title: impl Into<String>,
-        spec: ArgList,
-        back: PaletteState,
-    ) -> Self {
+    pub fn new(command_id: impl Into<String>, title: impl Into<String>, spec: ArgList) -> Self {
         Self {
             command_id: command_id.into(),
             title: title.into(),
@@ -442,7 +453,6 @@ impl PromptState {
             index: 0,
             input: TextInput::default(),
             selected: 0,
-            back,
         }
     }
 
@@ -512,17 +522,14 @@ pub struct SettingChoiceState {
     pub key: String,
     pub input: TextInput,
     pub selected: usize,
-    /// Settings list restored when the choice is cancelled.
-    pub back: SettingsState,
 }
 
 impl SettingChoiceState {
-    pub fn new(key: impl Into<String>, back: SettingsState) -> Self {
+    pub fn new(key: impl Into<String>) -> Self {
         Self {
             key: key.into(),
             input: TextInput::default(),
             selected: 0,
-            back,
         }
     }
 }
@@ -532,16 +539,13 @@ impl SettingChoiceState {
 pub struct SettingPromptState {
     pub key: String,
     pub input: TextInput,
-    /// Settings list restored when the prompt is cancelled.
-    pub back: SettingsState,
 }
 
 impl SettingPromptState {
-    pub fn new(key: impl Into<String>, back: SettingsState) -> Self {
+    pub fn new(key: impl Into<String>) -> Self {
         Self {
             key: key.into(),
             input: TextInput::default(),
-            back,
         }
     }
 }
@@ -612,7 +616,6 @@ mod tests {
             "vy.view.open",
             "View Open",
             ArgList::from_spec(crate::commands::ArgSpec::Positionals(ARGS)),
-            PaletteState::new(),
         );
 
         assert_eq!(prompt.required().len(), 1);

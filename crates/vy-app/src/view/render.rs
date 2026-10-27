@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use vy_app::editor::VisualRow;
-use vy_app::overlay::Overlay;
+use vy_app::overlay::{SurfaceKind, SurfacePlacement};
 use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
@@ -198,9 +198,8 @@ impl Render for EditorView {
         let chrome_height = ui::titlebar::TITLEBAR_HEIGHT
             + STATUSLINE_HEIGHT
             + self
-                .overlay
-                .as_ref()
-                .and_then(Overlay::ex)
+                .surface_top_kind()
+                .and_then(SurfaceKind::ex)
                 .map(|ex| STATUSLINE_HEIGHT + ui::ex::completion_height(ex))
                 .unwrap_or(0.0);
         let height =
@@ -272,17 +271,15 @@ impl Render for EditorView {
                     .overflow_hidden()
                     .child(content)
                     .children(
-                        self.overlay
-                            .as_ref()
-                            .filter(|overlay| overlay.is_floating())
+                        self.surface_top()
+                            .filter(|surface| surface.placement == SurfacePlacement::Center)
                             .map(|_| self.render_floating_overlay(&theme, cx)),
                     ),
             )
             .child(self.render_statusline(&theme))
             .children(
-                self.overlay
-                    .as_ref()
-                    .and_then(Overlay::ex)
+                self.surface_top_kind()
+                    .and_then(SurfaceKind::ex)
                     .map(|_| self.render_ex(&theme)),
             );
 
@@ -488,7 +485,7 @@ impl EditorView {
         ui::ex::render_ex(
             theme,
             &self.overlay_focus_handle,
-            self.overlay.as_ref().and_then(Overlay::ex),
+            self.surface_top_kind().and_then(SurfaceKind::ex),
             self.config.font_size(),
             CARET_WIDTH,
         )

@@ -12,8 +12,8 @@ use vy_app::ex::ExState;
 use vy_app::focus_path::FocusPath;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::overlay::{
-    ApprovalState, CompletionCandidate, Overlay, PromptState, SettingChoiceState,
-    SettingPromptState, SettingsState,
+    ApprovalState, CompletionCandidate, PromptState, SettingChoiceState, SettingPromptState,
+    SettingsState, SurfaceKind,
 };
 use vy_app::palette::{
     PaletteMode, PaletteState, PickerItem, RECENT_GROUP, approval_picker_items,
@@ -422,16 +422,16 @@ impl EditorView {
 
     /// Rows shown in the floating overlay, if it has a list.
     pub(super) fn overlay_items(&self) -> Vec<PickerItem> {
-        match self.overlay.as_ref() {
-            Some(Overlay::Palette(palette)) => self.palette_mode_items(&palette.mode),
-            Some(Overlay::Prompt(prompt)) => self.prompt_items(prompt),
-            Some(Overlay::Approval(approval)) => approval_picker_items(
+        match self.surface_top_kind() {
+            Some(SurfaceKind::Palette(palette)) => self.palette_mode_items(&palette.mode),
+            Some(SurfaceKind::Prompt(prompt)) => self.prompt_items(prompt),
+            Some(SurfaceKind::Approval(approval)) => approval_picker_items(
                 &approval.plugin_id,
                 &approval.plugin_name,
                 &approval.missing,
             ),
-            Some(Overlay::Settings(_)) => self.setting_items(),
-            Some(Overlay::SettingChoice(choice)) => setting_choice_items(choice),
+            Some(SurfaceKind::Settings(_)) => self.setting_items(),
+            Some(SurfaceKind::SettingChoice(choice)) => setting_choice_items(choice),
             _ => Vec::new(),
         }
     }
@@ -542,21 +542,20 @@ impl EditorView {
     }
 
     fn overlay_input_value(&self) -> &str {
-        self.overlay
-            .as_ref()
-            .map(|overlay| overlay.input().value())
+        self.surface_top_kind()
+            .map(|kind| kind.input().value())
             .unwrap_or("")
     }
 
     pub(super) fn overlay_filtered_len(&self) -> usize {
-        if self.overlay.is_none() {
+        if self.surface_top_kind().is_none() {
             return 0;
         }
         filtered_picker_indices(&self.overlay_items(), self.overlay_input_value()).len()
     }
 
     pub(super) fn overlay_selected_id(&self) -> Option<String> {
-        let selected = self.overlay.as_ref()?.selected()?;
+        let selected = self.surface_top_kind()?.selected()?;
         let items = self.overlay_items();
         let filtered = filtered_picker_indices(&items, self.overlay_input_value());
         let index = selected.min(filtered.len().saturating_sub(1));
@@ -590,15 +589,15 @@ impl EditorView {
             "activate" => self.apply_overlay_activate(),
             "cancel" => self.apply_overlay_cancel(),
             "clearLine" => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.clear();
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.kind.clear();
                     true
                 } else {
                     false
                 }
             }
             "completeNext" => {
-                if matches!(self.overlay, Some(Overlay::Ex(_))) {
+                if matches!(self.surface_top_kind(), Some(SurfaceKind::Ex(_))) {
                     self.complete_ex_name(false);
                     true
                 } else {
@@ -606,7 +605,7 @@ impl EditorView {
                 }
             }
             "completePrev" => {
-                if matches!(self.overlay, Some(Overlay::Ex(_))) {
+                if matches!(self.surface_top_kind(), Some(SurfaceKind::Ex(_))) {
                     self.complete_ex_name(true);
                     true
                 } else {
@@ -620,14 +619,17 @@ impl EditorView {
     /// Moves the open overlay's selection (or Ex history) by `delta`.
     /// Ex history and list selection share the sign: next is +1, prev -1.
     fn overlay_move(&mut self, delta: isize) -> bool {
-        if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
+        // Direct field access keeps the `surfaces` borrow disjoint
+        // from the `ex_history` borrow below.
+        if let Some(surface) = self.surfaces.last_mut()
+            && let SurfaceKind::Ex(ex) = &mut surface.kind
+        {
             self.ex_history.navigate(ex, delta);
             return true;
         }
         if self
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.selected().is_some())
+            .surface_top_kind()
+            .is_some_and(|kind| kind.selected().is_some())
         {
             self.move_overlay_selection(delta);
             true
@@ -639,9 +641,8 @@ impl EditorView {
     /// Moves the open overlay's selection by a page, if it has a list.
     fn overlay_move_page(&mut self, delta: isize) -> bool {
         if self
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.selected().is_some())
+            .surface_top_kind()
+            .is_some_and(|kind| kind.selected().is_some())
         {
             self.move_overlay_selection(delta);
             true
@@ -660,32 +661,40 @@ impl EditorView {
         let input = self.overlay_input_value().to_string();
         let filtered = filtered_picker_indices(&items, &input);
         let headings = shows_palette_headings(&input);
-        let Some(overlay) = self.overlay.as_mut() else {
-            return false;
+        let selected_value = {
+            let Some(surface) = self.surface_top_mut() else {
+                return false;
+            };
+            let Some(selected) = surface.kind.selected_mut() else {
+                return false;
+            };
+            *selected = index.min(len - 1);
+            *selected
         };
-        let Some(selected) = overlay.selected_mut() else {
-            return false;
-        };
-        *selected = index.min(len - 1);
-        let row = palette_row_index(&items, &filtered, headings, *selected);
-        self.palette_scroll_handle
-            .scroll_to_item(row, ScrollStrategy::Nearest);
+        let row = palette_row_index(&items, &filtered, headings, selected_value);
+        if let Some(surface) = self.surface_top_mut() {
+            surface.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+        }
         true
     }
 
-    /// Runs the open overlay's `Enter` action: the old `handle_*_key`
-    /// `Enter` arms, now driven by the `vy.ui.activate` keymap binding.
+    /// Runs the frontmost surface's `Enter` action, driven by the
+    /// `vy.ui.activate` keymap binding. Popping reveals the surface
+    /// below, which replaces the old `back` fields.
     fn apply_overlay_activate(&mut self) -> bool {
-        match self.overlay.as_ref() {
-            Some(Overlay::Palette(_)) => {
+        match self.surface_top_kind() {
+            Some(SurfaceKind::Palette(_)) => {
                 let Some(id) = self.overlay_selected_id() else {
                     return false;
                 };
-                let Some(Overlay::Palette(palette)) = self.overlay.take() else {
+                let Some(popped) = self.pop_surface() else {
+                    return false;
+                };
+                let SurfaceKind::Palette(palette) = popped.kind else {
                     return false;
                 };
                 match palette.mode {
-                    PaletteMode::Commands => self.begin_palette_command(id, palette),
+                    PaletteMode::Commands => self.begin_palette_command(id),
                     PaletteMode::Documents => {
                         self.request::<EditorOpen>(
                             EditorOpenParams {
@@ -703,8 +712,11 @@ impl EditorView {
                 }
                 true
             }
-            Some(Overlay::Ex(_)) => {
-                let Some(Overlay::Ex(ex)) = self.overlay.take() else {
+            Some(SurfaceKind::Ex(_)) => {
+                let Some(popped) = self.pop_surface() else {
+                    return false;
+                };
+                let SurfaceKind::Ex(ex) = popped.kind else {
                     return false;
                 };
                 let line = ex.input.value().trim().to_string();
@@ -716,61 +728,60 @@ impl EditorView {
                 self.execute_ex_line(&line);
                 true
             }
-            Some(Overlay::Prompt(_)) => {
+            Some(SurfaceKind::Prompt(_)) => {
                 self.confirm_prompt_argument();
                 true
             }
-            Some(Overlay::Approval(_)) => {
+            Some(SurfaceKind::Approval(_)) => {
                 let Some(id) = self.overlay_selected_id() else {
                     return false;
                 };
-                let Some(Overlay::Approval(approval)) = self.overlay.take() else {
+                let Some(SurfaceKind::Approval(approval)) = self.surface_top_kind() else {
                     return false;
                 };
+                let plugin_id = approval.plugin_id.clone();
+                let plugin_name = approval.plugin_name.clone();
                 if id == "trust" {
-                    if let Err(err) = self.plugin_manager.approve(&approval.plugin_id) {
+                    self.pop_surface();
+                    if let Err(err) = self.plugin_manager.approve(&plugin_id) {
                         self.status = format!("Error approving plugin: {err}").into();
                     } else {
-                        self.status =
-                            format!("Approved and enabled plugin {}", approval.plugin_name).into();
-                        self.on_plugin_approved(&approval.plugin_id);
+                        self.status = format!("Approved and enabled plugin {plugin_name}").into();
+                        self.on_plugin_approved(&plugin_id);
                     }
                     self.show_next_approval_prompt();
                 } else if id == "deny" {
-                    self.plugin_manager.deny(&approval.plugin_id);
-                    self.status =
-                        format!("Denied capabilities for plugin {}", approval.plugin_name).into();
+                    self.pop_surface();
+                    self.plugin_manager.deny(&plugin_id);
+                    self.status = format!("Denied capabilities for plugin {plugin_name}").into();
                     self.show_next_approval_prompt();
                 } else {
                     // The user selected an info row; keep the dialog open.
-                    self.overlay = Some(Overlay::Approval(approval));
                 }
                 true
             }
-            Some(Overlay::Settings(_)) => {
+            Some(SurfaceKind::Settings(_)) => {
                 let Some(key) = self.overlay_selected_id() else {
                     return false;
                 };
                 self.begin_setting_change(&key);
                 true
             }
-            Some(Overlay::SettingChoice(_)) => {
+            Some(SurfaceKind::SettingChoice(_)) => {
                 let Some(value) = self.overlay_selected_id() else {
                     return false;
                 };
-                let Some(Overlay::SettingChoice(choice)) = self.overlay.as_ref() else {
+                let Some(SurfaceKind::SettingChoice(choice)) = self.surface_top_kind() else {
                     return false;
                 };
                 let key = choice.key.clone();
                 self.apply_setting(&key, serde_json::Value::String(value), None);
-                let Some(Overlay::SettingChoice(choice)) = self.overlay.take() else {
-                    return false;
-                };
-                self.overlay = Some(Overlay::Settings(choice.back));
+                // Popping reveals the settings list below.
+                self.pop_surface();
                 true
             }
-            Some(Overlay::SettingPrompt(_)) => {
-                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.as_ref() else {
+            Some(SurfaceKind::SettingPrompt(_)) => {
+                let Some(SurfaceKind::SettingPrompt(prompt)) = self.surface_top_kind() else {
                     return false;
                 };
                 let key = prompt.key.clone();
@@ -783,26 +794,26 @@ impl EditorView {
                     return false;
                 };
                 self.apply_setting(&key, value, None);
-                let Some(Overlay::SettingPrompt(prompt)) = self.overlay.take() else {
-                    return false;
-                };
-                self.overlay = Some(Overlay::Settings(prompt.back));
+                self.pop_surface();
                 true
             }
             None => false,
         }
     }
 
-    /// Runs the open overlay's `Esc` action (Esc layer 1): a palette in
-    /// insert mode switches to normal mode instead of closing; every other
-    /// case closes or steps back, as the old `Esc` arms did.
+    /// Runs the frontmost surface's `Esc` action (Esc layer 1): a
+    /// palette in insert mode switches to normal mode instead of
+    /// closing; every other case pops, revealing the surface below.
     fn apply_overlay_cancel(&mut self) -> bool {
-        if matches!(self.overlay, Some(Overlay::Palette(_))) && self.palette_insert {
+        if matches!(self.surface_top_kind(), Some(SurfaceKind::Palette(_))) && self.palette_insert {
             self.palette_insert = false;
             return true;
         }
-        match self.overlay.take() {
-            Some(Overlay::Palette(palette)) => {
+        let Some(popped) = self.pop_surface() else {
+            return false;
+        };
+        match popped.kind {
+            SurfaceKind::Palette(palette) => {
                 if let PaletteMode::Custom {
                     reply: Some(request),
                     ..
@@ -812,30 +823,25 @@ impl EditorView {
                 }
                 true
             }
-            Some(Overlay::Ex(_)) => true,
-            Some(Overlay::Prompt(prompt)) => {
-                self.overlay = Some(Overlay::Palette(prompt.back));
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
+            SurfaceKind::Ex(_) => true,
+            SurfaceKind::Prompt(_) => {
+                // Revealing the palette below scrolls it to the top,
+                // as the old `back` restore did.
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                }
                 true
             }
-            Some(Overlay::Approval(approval)) => {
+            SurfaceKind::Approval(approval) => {
                 self.plugin_manager.deny(&approval.plugin_id);
                 self.status =
                     format!("Denied capabilities for plugin {}", approval.plugin_name).into();
                 self.show_next_approval_prompt();
                 true
             }
-            Some(Overlay::Settings(_)) => true,
-            Some(Overlay::SettingChoice(choice)) => {
-                self.overlay = Some(Overlay::Settings(choice.back));
-                true
-            }
-            Some(Overlay::SettingPrompt(prompt)) => {
-                self.overlay = Some(Overlay::Settings(prompt.back));
-                true
-            }
-            None => false,
+            SurfaceKind::Settings(_) => true,
+            SurfaceKind::SettingChoice(_) => true,
+            SurfaceKind::SettingPrompt(_) => true,
         }
     }
 
@@ -845,16 +851,20 @@ impl EditorView {
         let input = self.overlay_input_value().to_string();
         let filtered = filtered_picker_indices(&items, &input);
         let headings = shows_palette_headings(&input);
-        let Some(overlay) = self.overlay.as_mut() else {
-            return;
+        let selected_value = {
+            let Some(surface) = self.surface_top_mut() else {
+                return;
+            };
+            let Some(selected) = surface.kind.selected_mut() else {
+                return;
+            };
+            *selected = move_palette_selection(*selected, delta, len);
+            *selected
         };
-        let Some(selected) = overlay.selected_mut() else {
-            return;
-        };
-        *selected = move_palette_selection(*selected, delta, len);
-        let row = palette_row_index(&items, &filtered, headings, *selected);
-        self.palette_scroll_handle
-            .scroll_to_item(row, ScrollStrategy::Nearest);
+        let row = palette_row_index(&items, &filtered, headings, selected_value);
+        if let Some(surface) = self.surface_top_mut() {
+            surface.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+        }
     }
 
     pub(super) fn open_palette(&mut self) {
@@ -869,9 +879,7 @@ impl EditorView {
         self.clear_preedit();
         // Palettes open in insert mode (ADR 0024): typed characters filter.
         self.palette_insert = true;
-        self.overlay = Some(Overlay::Palette(PaletteState::with_mode(mode)));
-        self.palette_scroll_handle
-            .scroll_to_item(0, ScrollStrategy::Top);
+        self.replace_top_surface(SurfaceKind::Palette(PaletteState::with_mode(mode)));
         self.status = status.into();
     }
 
@@ -896,21 +904,19 @@ impl EditorView {
 
     pub(super) fn open_ex(&mut self) {
         self.clear_preedit();
-        self.overlay = Some(Overlay::Ex(ExState::default()));
+        self.replace_top_surface(SurfaceKind::Ex(ExState::default()));
         self.status = "ex command".into();
     }
 
     /// Opens the settings list (`:set` without arguments, or `vy.ui.open_settings`).
     pub(super) fn open_settings(&mut self) {
         self.clear_preedit();
-        self.overlay = Some(Overlay::Settings(SettingsState::new()));
-        self.palette_scroll_handle
-            .scroll_to_item(0, ScrollStrategy::Top);
+        self.replace_top_surface(SurfaceKind::Settings(SettingsState::new()));
         self.status = "settings".into();
     }
 
     /// Starts collecting the required arguments of a palette command.
-    fn begin_palette_command(&mut self, id: String, palette: PaletteState) {
+    fn begin_palette_command(&mut self, id: String) {
         let Some(descriptor) = self
             .commands
             .descriptors()
@@ -938,20 +944,17 @@ impl EditorView {
             .find(|arg| arg.required)
             .map(|arg| arg.name.clone())
             .unwrap_or_default();
-        self.overlay = Some(Overlay::Prompt(PromptState::new(
+        self.push_surface(SurfaceKind::Prompt(PromptState::new(
             id,
             title.clone(),
             descriptor.args,
-            palette,
         )));
-        self.palette_scroll_handle
-            .scroll_to_item(0, ScrollStrategy::Top);
         self.status = format!("{title}: {arg_name}").into();
     }
 
     /// Stores the current argument and either asks for the next one or runs the command.
     fn confirm_prompt_argument(&mut self) {
-        let Some(Overlay::Prompt(prompt)) = self.overlay.as_ref() else {
+        let Some(SurfaceKind::Prompt(prompt)) = self.surface_top_kind() else {
             return;
         };
         let Some(arg) = prompt.current_arg() else {
@@ -978,32 +981,53 @@ impl EditorView {
             return;
         }
 
-        let Some(Overlay::Prompt(prompt)) = self.overlay.as_mut() else {
-            return;
-        };
-        prompt
-            .values
-            .insert(arg_name, serde_json::Value::String(value));
-        let next_index = prompt.index + 1;
-        if next_index < prompt.required().len() {
-            let next_name = prompt.required()[next_index].name.clone();
-            prompt.index = next_index;
-            prompt.input.clear();
-            prompt.selected = 0;
-            self.status = format!("{title}: {next_name}").into();
-            self.palette_scroll_handle
-                .scroll_to_item(0, ScrollStrategy::Top);
-            return;
+        // The mutation borrows the top surface, so it runs in a block
+        // and the status, scroll, and command steps follow after.
+        enum ConfirmOutcome {
+            Next(String),
+            Done(serde_json::Map<String, serde_json::Value>),
         }
-
-        let values = serde_json::Value::Object(prompt.values.clone());
-        match validate_json_args(&spec, &values) {
-            Ok(values) => {
-                self.overlay = None;
-                self.enqueue_command(Invocation::palette_with_args(command_id, values));
+        let outcome = {
+            let Some(surface) = self.surface_top_mut() else {
+                return;
+            };
+            let SurfaceKind::Prompt(prompt) = &mut surface.kind else {
+                return;
+            };
+            prompt
+                .values
+                .insert(arg_name, serde_json::Value::String(value));
+            let next_index = prompt.index + 1;
+            if next_index < prompt.required().len() {
+                let next_name = prompt.required()[next_index].name.clone();
+                prompt.index = next_index;
+                prompt.input.clear();
+                prompt.selected = 0;
+                ConfirmOutcome::Next(next_name)
+            } else {
+                ConfirmOutcome::Done(prompt.values.clone())
             }
-            Err(error) => {
-                self.status = argument_error(&command_id, &spec, &error).into();
+        };
+        match outcome {
+            ConfirmOutcome::Next(next_name) => {
+                self.status = format!("{title}: {next_name}").into();
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                }
+            }
+            ConfirmOutcome::Done(values) => {
+                let values = serde_json::Value::Object(values);
+                match validate_json_args(&spec, &values) {
+                    Ok(values) => {
+                        // Success closes the whole stack: the palette
+                        // below the prompt must not reappear.
+                        self.clear_surfaces();
+                        self.enqueue_command(Invocation::palette_with_args(command_id, values));
+                    }
+                    Err(error) => {
+                        self.status = argument_error(&command_id, &spec, &error).into();
+                    }
+                }
             }
         }
     }
@@ -1014,7 +1038,10 @@ impl EditorView {
             return;
         }
         let descriptors = self.commands.descriptors();
-        let Some(Overlay::Ex(ex)) = self.overlay.as_mut() else {
+        let Some(surface) = self.surface_top_mut() else {
+            return;
+        };
+        let SurfaceKind::Ex(ex) = &mut surface.kind else {
             return;
         };
         let typed = ex.input.value().to_string();
@@ -1136,7 +1163,7 @@ impl EditorView {
 
     pub(super) fn show_next_approval_prompt(&mut self) {
         if let Some(req) = self.plugin_manager.next_approval_request() {
-            self.overlay = Some(Overlay::Approval(ApprovalState::new(
+            self.push_surface(SurfaceKind::Approval(ApprovalState::new(
                 req.plugin_id.clone(),
                 req.plugin_name.clone(),
                 req.plugin_version.clone(),
@@ -1153,10 +1180,7 @@ impl EditorView {
         match decl.kind {
             SettingKind::Bool => self.toggle_setting(key),
             SettingKind::Choice(_) => {
-                let Some(Overlay::Settings(settings)) = self.overlay.take() else {
-                    return;
-                };
-                let mut choice = SettingChoiceState::new(decl.key, settings);
+                let mut choice = SettingChoiceState::new(decl.key);
                 if let (Some(current), SettingKind::Choice(values)) =
                     (self.active_setting(decl.key).0, decl.kind)
                     && let Some(index) = values
@@ -1165,17 +1189,10 @@ impl EditorView {
                 {
                     choice.selected = index;
                 }
-                self.overlay = Some(Overlay::SettingChoice(choice));
-                self.palette_scroll_handle
-                    .scroll_to_item(0, ScrollStrategy::Top);
+                self.push_surface(SurfaceKind::SettingChoice(choice));
             }
             SettingKind::Number | SettingKind::Text => {
-                let Some(Overlay::Settings(settings)) = self.overlay.take() else {
-                    return;
-                };
-                self.overlay = Some(Overlay::SettingPrompt(SettingPromptState::new(
-                    key, settings,
-                )));
+                self.push_surface(SurfaceKind::SettingPrompt(SettingPromptState::new(key)));
                 let current = self
                     .active_setting(key)
                     .0
@@ -1589,7 +1606,7 @@ impl EditorView {
     fn apply_ui_action(&mut self, args: &UiActionArgs) -> bool {
         // A modal overlay owns the key: overlay actions run first, even
         // over an editor pane behind the overlay.
-        if self.overlay.is_some() {
+        if !self.surfaces.is_empty() {
             return self.apply_overlay_action(args);
         }
         // Host defaults only apply to UI panes; editor panes keep their

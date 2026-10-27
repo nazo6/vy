@@ -5,7 +5,7 @@ use gpui::{
     SharedString, TextRun, UTF16Selection, Window, point, px, size,
 };
 use vy_app::editor::{Action, Mode, VisualRow};
-use vy_app::overlay::Overlay;
+use vy_app::overlay::SurfaceKind;
 use vy_app::text_layout::{byte_to_utf16, utf16_to_byte};
 
 use super::EditorView;
@@ -21,7 +21,7 @@ enum ActiveInput {
 
 impl EditorView {
     fn active_input_target(&self) -> ActiveInput {
-        if self.overlay.is_some() {
+        if self.surface_top().is_some_and(|surface| surface.modal) {
             ActiveInput::Overlay
         } else if self
             .active_view()
@@ -126,7 +126,7 @@ impl EntityInputHandler for EditorView {
     ) -> Option<String> {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                let input = self.overlay.as_ref()?.input();
+                let input = self.surface_top_kind()?.input();
                 let full = input.full();
                 let len = full.encode_utf16().count();
                 let end = range_utf16.end.min(len);
@@ -156,7 +156,7 @@ impl EntityInputHandler for EditorView {
     ) -> Option<UTF16Selection> {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                let input = self.overlay.as_ref()?.input();
+                let input = self.surface_top_kind()?.input();
                 let value_len = input.value().encode_utf16().count();
                 let preedit_len = input.preedit().encode_utf16().count();
                 Some(UTF16Selection {
@@ -200,7 +200,7 @@ impl EntityInputHandler for EditorView {
     ) -> Option<std::ops::Range<usize>> {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                let input = self.overlay.as_ref()?.input();
+                let input = self.surface_top_kind()?.input();
                 if input.preedit().is_empty() {
                     return None;
                 }
@@ -222,8 +222,8 @@ impl EntityInputHandler for EditorView {
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.clear_preedit();
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.kind.clear_preedit();
                     cx.notify();
                 }
             }
@@ -246,13 +246,12 @@ impl EntityInputHandler for EditorView {
     ) {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.clear_preedit();
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.kind.clear_preedit();
                     if !text.is_empty() {
-                        overlay.push_str(text);
+                        surface.kind.push_str(text);
                     }
-                    self.palette_scroll_handle
-                        .scroll_to_item(0, ScrollStrategy::Top);
+                    surface.scroll.scroll_to_item(0, ScrollStrategy::Top);
                     cx.notify();
                 }
             }
@@ -282,8 +281,8 @@ impl EntityInputHandler for EditorView {
     ) {
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                if let Some(overlay) = self.overlay.as_mut() {
-                    overlay.set_preedit(new_text);
+                if let Some(surface) = self.surface_top_mut() {
+                    surface.kind.set_preedit(new_text);
                     cx.notify();
                 }
             }
@@ -321,9 +320,9 @@ impl EntityInputHandler for EditorView {
 
         match self.active_input_target() {
             ActiveInput::Overlay => {
-                let overlay = self.overlay.as_ref()?;
-                let prefix = overlay.prefix();
-                let full_prefix = format!("{prefix}{}", overlay.input().value());
+                let kind = self.surface_top_kind()?;
+                let prefix = kind.prefix();
+                let full_prefix = format!("{prefix}{}", kind.input().value());
                 let mut width = px(0.);
                 if !full_prefix.is_empty() {
                     let run = TextRun {
@@ -342,7 +341,7 @@ impl EntityInputHandler for EditorView {
                     );
                     width = shaped.x_for_index(full_prefix.len());
                 }
-                if matches!(overlay, Overlay::Ex(_)) {
+                if matches!(kind, SurfaceKind::Ex(_)) {
                     let origin_x = element_bounds.origin.x + px(8.0) + width;
                     let origin_y = element_bounds.bottom();
                     Some(Bounds::new(

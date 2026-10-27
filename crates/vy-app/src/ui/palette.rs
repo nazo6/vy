@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gpui::{AnyElement, Entity, IntoElement, div, prelude::*, px, size};
 use gpui_base::{FocusTrapElement, v_virtual_list};
-use vy_app::overlay::Overlay;
+use vy_app::overlay::{SurfaceKind, SurfacePlacement};
 use vy_app::palette::{
     PALETTE_MAX_HEIGHT, PALETTE_MAX_WIDTH, PaletteMode, PaletteRow, PickerItem,
     filtered_picker_indices, palette_rows, shows_palette_headings,
@@ -102,7 +102,7 @@ struct OverlayLabels {
 /// otherwise (ADR 0032 Phase 3). `lookup` maps a command id to its
 /// display keys, or [`None`] when unbound.
 fn overlay_labels(
-    overlay: &Overlay,
+    overlay: &SurfaceKind,
     filtered_count: usize,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> OverlayLabels {
@@ -113,7 +113,7 @@ fn overlay_labels(
     let prev = lookup("vy.ui.prev").unwrap_or_else(|| "Up".to_string());
     let next = lookup("vy.ui.next").unwrap_or_else(|| "Down".to_string());
     match overlay {
-        Overlay::Palette(palette) => match &palette.mode {
+        SurfaceKind::Palette(palette) => match &palette.mode {
             PaletteMode::Commands => OverlayLabels {
                 count: format!("{filtered_count} commands"),
                 empty: "no matching commands",
@@ -132,7 +132,7 @@ fn overlay_labels(
                 hint: format!("{activate} select  ·  {cancel} close  ·  {prev}/{next} move"),
             },
         },
-        Overlay::Prompt(prompt) => OverlayLabels {
+        SurfaceKind::Prompt(prompt) => OverlayLabels {
             count: format!("{} / {}", prompt.index + 1, prompt.required().len()),
             empty: match prompt.current_arg() {
                 Some(arg) if arg.choices.is_empty() => "type a value and press Enter",
@@ -141,27 +141,27 @@ fn overlay_labels(
             },
             hint: format!("{activate} confirm  ·  {cancel} back"),
         },
-        Overlay::Approval(approval) => OverlayLabels {
+        SurfaceKind::Approval(approval) => OverlayLabels {
             count: format!("{} permission(s)", approval.missing.len()),
             empty: "no matching options",
             hint: format!("{activate} choose  ·  {cancel} deny  ·  {prev}/{next} move"),
         },
-        Overlay::Settings(_) => OverlayLabels {
+        SurfaceKind::Settings(_) => OverlayLabels {
             count: format!("{filtered_count} settings"),
             empty: "no matching settings",
             hint: format!("{activate} change  ·  {cancel} close  ·  {prev}/{next} move"),
         },
-        Overlay::SettingChoice(_) => OverlayLabels {
+        SurfaceKind::SettingChoice(_) => OverlayLabels {
             count: format!("{filtered_count} choices"),
             empty: "no matching choices",
             hint: format!("{activate} select  ·  {cancel} back  ·  {prev}/{next} move"),
         },
-        Overlay::SettingPrompt(_) => OverlayLabels {
+        SurfaceKind::SettingPrompt(_) => OverlayLabels {
             count: "set value".to_string(),
             empty: "type a value and press Enter",
             hint: format!("{activate} apply  ·  {cancel} back"),
         },
-        Overlay::Ex(_) => OverlayLabels {
+        SurfaceKind::Ex(_) => OverlayLabels {
             count: String::new(),
             empty: "",
             hint: String::new(),
@@ -178,16 +178,16 @@ pub fn render_overlay(
     font_size: f32,
     caret_width: f32,
 ) -> gpui::Div {
-    let Some(overlay) = view
-        .overlay
-        .as_ref()
-        .filter(|overlay| overlay.is_floating())
+    let Some(surface) = view
+        .surface_top()
+        .filter(|surface| surface.placement == SurfacePlacement::Center)
     else {
         return div();
     };
+    let overlay = &surface.kind;
 
     let focus_handle = &view.overlay_focus_handle;
-    let scroll_handle = &view.palette_scroll_handle;
+    let scroll_handle = &surface.scroll;
     let input = overlay.input();
     let selected = overlay.selected().unwrap_or(0);
     let prefix = overlay.prefix();
