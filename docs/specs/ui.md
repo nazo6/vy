@@ -59,16 +59,18 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 
 ### 2.1 コンテキスト
 
-> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode` と `paneId` だけです。`paneKind`、`viewType`、`uiRole`、`uiFocus`、`overlay` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)）。
+> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode`、`paneId`、`paneKind`、`viewType`、`overlay`、`surfaceId`、`uiRole`、`uiFocus` です。`surfaceId` はサーフェスが導入される ADR 0032 Phase 4 までは常に未設定で、`uiRole` と `uiFocus` はフォーカス可能なウィジェット（`button`、`textInput`）がある場合にだけ設定されます。`webviewFocus` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)、[ADR 0032](../adr/0032-floating-surfaces.md) Phase 1）。
 
-キーマップの `when` から参照できる値を増やします。`mode` と `paneId`
-は既存の値です。
+キーマップの `when` から参照できる値を増やします。`mode`、`paneId`、`paneKind`、`viewType`、`overlay` はクライアントが設定します。
 
 | コンテキスト   | 値                                 | 設定する層   |
 | :------------- | :--------------------------------- | :----------- |
 | `mode`         | `normal`、`insert`、`select`       | クライアント |
+| `paneKind`     | `editor`、`ui`、`webview`、`terminal` | クライアント |
 | `viewType`     | `ui`、`editor`、`list` など        | クライアント |
 | `paneId`       | フォーカス中のペイン               | クライアント |
+| `overlay`      | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings` | クライアント |
+| `surfaceId`    | 最前面のサーフェスの `id`（Phase 4 まで未設定） | クライアント |
 | `uiRole`       | `list`、`textInput`、`button` など | UI ホスト    |
 | `uiFocus`      | フォーカス中のウィジェットの `id`  | UI ホスト    |
 | `webviewFocus` | `true` か `false`                  | UI ホスト    |
