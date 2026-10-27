@@ -432,5 +432,50 @@
     "keys": "ctrl-w =",
     "command": "vy.pane.equalize",
     "when": "normalMode"
+  },
+  {
+    "keys": "j",
+    "command": "vy.ui.next",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "k",
+    "command": "vy.ui.prev",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "ctrl-n",
+    "command": "vy.ui.next",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "ctrl-p",
+    "command": "vy.ui.prev",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "G",
+    "command": "vy.ui.last",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "g g",
+    "command": "vy.ui.first",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "enter",
+    "command": "vy.ui.activate",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "down",
+    "command": "vy.ui.next",
+    "when": "uiRole == 'button'"
+  },
+  {
+    "keys": "up",
+    "command": "vy.ui.prev",
+    "when": "uiRole == 'button'"
   }
 ]

@@ -9,6 +9,7 @@ use vy_app::commands::{
 };
 use vy_app::editor::{Action, Key};
 use vy_app::ex::ExState;
+use vy_app::focus_path::FocusPath;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::overlay::{
     ApprovalState, CompletionCandidate, Overlay, PromptState, SettingChoiceState,
@@ -24,7 +25,9 @@ use vy_app::text_layout::{
     half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
 };
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
+use vy_client_api::namespaces::ui::UiActionArgs;
 use vy_client_api::settings::{self, SettingKind, SettingScope};
+use vy_client_api::widget::WidgetNode;
 use vy_proto::{
     DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
     PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement, PaneResize,
@@ -1520,7 +1523,165 @@ impl EditorView {
                     self.toggle_view_pane(view_id, direction);
                 }
             }
+            // ADR 0032 Phase 2: plugin UI actions. These run in client Rust,
+            // not on the script thread. `apply_ui_action` resolves the action
+            // name (canonical, or `args.action` when a binding attaches one)
+            // and runs the host default for button-list views; actions with
+            // no host default yet (page, toggle, yank, cancel) return false
+            // and are left for a future views-actions mapping.
+            UiCommand::UiNext => {
+                self.apply_ui_action(&self.ui_action_args("next", invocation));
+            }
+            UiCommand::UiPrev => {
+                self.apply_ui_action(&self.ui_action_args("prev", invocation));
+            }
+            UiCommand::UiPageDown => {
+                self.apply_ui_action(&self.ui_action_args("pageDown", invocation));
+            }
+            UiCommand::UiPageUp => {
+                self.apply_ui_action(&self.ui_action_args("pageUp", invocation));
+            }
+            UiCommand::UiFirst => {
+                self.apply_ui_action(&self.ui_action_args("first", invocation));
+            }
+            UiCommand::UiLast => {
+                self.apply_ui_action(&self.ui_action_args("last", invocation));
+            }
+            UiCommand::UiActivate => {
+                self.apply_ui_action(&self.ui_action_args("activate", invocation));
+            }
+            UiCommand::UiCancel => {
+                self.apply_ui_action(&self.ui_action_args("cancel", invocation));
+            }
+            UiCommand::UiToggle => {
+                self.apply_ui_action(&self.ui_action_args("toggle", invocation));
+            }
+            UiCommand::UiYank => {
+                self.apply_ui_action(&self.ui_action_args("yank", invocation));
+            }
+            UiCommand::UiFocusNext => {
+                self.apply_ui_action(&self.ui_action_args("focusNext", invocation));
+            }
+            UiCommand::UiFocusPrev => {
+                self.apply_ui_action(&self.ui_action_args("focusPrev", invocation));
+            }
         }
+    }
+
+    /// Builds the `UiActionArgs` for a `vy.ui.*` invocation from the active
+    /// pane (ADR 0024 §5). Button-list views have no host selection, tree
+    /// expansion, or picker query state, so those fields stay empty; the
+    /// focused widget is both the selection and the anchor.
+    fn ui_action_args(&self, canonical: &str, invocation: &Invocation) -> UiActionArgs {
+        let action = invocation
+            .args
+            .string("action")
+            .unwrap_or(canonical)
+            .to_string();
+        let (view_id, pane_id, role, focus_id) = match self.active_pane_state() {
+            Some(pane) => {
+                let tree = pane.widget_tree.as_ref();
+                let resolved = tree.map(|tree| pane.focus_path.resolve(tree));
+                let role = resolved
+                    .as_ref()
+                    .zip(tree)
+                    .and_then(|(path, tree)| path.focused_role(tree))
+                    .map(|role| role.to_string());
+                let focus_id = resolved.and_then(|path| path.last().cloned());
+                (pane.view_type.clone(), pane.id, role, focus_id)
+            }
+            None => (String::new(), 0, None, None),
+        };
+        let selected_ids = focus_id.clone().into_iter().collect();
+        UiActionArgs {
+            action,
+            view_id,
+            pane_id,
+            role,
+            focus_id: focus_id.clone(),
+            selected_ids,
+            anchor_id: focus_id,
+            expanded_ids: Vec::new(),
+            depth: None,
+            query: None,
+            count: invocation.args.count,
+            register: invocation
+                .args
+                .register
+                .map(|register| register.to_string()),
+        }
+    }
+
+    /// Runs the host default for a `vy.ui.*` action on the active UI pane.
+    ///
+    /// Returns true when the action moved focus or activated a widget.
+    /// Editor panes, panes with no widget tree, and actions with no host
+    /// default yet return false and change nothing.
+    fn apply_ui_action(&mut self, args: &UiActionArgs) -> bool {
+        // Host defaults only apply to UI panes; editor panes keep their
+        // own keymap, and overlays handle their keys before the keymap.
+        let Some(pane) = self.active_pane_state() else {
+            return false;
+        };
+        if super::pane_kind_for(pane.view_type.as_str()).as_str() == "editor" {
+            return false;
+        }
+        if pane.widget_tree.is_none() {
+            return false;
+        }
+        match args.action.as_str() {
+            "next" | "focusNext" => self.move_widget_focus(true),
+            "prev" | "focusPrev" => self.move_widget_focus(false),
+            "first" => self.set_ui_focus_to_first(),
+            "last" => self.set_ui_focus_to_last(),
+            "activate" => self.activate_ui_focused_button(),
+            _ => false,
+        }
+    }
+
+    fn set_ui_focus_to_first(&mut self) -> bool {
+        let Some(pane) = self.active_pane_state_mut() else {
+            return false;
+        };
+        let Some(tree) = pane.widget_tree.clone() else {
+            return false;
+        };
+        let Some(first) = FocusPath::focusable(&tree).into_iter().next() else {
+            return false;
+        };
+        pane.focus_path = first.path;
+        true
+    }
+
+    fn set_ui_focus_to_last(&mut self) -> bool {
+        let Some(pane) = self.active_pane_state_mut() else {
+            return false;
+        };
+        let Some(tree) = pane.widget_tree.clone() else {
+            return false;
+        };
+        let Some(last) = FocusPath::focusable(&tree).into_iter().last() else {
+            return false;
+        };
+        pane.focus_path = last.path;
+        true
+    }
+
+    /// Executes the focused button's command, as a click would.
+    fn activate_ui_focused_button(&mut self) -> bool {
+        let Some(command) = self
+            .active_pane_state()
+            .and_then(|pane| {
+                let tree = pane.widget_tree.as_ref()?;
+                let focus = pane.focus_path.last()?;
+                focused_button_command(tree, focus)
+            })
+            .filter(|command| !command.is_empty())
+        else {
+            return false;
+        };
+        self.execute_command_string(&command);
+        true
     }
 
     /// Executes a command specified as a string (e.g. `"vy.editor.open foo.txt"` or `"my.tree.toggle"`).
@@ -1624,6 +1785,21 @@ impl EditorView {
         } else {
             self.open_view_pane(view_id, direction);
         }
+    }
+}
+
+/// Command string of the button with `focus_id` in `tree`, if any.
+///
+/// Button ids are unique within a view tree (for example `dir_<uri>` and
+/// `file_<uri>` in the example explorer), so matching on the focused id
+/// alone is enough; container ids in the focus path are not needed here.
+fn focused_button_command(tree: &WidgetNode, focus_id: &str) -> Option<String> {
+    match tree {
+        WidgetNode::Container { children, .. } => children
+            .iter()
+            .find_map(|child| focused_button_command(child, focus_id)),
+        WidgetNode::Button { id, command, .. } if id == focus_id => Some(command.clone()),
+        _ => None,
     }
 }
 

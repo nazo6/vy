@@ -468,6 +468,10 @@ impl EditorView {
             }
         };
 
+        // Snapshot UI focus before taking the mutable editor borrow: the
+        // script thread answers `ui.focused()` from this snapshot, not from
+        // live view state, because the request is handled off the view.
+        let ui_focus = self.ui_focus_info();
         let editor = {
             let id = self.active_document_id();
             match id.and_then(|id| self.documents.get_mut(&id)) {
@@ -489,6 +493,7 @@ impl EditorView {
             statusline: Some(&mut self.statusline),
             gutter: Some(&mut self.gutter),
             hover: Some(&mut self.hover),
+            ui_focus,
         };
         let outcome = plugin_host::handle_request(context, request);
 

@@ -88,7 +88,7 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 
 ### 2.2 アクションへの解決
 
-> **実装状況**: この節のアクションの語彙と既定キーは未実装です。ホストの既定動作とキーマップ経由の解決は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) の計画に従います。
+> **実装状況**: アクションの語彙（`vy.ui.next` ほか 12 コマンド）は実装済みで、パレットと Ex には出ません。ボタン一覧向けのホスト既定動作（`next`／`prev`／`first`／`last`／`focusNext`／`focusPrev`／`activate`）も実装済みで、既定キーは `uiRole == 'button'` の条件で登録されています。`pageDown`／`pageUp`／`toggle`／`yank`／`cancel` にはまだホスト既定動作がなく、ビューのアクション対応表（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）も未実装のため、現状では何もしません。ネイティブの list／tree／table ノードが来るまで、`UiActionArgs` の選択・展開・クエリ関連の欄は空のままです（[ADR 0032](../adr/0032-floating-surfaces.md) Phase 2a）。
 
 フォーカス中のウィジェットは、組み込みのコマンド名に対して自分のアクションを対応づけます。ホストの組み込みコマンドは、対応表にあるアクションを探して実行します。
 

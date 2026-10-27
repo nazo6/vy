@@ -367,6 +367,28 @@ impl EditorView {
         self.panes.get_mut(&id)
     }
 
+    /// Snapshot of the active UI pane's focused widget for `ui.focused()`.
+    ///
+    /// Editor panes answer null, as do UI panes with no widget tree or no
+    /// focusable widget. The snapshot is taken when a host request is
+    /// handled, because the script thread cannot read live view state.
+    fn ui_focus_info(&self) -> Option<vy_client_api::namespaces::ui::UiFocused> {
+        let pane = self.active_pane_state()?;
+        if pane_kind_for(pane.view_type.as_str()).as_str() == "editor" {
+            return None;
+        }
+        let tree = pane.widget_tree.as_ref()?;
+        let resolved = pane.focus_path.resolve(tree);
+        let role = resolved.focused_role(tree)?;
+        let focus_id = resolved.last()?.clone();
+        Some(vy_client_api::namespaces::ui::UiFocused {
+            view_id: pane.view_type.clone(),
+            pane_id: pane.id,
+            role: role.to_string(),
+            focus_id,
+        })
+    }
+
     fn active_document_id(&self) -> Option<u64> {
         self.active_pane_state()?.document_id
     }
@@ -855,6 +877,9 @@ impl EditorView {
         let before_overlay = self.overlay.is_some();
 
         let context = self.key_context();
+        // Focus moves via `vy.ui.*` change no editor state, so compare the
+        // focus path too, or a focus-only key would not repaint.
+        let before_focus = self.active_pane_state().map(|pane| pane.focus_path.clone());
 
         match self.keymap.feed(key, &context) {
             KeymapOutcome::Command { id, args, values } => {
@@ -879,6 +904,7 @@ impl EditorView {
             || before_scroll != self.active_pane_state().map(scroll_position)
             || before_version != self.editor().version()
             || before_overlay != self.overlay.is_some()
+            || before_focus != self.active_pane_state().map(|pane| pane.focus_path.clone())
     }
 
     /// Scrolls by whole lines or columns. The wheel moves the view, not the cursor.
