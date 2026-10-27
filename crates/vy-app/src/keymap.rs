@@ -831,8 +831,8 @@ mod tests {
     fn context_fields_are_visible_to_when() {
         // `paneKind`: the default context is an editor pane, so an
         // editor-only binding matches there and not in a `ui` pane.
-        let mut keymap = keymap();
-        keymap
+        let mut keymap1 = keymap();
+        keymap1
             .bind(
                 "Q",
                 "user.editor_only",
@@ -841,19 +841,19 @@ mod tests {
             )
             .expect("bind");
         assert_eq!(
-            command(keymap.feed(Key::Char('Q'), &normal())).0,
+            command(keymap1.feed(Key::Char('Q'), &normal())).0,
             "user.editor_only"
         );
         let mut ui = normal();
         ui.pane_kind = "ui".to_string();
         ui.view_type = "ui".to_string();
         ui.editor_focus = false;
-        assert_eq!(keymap.feed(Key::Char('Q'), &ui), KeymapOutcome::Ignored);
+        assert_eq!(keymap1.feed(Key::Char('Q'), &ui), KeymapOutcome::Ignored);
 
         // `overlay` and `surfaceId`: a palette-only binding matches only
         // while a palette overlay is open.
-        let mut keymap = keymap();
-        keymap
+        let mut keymap2 = keymap();
+        keymap2
             .bind(
                 "Q",
                 "user.palette_only",
@@ -864,16 +864,16 @@ mod tests {
         let mut palette = normal();
         palette.overlay = "palette".to_string();
         assert_eq!(
-            command(keymap.feed(Key::Char('Q'), &palette)).0,
+            command(keymap2.feed(Key::Char('Q'), &palette)).0,
             "user.palette_only"
         );
         assert_eq!(
-            keymap.feed(Key::Char('Q'), &normal()),
+            keymap2.feed(Key::Char('Q'), &normal()),
             KeymapOutcome::Ignored
         );
         let mut surface = normal();
         surface.surface_id = Some("surface-1".to_string());
-        keymap
+        keymap2
             .bind(
                 "W",
                 "user.surface_only",
@@ -882,17 +882,17 @@ mod tests {
             )
             .expect("bind");
         assert_eq!(
-            command(keymap.feed(Key::Char('W'), &surface)).0,
+            command(keymap2.feed(Key::Char('W'), &surface)).0,
             "user.surface_only"
         );
         assert_eq!(
-            keymap.feed(Key::Char('W'), &normal()),
+            keymap2.feed(Key::Char('W'), &normal()),
             KeymapOutcome::Ignored
         );
 
         // `uiRole` / `uiFocus`: only set while a focusable widget has focus.
-        let mut keymap = keymap();
-        keymap
+        let mut keymap3 = keymap();
+        keymap3
             .bind(
                 "Q",
                 "user.button_only",
@@ -904,11 +904,11 @@ mod tests {
         button.ui_role = Some("button".to_string());
         button.ui_focus = Some("ok".to_string());
         assert_eq!(
-            command(keymap.feed(Key::Char('Q'), &button)).0,
+            command(keymap3.feed(Key::Char('Q'), &button)).0,
             "user.button_only"
         );
         assert_eq!(
-            keymap.feed(Key::Char('Q'), &normal()),
+            keymap3.feed(Key::Char('Q'), &normal()),
             KeymapOutcome::Ignored
         );
     }
