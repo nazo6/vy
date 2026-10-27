@@ -60,6 +60,10 @@ impl EditorView {
         let rows = ((height / lh).floor().max(1.0)) as usize;
         let cols = (((width - gutter).max(0.0) / ch_w).floor().max(1.0)) as usize;
 
+        // ADR 0032 review m7: clear before the early return, or stale
+        // rectangles would let the hover layer draw over the waiting
+        // screen when the layout is gone (e.g. on reconnect).
+        self.pane_geometries.clear();
         let Some(layout) = self.layout.clone() else {
             if let Some(pane) = self.active_pane_state_mut() {
                 pane.viewport_rows = rows;
@@ -68,7 +72,6 @@ impl EditorView {
             return;
         };
 
-        self.pane_geometries.clear();
         self.update_node_viewports(&layout, 0.0, 0.0, width, height);
     }
 
@@ -556,6 +559,13 @@ impl EditorView {
                 chunk: pane.scroll_sub_line,
             };
             let target = index.row_of(hover_position);
+            // ADR 0032 review m4: `rows_between` returns 0 when the
+            // target is at or above the scroll row, so without this
+            // check an anchor above the viewport would render on the
+            // top row. The non-wrap branch checks this explicitly.
+            if target < scroll_row {
+                return None;
+            }
             let v_row = index.rows_between(scroll_row, target);
 
             if v_row >= pane.viewport_rows {

@@ -817,8 +817,18 @@ impl EditorView {
                     None => {
                         // Dropped keystrokes (Option-composed characters):
                         // input when they carry a character, else swallowed.
-                        stop = overlay_fallback(is_palette, insert, None, key_char, modifiers)
-                            != OverlayFallback::Input;
+                        // ADR 0032 review m1: unlike a regular character
+                        // key, the fallback never returns SwitchToInsert
+                        // for a dropped key, so typing one in a normal-mode
+                        // palette would leave `palette_insert` false and
+                        // the next key would move the list instead of
+                        // typing. Restore insert mode here as well.
+                        let fallback =
+                            overlay_fallback(is_palette, insert, None, key_char, modifiers);
+                        if is_palette && !insert && fallback == OverlayFallback::Input {
+                            self.palette_insert = true;
+                        }
+                        stop = fallback != OverlayFallback::Input;
                     }
                     Some(key) => {
                         if matches!(key, Key::Char(_)) && insert {
@@ -925,14 +935,20 @@ impl EditorView {
     }
 
     /// Deletes the last overlay input character, as the old handlers did.
-    /// Palette and settings lists scroll back to the top after an edit.
+    /// Lists scroll back to the top after an edit: `pop_char` resets the
+    /// selection to 0 for every list kind, so the viewport must follow
+    /// (ADR 0032 review m3; previously only palette and settings did).
     fn pop_overlay_char(&mut self) {
         if let Some(surface) = self.surface_top_mut() {
             surface.kind.pop_char();
         }
         if matches!(
             self.surface_top_kind(),
-            Some(SurfaceKind::Palette(_)) | Some(SurfaceKind::Settings(_))
+            Some(SurfaceKind::Palette(_))
+                | Some(SurfaceKind::Prompt(_))
+                | Some(SurfaceKind::Approval(_))
+                | Some(SurfaceKind::Settings(_))
+                | Some(SurfaceKind::SettingChoice(_))
         ) && let Some(surface) = self.surface_top_mut()
         {
             surface.scroll.scroll_to_item(0, ScrollStrategy::Top);

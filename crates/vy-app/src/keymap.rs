@@ -712,6 +712,38 @@ mod tests {
     }
 
     #[test]
+    fn picker_normal_mode_has_palette_movement_bindings() {
+        // ADR 0032 review m6: a Custom picker in normal mode moves the
+        // list with the same keys as a palette. Previously only the
+        // overlay-general keys worked, so `j` fell back to insert mode
+        // and typed instead of moving.
+        let mut keymap = keymap();
+        let picker = KeyContext {
+            mode: Mode::Normal,
+            overlay: "picker".to_string(),
+            ..normal()
+        };
+        for (key, expected) in [
+            (Key::Char('j'), "vy.ui.next"),
+            (Key::Char('k'), "vy.ui.prev"),
+            (Key::Char('G'), "vy.ui.last"),
+            (Key::Ctrl('d'), "vy.ui.pageDown"),
+            (Key::Ctrl('u'), "vy.ui.pageUp"),
+            (Key::Char(':'), "vy.ui.ex_command_line"),
+        ] {
+            let (id, _) = command(keymap.feed(key, &picker));
+            assert_eq!(id, expected, "picker-normal key {key:?}");
+        }
+        // The `g g` sequence resolves to first.
+        assert!(matches!(
+            keymap.feed(Key::Char('g'), &picker),
+            KeymapOutcome::Pending
+        ));
+        let (id, _) = command(keymap.feed(Key::Char('g'), &picker));
+        assert_eq!(id, "vy.ui.first");
+    }
+
+    #[test]
     fn waits_for_a_sequence() {
         let mut keymap = keymap();
         let context = normal();

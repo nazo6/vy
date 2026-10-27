@@ -18,6 +18,10 @@ use crate::view::EditorView;
 pub const PALETTE_ROW_HEIGHT: f32 = 28.0;
 /// Height of a group heading row in the picker list.
 pub const PALETTE_HEADING_HEIGHT: f32 = 22.0;
+/// Height of the overlay list viewport: the panel's max height minus the
+/// query and hint rows. Page movement is derived from this (ADR 0032
+/// review m5), so it must stay in sync with the list height below.
+pub const PALETTE_LIST_HEIGHT: f32 = PALETTE_MAX_HEIGHT - 80.0;
 
 /// Height of one rendered palette line.
 fn palette_row_height(row: &PaletteRow) -> f32 {
@@ -262,7 +266,7 @@ pub fn render_overlay(
             .iter()
             .map(palette_row_height)
             .sum::<f32>()
-            .min(PALETTE_MAX_HEIGHT - 80.0)))
+            .min(PALETTE_LIST_HEIGHT)))
         .into_any_element()
     };
 

@@ -35,6 +35,7 @@ use vy_proto::{
 };
 
 use super::{EditorView, Pending};
+use crate::ui::palette::{PALETTE_LIST_HEIGHT, PALETTE_ROW_HEIGHT};
 
 impl EditorView {
     pub(super) fn run_pane_command(&mut self, command: PaneCommand, invocation: &Invocation) {
@@ -563,9 +564,12 @@ impl EditorView {
     }
 
     /// Moves the selected row of the active overlay's list.
-    /// Number of rows one overlay page moves. Phase 4 geometry will derive
-    /// this from the visible rows; until then it is a fixed page.
-    const OVERLAY_PAGE_SIZE: isize = 10;
+    /// Number of rows one overlay page moves, derived from the visible
+    /// rows (ADR 0032 review m5): the list viewport is 340px and item
+    /// rows are 28px, so a page is 12 rows. Headings are shorter, so
+    /// with headings present a page slightly under-scrolls rather
+    /// than over-scrolls.
+    const OVERLAY_PAGE_SIZE: isize = (PALETTE_LIST_HEIGHT / PALETTE_ROW_HEIGHT) as isize;
 
     /// Runs a `vy.ui.*` action on the open overlay (ADR 0032 Phase 3).
     /// Count prefixes are ignored for overlay movement, as they are for
@@ -1189,7 +1193,12 @@ impl EditorView {
                 {
                     choice.selected = index;
                 }
+                let selected = choice.selected;
                 self.push_surface(SurfaceKind::SettingChoice(choice));
+                // ADR 0032 review m2: the new surface starts with a fresh
+                // scroll handle at the top, so a preselected row past the
+                // first screen would open invisible. Scroll to it.
+                self.overlay_set_selection(selected);
             }
             SettingKind::Number | SettingKind::Text => {
                 self.push_surface(SurfaceKind::SettingPrompt(SettingPromptState::new(key)));
@@ -1901,6 +1910,13 @@ fn ex_setting_candidates(typed: &str) -> Vec<CompletionCandidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlay_page_size_matches_visible_rows() {
+        // ADR 0032 review m5: a page is the rows that fit in the list
+        // viewport (340px at 28px per row), not a fixed guess.
+        assert_eq!(EditorView::OVERLAY_PAGE_SIZE, 12);
+    }
 
     #[test]
     fn completes_setting_names_and_values() {

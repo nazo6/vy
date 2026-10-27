@@ -557,5 +557,40 @@
     "keys": ":",
     "command": "vy.ui.ex_command_line",
     "when": "overlay == 'palette' && mode == 'normal'"
+  },
+  {
+    "keys": "j",
+    "command": "vy.ui.next",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": "k",
+    "command": "vy.ui.prev",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": "g g",
+    "command": "vy.ui.first",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": "G",
+    "command": "vy.ui.last",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": "ctrl-d",
+    "command": "vy.ui.pageDown",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": "ctrl-u",
+    "command": "vy.ui.pageUp",
+    "when": "overlay == 'picker' && mode == 'normal'"
+  },
+  {
+    "keys": ":",
+    "command": "vy.ui.ex_command_line",
+    "when": "overlay == 'picker' && mode == 'normal'"
   }
 ]
