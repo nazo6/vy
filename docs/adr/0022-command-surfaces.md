@@ -2,7 +2,8 @@
 id: "0022"
 title: "コマンドの入口と設定の分離"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-25
 supersedes: []
 superseded_by: null

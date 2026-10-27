@@ -3,6 +3,7 @@ id: "0010"
 title: "リモート接続の寿命、再接続、配備"
 type: "adr"
 status: "accepted"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null

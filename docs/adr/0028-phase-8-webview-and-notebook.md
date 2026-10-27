@@ -1,18 +1,23 @@
 ---
-id: "0003"
+id: "0028"
 title: "Phase 8: Webview・Notebook"
-type: "proposal"
-status: "open"
+type: "adr"
+status: "proposed"
+category: "roadmap"
 date: 2026-10-25
 related_adrs: ["0001", "0005"]
 tags: ["webview", "notebook", "preview"]
 ---
 
-# [Proposal] Phase 8: Webview・Notebook
+# ADR 0028: Phase 8: Webview・Notebook
 
-Markdown プレビューや Jupyter Notebook などの Web 文書・リッチコンテンツを表示するための最終段階の実装計画です。
+- 状態: 提案中 (proposed)
+- 日付: 2026-10-25
+- カテゴリー: roadmap
 
-Webview の位置づけ（Web 文書の表示に限る）は [ADR 0005](../adr/0005-native-plugin-ui.md) で決定済みです。この提案は作業スコープと未決定の論点だけを扱います。
+Markdown プレビューや Jupyter Notebook などの Web 文書・リッチコンテンツを表示するための実装計画です。
+
+Webview の位置づけ（Web 文書の表示に限る）は [ADR 0005](./0005-native-plugin-ui.md) で決定済みです。本 ADR は作業スコープと未決定の論点を扱います。
 
 ---
 
@@ -32,3 +37,4 @@ ADR 0005 に基づき、エディタの操作 UI（ファイラー、パレッ�
 
 - Webview とネイティブペイン間のフォーカス切り替え時のショートカット競合解消
 - Webview 内のリンククリックや外部ブラウザ起動のセキュリティポリシー
+

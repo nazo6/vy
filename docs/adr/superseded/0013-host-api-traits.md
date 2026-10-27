@@ -3,6 +3,7 @@ id: "0013"
 title: "名前空間 trait と HostApi facade でホスト API を実装する"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0008", "0012"]
 superseded_by: "0025"

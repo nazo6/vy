@@ -2,7 +2,8 @@
 id: "0006"
 title: "ユーザー制御 UI とスロットによるステータスライン"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "feature"
 date: 2026-10-22
 supersedes: []
 superseded_by: null

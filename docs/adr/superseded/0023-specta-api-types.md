@@ -3,6 +3,7 @@ id: "0023"
 title: "型生成を ts-rs から specta に移行し単一ファイルへ集約する"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-25
 supersedes: ["0009", "0015"]
 superseded_by: "0025"

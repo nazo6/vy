@@ -3,6 +3,7 @@ id: "0011"
 title: "バックエンドプラグインはコアで動かし、バンドルをクライアントから送る"
 type: "adr"
 status: "accepted"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null
@@ -13,7 +14,7 @@ superseded_by: null
 - 状態: 採用（実装は Phase 6。backend の型を分ける時期は
   [0019](./0019-global-vy-api.md) で延期）
 - 日付: 2026-10-24
-- 実装計画と、プロトコル名・API の一覧・上限値の詳細は [proposals/0001](../proposals/0001-phase-6-remote-plugins.md) と [`protocol.md`](../specs/protocol.md) に置きます。この ADR は決定だけを残します。
+- 実装計画と、プロトコル名・API の一覧・上限値の詳細は [ADR 0026](./0026-phase-6-remote-plugins.md) と [`protocol.md`](../specs/protocol.md) に置きます。この ADR は決定だけを残します。
 
 ## 文脈
 

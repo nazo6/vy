@@ -2,7 +2,8 @@
 id: "0004"
 title: "アンドゥの履歴はコアが持つ"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-22
 supersedes: ["0003"]
 superseded_by: null

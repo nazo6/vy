@@ -2,7 +2,8 @@
 id: "0003"
 title: "編集状態をコアとクライアントに分ける"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-22
 supersedes: []
 superseded_by: null

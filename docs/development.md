@@ -148,23 +148,20 @@ pnpm docs:api
 
 ## 7. ドキュメントの構成と運用
 
-ドキュメントは目的とライフサイクルによって置き場所を明確に分離します。詳細は [`docs/README.md`](./README.md) にあります。**置き場所は「決めたかどうか」で決め、実装済みかどうかでは決めません。**
+ドキュメントは目的とライフサイクルによって置き場所を明確に分離します。詳細は [`docs/README.md`](./README.md) にあります。
 
 - **生きた仕様書 (Living Specs)**: `docs/specs/*.md`
   現在のコードベースの規範です。コードや利用者が参照する詳細（表、上限値、プロトコル、API 一覧）を置きます。一覧は [`docs/specs/README.md`](./specs/README.md) にあります。
-- **アーキテクチャ決定記録 (ADR)**: `docs/adr/`
-  決定とその理由の記録です。実装前でも ADR にします。決定内容は書き換えず、変えるときは新しい ADR を追加します。置き換えた ADR は `docs/adr/superseded/` へ移します。
-- **提案・設計検討 (Proposals)**: `docs/proposals/`
-  まだ決めていないことと、決定済み事項の未着手の実装計画を置きます。決定済みの ADR を実装する提案は `related_adrs` で参照します。
+- **アーキテクチャ決定・提案記録 (ADR)**: `docs/adr/`
+  アイデア起草から提案・決定・実装完了までを一元管理する記録です（`category`: `roadmap` / `architecture` / `feature` / `maintenance`）。決定内容は書き換えず、変えるときは新しい ADR を追加します。置き換えた ADR は `docs/adr/superseded/` へ移します。
 - **作業ログ (Worklogs)**: `docs/worklogs/`
   着手した作業の計画と実施ログ（日付、実測値、つまずき、移行手順）を記録します。
 
 ### ADR を書くときのチェックリスト
 
-- 決定は 1 ファイルに 1 つか。複数の決定が連鎖しているなら、現在有効な内容を新しい ADR に集約できないか。
+- 提案・決定は 1 ファイルに 1 テーマか。複数の決定が連鎖しているなら、現在有効な内容を新しい ADR に集約できないか。
+- `status`（`draft` / `proposed` / `accepted` / `implemented` / `rejected` / `superseded`）と `category`（`roadmap` / `architecture` / `feature` / `maintenance`）を付与しているか。
 - 実装の進捗、テスト名、実測値、移行手順が混ざっていないか（worklogs へ）。
-- 仕様の表、上限値、プロトコル、API 一覧が混ざっていないか（specs へ。未実装なら proposals の計画へ）。
-- 実装状況は `implementation`（`done` / `partial` / `not-started`）で表しているか。
 - 決定を置き換える場合、置き換えられた ADR を `superseded/` へ移し、索引から外したか。
 
 ### メタデータ (frontmatter)
@@ -174,8 +171,8 @@ pnpm docs:api
 ```yaml
 ---
 title: "ドキュメントタイトル"
-type: "spec" # "spec" | "adr" | "proposal" | "worklog" | "guide"
-updated_at: 2026-10-25
+type: "spec" # "spec" | "adr" | "worklog" | "guide"
+updated_at: 2026-10-27
 ---
 ```
 

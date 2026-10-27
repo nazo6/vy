@@ -2,12 +2,12 @@
 id: "0025"
 title: "プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-27
 supersedes:
   ["0007", "0008", "0009", "0012", "0013", "0014", "0015", "0016", "0023"]
 superseded_by: null
-implementation: "done"
 tags: ["api", "codegen", "plugin"]
 ---
 

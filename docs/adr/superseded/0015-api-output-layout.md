@@ -3,6 +3,7 @@ id: "0015"
 title: "API の生成物は packages/vy-api にまとめる"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0014"]
 superseded_by: "0025"

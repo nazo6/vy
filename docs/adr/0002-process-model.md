@@ -2,7 +2,8 @@
 id: "0002"
 title: "クライアントとコアを常に別プロセスにする"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-22
 supersedes: []
 superseded_by: null

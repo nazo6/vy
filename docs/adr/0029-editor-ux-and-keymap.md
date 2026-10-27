@@ -1,19 +1,25 @@
 ---
-id: "0004"
+id: "0029"
 title: "エディタ操作・キーマップ・UI拡張"
-type: "proposal"
-status: "open"
+type: "adr"
+status: "proposed"
+category: "feature"
 date: 2026-10-25
+related_adrs: ["0024"]
 tags: ["keymap", "commands", "ui", "panes"]
 ---
 
-# [Proposal] エディタ操作・キーマップ・UI拡張
+# ADR 0029: エディタ操作・キーマップ・UI拡張
 
-既存の仕様書（`docs/specs/*.md`）から抽出した、モーダル編集キー、コマンド、UI の未実装機能および未決定事項のまとめです。決定済みの事項は ADR を参照し、ここには未着手の作業と未決定の論点だけを残します。
+- 状態: 提案中 (proposed)
+- 日付: 2026-10-25
+- カテゴリー: feature
+
+既存の仕様書（`docs/specs/*.md`）から抽出した、モーダル編集キー、コマンド、UI の未実装機能および未決定事項のまとめです。決定済みの事項は先行する ADR を参照し、ここには未着手の作業と未決定の論点、作業計画をまとめます。
 
 決定済みで未着手のもの:
 
-- `Esc` のフォーカス層とモード遷移は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) で決定済みです。実装は [proposals/0007](./0007-keyboard-first-plugin-ui.md) で進めます。
+- `Esc` のフォーカス層とモード遷移は [ADR 0024](./0024-keyboard-first-plugin-ui.md) で決定済みです。
 
 ---
 

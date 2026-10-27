@@ -1,13 +1,18 @@
 ---
-id: "0005"
+id: "0030"
 title: "純粋ロジックの状態モデル整理計画"
-type: "proposal"
-status: "open"
+type: "adr"
+status: "proposed"
+category: "maintenance"
 date: 2026-10-25
 tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 ---
 
-# [Proposal] 純粋ロジックの状態モデル整理計画
+# ADR 0030: 純粋ロジックの状態モデル整理計画
+
+- **状態**: 提案中 (proposed)
+- **日付**: 2026-10-25
+- **カテゴリー**: maintenance
 
 - **日付**: 2026-10-25
 - **関連タスク**: 品質改善（保守性 P2）、`command-surfaces` / `pane/resize` の後始末
@@ -361,14 +366,14 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 ## 7. 対象外
 
 実行時・基盤・セキュリティ側の負債は
-[`0006-runtime-safety-and-infrastructure.md`](./0006-runtime-safety-and-infrastructure.md)
-で扱う。本提案の対象外は次のとおり。
+[`0031-runtime-safety-and-infrastructure.md`](./0031-runtime-safety-and-infrastructure.md)
+で扱う。本 ADR の対象外は次のとおり。
 
 - レジスタのワークスペース共有（別作業）
 - `editor.tabStop` 設定の追加（この計画では `VisualOptions` に `tab_stop`
   を通せる形にしておくだけ）
 - ファイル保存の原子性、ケイパビリティのパス正規化、ウィンドウ終了時の未保存保護
-  （0006 で扱う）
+  （0031 で扱う）
 - GPUI のバージョン更新、レンダリング性能の追加最適化
 
 ## 8. 未確定事項

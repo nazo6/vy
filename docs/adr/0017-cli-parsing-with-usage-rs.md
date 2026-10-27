@@ -2,7 +2,8 @@
 id: "0017"
 title: "CLI 引数の解析に usage-rs を使う"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null

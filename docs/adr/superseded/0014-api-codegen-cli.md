@@ -3,6 +3,7 @@ id: "0014"
 title: "API バインディングの生成を CLI に分離する"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: "0025"

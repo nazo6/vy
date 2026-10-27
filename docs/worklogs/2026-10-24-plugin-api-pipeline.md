@@ -60,7 +60,7 @@ tags: ["api", "codegen", "plugin", "migration"]
 
 ## フォローアップ・残課題
 
-- `backend.d.ts` の出力と、コア限定の型をクライアントと共有するか（Phase 6、[proposals/0001](../proposals/0001-phase-6-remote-plugins.md)）。
+- `backend.d.ts` の出力と、コア限定の型をクライアントと共有するか（Phase 6、[ADR 0026](../adr/0026-phase-6-remote-plugins.md)）。
 - 実行時の引数スキーマ（型は Oxc で除去されるため、誤った引数は実行時まで分からない）。
 - `shim.ts` の手書き型と `bindings.ts` の重複の解消。
 - `CommandMap` を複数のプラグインが拡張したときの規則。

@@ -3,6 +3,7 @@ id: "0008"
 title: "プラグイン API を宣言マクロで一本化する"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0007"]
 superseded_by: "0025"

@@ -2,7 +2,8 @@
 id: "0018"
 title: "クライアント・コア間の RPC は型付き marker で送る"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null

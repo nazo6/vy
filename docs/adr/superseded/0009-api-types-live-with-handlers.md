@@ -3,6 +3,7 @@ id: "0009"
 title: "API の型はハンドラの隣に置き、生成は codegen に集める"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0007", "0008"]
 superseded_by: "0025"

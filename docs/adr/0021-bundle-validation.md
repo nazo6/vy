@@ -2,7 +2,8 @@
 id: "0021"
 title: "バンドル検証とエントリの制限"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null

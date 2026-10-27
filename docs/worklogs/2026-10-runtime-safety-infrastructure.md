@@ -9,7 +9,7 @@ tags: ["security", "data-integrity", "documentation", "commands"]
 # [Worklog] 実行時・基盤・セキュリティ負債整理ログ
 
 - **日付**: 2026-10-26
-- **関連フェーズ/タスク**: [`0006-runtime-safety-and-infrastructure.md`](../proposals/0006-runtime-safety-and-infrastructure.md) Phase 0
+- **関連フェーズ/タスク**: [`0031-runtime-safety-and-infrastructure.md`](../adr/0031-runtime-safety-and-infrastructure.md) Phase 0
 - **目的**: 仕様書の記述を実装に合わせ、以降のフェーズ（特に Phase 1 の保存・終了フロー）が前提にできる状態にする。
 
 ## 作業内容
@@ -27,7 +27,7 @@ Phase 0「文書と実装の突き合わせ」として、`:q!`、`:wq` / `:qa`�
   - 認識するキーに `Delete`、`Shift-Tab`（`BackTab`）、`Ctrl` + 英字全般を追加。
   - Insert の `Delete` の備考を「キー名を受け取っていない」から「キー名は解釈するが処理がない」に修正。
   - 古いパス `editor.rs` を `editor/` に修正。
-- `docs/proposals/0006-runtime-safety-and-infrastructure.md`
+- `docs/adr/0031-runtime-safety-and-infrastructure.md`
   - Phase 0 のチェックボックスを完了にし、確認結果を記録。
   - Phase 1 の完了条件に `:wq` / `:qa` / `:qa!` / `:wqa` と最後のペインの `:q` を追加。
   - `:resize` の引数未宣言を §3.9 と Phase 6 に追加。

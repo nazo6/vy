@@ -3,6 +3,7 @@ id: "0016"
 title: "コマンド型を分離し、JS API の型を TS shim から生成する"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0014", "0015"]
 superseded_by: "0025"

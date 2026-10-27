@@ -2,7 +2,8 @@
 id: "0020"
 title: "プラグインはソース形態とバンドル形態の2つを許す"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: null

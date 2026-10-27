@@ -1,16 +1,21 @@
 ---
-id: "0001"
+id: "0026"
 title: "Phase 6: リモートプラグイン"
-type: "proposal"
-status: "open"
+type: "adr"
+status: "proposed"
+category: "roadmap"
 date: 2026-10-25
 related_adrs: ["0010", "0011", "0019"]
 tags: ["remote", "plugins", "backend", "quickjs"]
 ---
 
-# [Proposal] Phase 6: リモートプラグイン
+# ADR 0026: Phase 6: リモートプラグイン
 
-`backend.ts` を接続先のコア（`vy-server`）で動かし、フロントエンドとはチャネルで通信する設計は [ADR 0011](../adr/0011-backend-plugins-on-core.md) で決定済みです。この提案は、その実装スコープと未決定の論点だけを扱います。決定済みの内容は再掲しません。
+- 状態: 提案中 (proposed)
+- 日付: 2026-10-25
+- カテゴリー: roadmap
+
+`backend.ts` を接続先のコア（`vy-server`）で動かし、フロントエンドとはチャネルで通信する設計は [ADR 0011](./0011-backend-plugins-on-core.md) で決定済みです。本 ADR は、その実装スコープと未決定の論点、作業計画を扱います。
 
 ---
 
@@ -39,6 +44,7 @@ tags: ["remote", "plugins", "backend", "quickjs"]
 
 ## 3. 未決定の論点
 
-- **先読み描画の範囲**: リモート接続で入力の遅延を隠すため、クライアントがどこまで楽観的・先行描画を行うか（`architecture.md` より）。
-- **プラグインのインストール先**: 設定ディレクトリと分けるか、書き込み権限のない環境を考慮してデータディレクトリに置くか（`layout.md` より）。
+- **先読み描画の範囲**: リモート接続で入力の遅延を隠すため、クライアントがどこまで楽観的・先行描画を行うか（`docs/specs/architecture.md` より）。
+- **プラグインのインストール先**: 設定ディレクトリと分けるか、書き込み権限のない環境を考慮してデータディレクトリに置くか（`docs/specs/layout.md` より）。
 - **サーバープロセスの多重化**: 1 つの `vy-server` で複数ワークスペースを扱うか、ワークスペースごとにプロセスを分けるか。
+

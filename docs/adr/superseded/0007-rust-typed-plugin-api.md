@@ -3,6 +3,7 @@ id: "0007"
 title: "プラグイン境界の型は Rust を正とする"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: "0025"

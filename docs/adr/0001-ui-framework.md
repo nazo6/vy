@@ -2,7 +2,8 @@
 id: "0001"
 title: "UI フレームワークに GPUI と gpui-kit を採用する"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-22
 supersedes: []
 superseded_by: null

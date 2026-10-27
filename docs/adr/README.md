@@ -1,20 +1,74 @@
 ---
-title: "アーキテクチャ決定記録 (ADR)"
+title: "アーキテクチャ決定・提案記録 (ADR)"
 type: "guide"
 updated_at: 2026-10-27
 ---
 
-# アーキテクチャ決定記録 (ADR)
+# アーキテクチャ決定・提案記録 (ADR)
 
-Vy の設計上の決定を記録します。1つの決定につき1ファイルとし、決定を変えるときは既存のファイルの決定内容を書き換えず、新しい ADR を追加します。置き換えられた ADR は [`superseded/`](./superseded/README.md) へ移し、この索引からは外します（番号は変えません）。
+Vy の設計上の提案・決定・ロードマップを記録します。アイデア起草から設計議論、採択、実装完了、そして将来の置き換えまでのライフサイクルを、frontmatter のステータスとカテゴリーで一元管理します。
 
-ADR には**決定とその理由だけ**を書きます。規範の詳細（表、上限値、プロトコル、API 一覧）は [`../specs/`](../specs/README.md)、実装の進捗・検証値・移行手順は [`../worklogs/`](../worklogs/README.md)、まだ決めていないことは [`../proposals/`](../proposals/README.md) に置きます。実装済みかどうかは置き場所を変えず、`implementation` で表します。
+決定を変えるときは既存のファイルを書き換えず、新しい ADR を追加します。古い ADR は `superseded` とし、[`superseded/`](./superseded/README.md) へ移動します。
 
-## 命名規則
+## ライフサイクルとステータス
 
-- 現行の ADR は `docs/adr/NNNN-<short-title>.md` に置きます。番号は 4 桁で、追加した順に増やします。
-- 置き換えられた ADR は `docs/adr/superseded/` へ移します。ファイル名と番号は変えません。
-- 番号は再利用しません。索引に無い番号は、`superseded/` に移った ADR を指します。
+```mermaid
+stateDiagram-v2
+    [*] --> draft: アイデア・起草中
+    draft --> proposed: レビュー・検討中
+    proposed --> accepted: 採択・決定
+    proposed --> rejected: 却下・見送り
+    accepted --> implemented: 実装完了 (specs反映済み)
+    accepted --> superseded: 後続の決定で置き換え
+    implemented --> superseded: 後続の決定で置き換え
+```
+
+| ステータス    | 意味                                                              |
+| :------------ | :---------------------------------------------------------------- |
+| `draft`       | アイデア出し・起草中・ブレスト段階                                |
+| `proposed`    | 方針案がまとまり、決定に向けた検討・レビュー中                    |
+| `accepted`    | 採択・決定済み（実装待ちまたは実装中）                            |
+| `implemented` | 実装完了し、現在の確定仕様は `docs/specs/` に反映済み             |
+| `rejected`    | 検討の結果、見送り・却下                                          |
+| `superseded`  | 後続の決定によって置き換えられた（`docs/adr/superseded/` へ移動） |
+
+## カテゴリー
+
+| カテゴリー     | 説明                                                                     | 主な対象                                                 |
+| :------------- | :----------------------------------------------------------------------- | :------------------------------------------------------- |
+| `roadmap`      | 複数機能にまたがる大きなフェーズ計画やマイルストーン                     | Phase 6, Phase 7, Phase 8 など                           |
+| `architecture` | プロセスモデル、RPC プロトコル、プラグイン基盤、型システムなどの根幹設計 | プロセス分離、型付き RPC、Specta 型生成など              |
+| `feature`      | 個別の新機能、UI ウィジェット、キーマップ、エディタ操作の仕様・計画      | キーボードファースト UI、コマンド面分離など              |
+| `maintenance`  | 内部モデルのリファクタリング、安全性向上、CI/インフラ負債解消            | 純粋ロジック状態整理、実行時安全性・セキュリティ整理など |
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft: アイデア・起草中
+    draft --> proposed: レビュー・検討中
+    proposed --> accepted: 採択・決定
+    proposed --> rejected: 却下・見送り
+    accepted --> implemented: 実装完了 (specs反映済み)
+    accepted --> superseded: 後続の決定で置き換え
+    implemented --> superseded: 後続の決定で置き換え
+```
+
+| ステータス | 意味 |
+| :--- | :--- |
+| `draft` | アイデア出し・起草中・ブレスト段階 |
+| `proposed` | 方針案がまとまり、決定に向けた検討・レビュー中 |
+| `accepted` | 採択・決定済み（実装待ちまたは実装中） |
+| `implemented` | 実装完了し、現在の確定仕様は `docs/specs/` に反映済み |
+| `rejected` | 検討の結果、見送り・却下 |
+| `superseded` | 後続の決定によって置き換えられた（`docs/adr/superseded/` へ移動） |
+
+## カテゴリー
+
+| カテゴリー | 説明 | 主な対象 |
+| :--- | :--- | :--- |
+| `roadmap` | 複数機能にまたがる大きなフェーズ計画やマイルストーン | Phase 6, Phase 7, Phase 8 など |
+| `architecture` | プロセスモデル、RPC プロトコル、プラグイン基盤、型システムなどの根幹設計 | プロセス分離、型付き RPC、Specta 型生成など |
+| `feature` | 個別の新機能、UI ウィジェット、キーマップ、エディタ操作の仕様・計画 | キーボードファースト UI、コマンド面分離など |
+| `maintenance` | 内部モデルのリファクタリング、安全性向上、CI/インフラ負債解消 | 純粋ロジック状態整理、実行時安全性・セキュリティ整理など |
 
 ## frontmatter 規約
 
@@ -22,56 +76,120 @@ ADR には**決定とその理由だけ**を書きます。規範の詳細（表
 
 ```yaml
 ---
-id: "0025"
-title: "プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する"
+id: "0024"
+title: "キーボードファーストなプラグイン UI"
 type: "adr"
-status: "accepted" # "proposed" | "accepted" | "rejected" | "superseded"
+status: "accepted" # draft | proposed | accepted | implemented | rejected | superseded
+category: "feature" # roadmap | architecture | feature | maintenance
 date: 2026-10-27
-implementation: "done" # 任意: "done" | "partial" | "not-started"
-supersedes: ["0007", "0008"] # 任意: 引き継いだ過去の ADR 番号
-superseded_by: null # 任意: 引き継ぎ先の ADR 番号（決定全体を置き換えた場合のみ）
-tags: ["api", "codegen"]
+tags: ["ui", "keymap", "plugin", "focus"]
+supersedes: [] # 任意: 置き換えた過去のADR番号
+superseded_by: null # 任意: 置き換えられた新しいADR番号
+related_adrs: [] # 任意: 関連するADR番号
 ---
 ```
 
-- `status: "superseded"` は「決定が新しい ADR に引き継がれた」ことを表します。内容が否定されたとは限りません。`superseded/` にある ADR はすべてこの状態です。
-- `superseded_by` は決定全体を置き換えた場合だけ設定します。一部だけを置き換えた場合（例: 0003 のアンドゥ部分を 0004 が置き換え）は `null` のままにし、本文の「置き換え」とこの索引の補足で表します。
-- `implementation` は実装状況です。ADR は実装前でも作り、この値で進捗を表します。
+## 命名規則
 
-## トピック別・現在有効な決定 (Current Decisions)
+ファイル名は `NNNN-<short-title>.md` とします。番号は4桁で、追加した順に増やします。
 
-「今どの決定が有効なのか」をトピックごとにまとめた一覧です。置き換え済みの ADR は含めません（[`superseded/`](./superseded/README.md)）。
+---
 
-| トピック                 | 現在有効な決定 (ADR)                                                                                                                                                                                                                         | 補足                                                                                 |
-| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
-| **プロセス・通信モデル** | [0002](./0002-process-model.md) (別プロセス)<br>[0018](./0018-typed-rpc.md) (型付き RPC)<br>[0010](./0010-remote-connection.md) (SSH/再同期)                                                                                                 | -                                                                                    |
-| **状態・アンドゥ管理**   | [0003](./0003-editor-state.md) (編集状態の分離)<br>[0004](./0004-undo-in-core.md) (コア所有アンドゥ)                                                                                                                                         | 0003 のアンドゥ部分は 0004 で置き換え                                                |
-| **UI・描画**             | [0001](./0001-ui-framework.md) (GPUI)<br>[0005](./0005-native-plugin-ui.md) (ネイティブ木)<br>[0006](./0006-user-controlled-ui-and-slots.md) (スロット)<br>[0024](./0024-keyboard-first-plugin-ui.md) (キーボードファーストなプラグイン UI)  | 0024 は実装未着手（[proposals/0007](../proposals/0007-keyboard-first-plugin-ui.md)） |
-| **プラグイン API・基盤** | [0019](./0019-global-vy-api.md) (グローバル vy)<br>[0020](./0020-plugin-source-and-bundles.md) (ソース/バンドル)<br>[0021](./0021-bundle-validation.md) (バンドル検証)<br>[0011](./0011-backend-plugins-on-core.md) (バックエンドプラグイン) | 0011 は実装未着手（[proposals/0001](../proposals/0001-phase-6-remote-plugins.md)）   |
-| **API の宣言・型・生成** | [0025](./0025-plugin-api-declaration-and-codegen.md) (名前空間 trait + Specta + codegen CLI)                                                                                                                                                 | 0007–0016・0023 を集約                                                               |
-| **コマンド・CLI**        | [0017](./0017-cli-parsing-with-usage-rs.md) (usage-rs)<br>[0022](./0022-command-surfaces.md) (コマンド面分離)                                                                                                                                | -                                                                                    |
+## カテゴリー別一覧
 
-## 全 ADR 索引 (番号順)
+### 1. ロードマップ (`roadmap`)
 
-| 番号                                                 | 決定                                                                 | 状態                               |
-| :--------------------------------------------------- | :------------------------------------------------------------------- | :--------------------------------- |
-| [0001](./0001-ui-framework.md)                       | UI フレームワークに GPUI と gpui-kit を採用する                      | 採用                               |
-| [0002](./0002-process-model.md)                      | クライアントとコアを常に別プロセスにする                             | 採用                               |
-| [0003](./0003-editor-state.md)                       | 編集状態をコアとクライアントに分ける                                 | 採用（アンドゥは 0004 で置き換え） |
-| [0004](./0004-undo-in-core.md)                       | アンドゥの履歴はコアが持つ                                           | 採用                               |
-| [0005](./0005-native-plugin-ui.md)                   | プラグイン UI はネイティブのウィジェット木で作る                     | 採用                               |
-| [0006](./0006-user-controlled-ui-and-slots.md)       | ユーザー制御 UI とスロットによるステータスライン                     | 採用                               |
-| [0010](./0010-remote-connection.md)                  | SSH で接続し、再起動と再同期でセッションを戻す                       | 採用                               |
-| [0011](./0011-backend-plugins-on-core.md)            | バックエンドプラグインはコアで動かす                                 | 採用（実装は Phase 6）             |
-| [0017](./0017-cli-parsing-with-usage-rs.md)          | CLI 引数の解析に usage-rs を使う                                     | 採用                               |
-| [0018](./0018-typed-rpc.md)                          | クライアント・コア間の RPC は型付き marker で送る                    | 採用                               |
-| [0019](./0019-global-vy-api.md)                      | プラグイン API はグローバル `vy` に統一する                          | 採用                               |
-| [0020](./0020-plugin-source-and-bundles.md)          | プラグインはソース形態とバンドル形態の2つを許す                      | 採用                               |
-| [0021](./0021-bundle-validation.md)                  | バンドルとエントリをロード時に検証する                               | 採用                               |
-| [0022](./0022-command-surfaces.md)                   | コマンドの入口を役割で分け、設定を状態として分離する                 | 採用                               |
-| [0024](./0024-keyboard-first-plugin-ui.md)           | キーボードファーストなプラグイン UI                                  | 採用（実装は未着手）               |
-| [0025](./0025-plugin-api-declaration-and-codegen.md) | プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する | 採用（実装済み）                   |
+大きな開発フェーズとマイルストーンの計画です。
 
-### 置き換えられた ADR
+| 番号                                           | タイトル                          | ステータス | 概要                                                     |
+| :--------------------------------------------- | :-------------------------------- | :--------- | :------------------------------------------------------- |
+| [0026](./0026-phase-6-remote-plugins.md)       | Phase 6: リモートプラグイン       | proposed   | `backend.ts` のコア側実行、通信チャネル、型分離          |
+| [0027](./0027-phase-7-language-features.md)    | Phase 7: 言語機能・エディタ実用化 | proposed   | Tree-sitter、非同期 LSP、補完プロバイダ、検索            |
+| [0028](./0028-phase-8-webview-and-notebook.md) | Phase 8: Webview・Notebook        | proposed   | gpui-kit/webview 組み込み、Markdown プレビュー、セル描画 |
 
-[`superseded/`](./superseded/README.md) に 9 本（0007, 0008, 0009, 0012, 0013, 0014, 0015, 0016, 0023）を保管しています。決定の内容は 0025 に引き継いでおり、番号は履歴として残します。
+### 2. アーキテクチャ・基盤 (`architecture`)
+
+| 番号                                                 | タイトル                                                             | ステータス  | 概要                                                              |
+| :--------------------------------------------------- | :------------------------------------------------------------------- | :---------- | :---------------------------------------------------------------- |
+| [0001](./0001-ui-framework.md)                       | UI フレームワークに GPUI と gpui-kit を採用する                      | implemented | GPUI と gpui-kit の採用                                           |
+| [0002](./0002-process-model.md)                      | クライアントとコアを常に別プロセスにする                             | implemented | 独立プロセスと IPC 通信                                           |
+| [0003](./0003-editor-state.md)                       | 編集状態をコアとクライアントに分ける                                 | implemented | 編集状態の分離（アンドゥは 0004 で置き換え）                      |
+| [0004](./0004-undo-in-core.md)                       | アンドゥの履歴はコアが持つ                                           | implemented | コア所有アンドゥ                                                  |
+| [0005](./0005-native-plugin-ui.md)                   | プラグイン UI はネイティブのウィジェット木で作る                     | implemented | ネイティブ木による安全な UI 構築                                  |
+| [0010](./0010-remote-connection.md)                  | リモート接続の寿命、再接続、配備                                     | accepted    | SSH 接続と再同期セッション                                        |
+| [0011](./0011-backend-plugins-on-core.md)            | バックエンドプラグインはコアで動かす                                 | accepted    | バックエンドプラグインの配置（実装は Phase 6）                    |
+| [0017](./0017-cli-parsing-with-usage-rs.md)          | CLI 引数の解析に usage-rs を使う                                     | implemented | usage-rs による引数解析                                           |
+| [0018](./0018-typed-rpc.md)                          | クライアント・コア間の RPC は型付き marker で送る                    | implemented | 型付き RPC 通信                                                   |
+| [0019](./0019-global-vy-api.md)                      | プラグイン API はグローバル vy に統一する                            | implemented | グローバル `vy` への集約                                          |
+| [0020](./0020-plugin-source-and-bundles.md)          | プラグインはソース形態とバンドル形態の2つを許す                      | implemented | ソース・バンドルの 2 形態許可                                     |
+| [0021](./0021-bundle-validation.md)                  | バンドル検証とエントリの制限                                         | implemented | ロード時のバンドル整合性検査                                      |
+| [0022](./0022-command-surfaces.md)                   | コマンドの入口と設定の分離                                           | implemented | コマンド面と設定状態の分離                                        |
+| [0025](./0025-plugin-api-declaration-and-codegen.md) | プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する | implemented | Specta 型生成と trait 一本化（0007-0009, 0012-0016, 0023 を集約） |
+
+### 3. 機能・UX (`feature`)
+
+| 番号                                           | タイトル                                         | ステータス  | 概要                                                         |
+| :--------------------------------------------- | :----------------------------------------------- | :---------- | :----------------------------------------------------------- |
+| [0006](./0006-user-controlled-ui-and-slots.md) | ユーザー制御 UI とスロットによるステータスライン | implemented | スロット構造とユーザー主導 UI                                |
+| [0024](./0024-keyboard-first-plugin-ui.md)     | キーボードファーストなプラグイン UI              | accepted    | フォーカス層、コンテキスト、セマンティックアクション、picker |
+| [0029](./0029-editor-ux-and-keymap.md)         | エディタ操作・キーマップ・UI拡張                 | proposed    | 未実装キーバインド、Ex コマンド、ステータスライン、CRLF      |
+
+### 4. 改善・保守 (`maintenance`)
+
+| 番号                                                | タイトル                                 | ステータス | 概要                                             |
+| :-------------------------------------------------- | :--------------------------------------- | :--------- | :----------------------------------------------- |
+| [0030](./0030-logic-state-refactor.md)              | 純粋ロジックの状態モデル整理計画         | proposed   | 入力状態の enum 化、視覚行計算の単一実装         |
+| [0031](./0031-runtime-safety-and-infrastructure.md) | 実行時・基盤・セキュリティの負債整理計画 | proposed   | 保存の原子性、未保存保護、ケイパビリティ境界、CI |
+
+## カテゴリー別一覧
+
+### 1. ロードマップ (`roadmap`)
+
+大きな開発フェーズとマイルストーンの計画です。
+
+| 番号 | タイトル | ステータス | 概要 |
+| :--- | :--- | :--- | :--- |
+| [0026](./0026-phase-6-remote-plugins.md) | Phase 6: リモートプラグイン | proposed | `backend.ts` のコア側実行、通信チャネル、型分離 |
+| [0027](./0027-phase-7-language-features.md) | Phase 7: 言語機能・エディタ実用化 | proposed | Tree-sitter、非同期 LSP、補完プロバイダ、検索 |
+| [0028](./0028-phase-8-webview-and-notebook.md) | Phase 8: Webview・Notebook | proposed | gpui-kit/webview 組み込み、Markdown プレビュー、セル描画 |
+
+### 2. アーキテクチャ・基盤 (`architecture`)
+
+| 番号 | タイトル | ステータス | 概要 |
+| :--- | :--- | :--- | :--- |
+| [0001](./0001-ui-framework.md) | UI フレームワークに GPUI と gpui-kit を採用する | implemented | GPUI と gpui-kit の採用 |
+| [0002](./0002-process-model.md) | クライアントとコアを常に別プロセスにする | implemented | 独立プロセスと IPC 通信 |
+| [0003](./0003-editor-state.md) | 編集状態をコアとクライアントに分ける | implemented | 編集状態の分離（アンドゥは 0004 で置き換え） |
+| [0004](./0004-undo-in-core.md) | アンドゥの履歴はコアが持つ | implemented | コア所有アンドゥ |
+| [0005](./0005-native-plugin-ui.md) | プラグイン UI はネイティブのウィジェット木で作る | implemented | ネイティブ木による安全な UI 構築 |
+| [0010](./0010-remote-connection.md) | リモート接続の寿命、再接続、配備 | accepted | SSH 接続と再同期セッション |
+| [0011](./0011-backend-plugins-on-core.md) | バックエンドプラグインはコアで動かす | accepted | バックエンドプラグインの配置（実装は Phase 6） |
+| [0017](./0017-cli-parsing-with-usage-rs.md) | CLI 引数の解析に usage-rs を使う | implemented | usage-rs による引数解析 |
+| [0018](./0018-typed-rpc.md) | クライアント・コア間の RPC は型付き marker で送る | implemented | 型付き RPC 通信 |
+| [0019](./0019-global-vy-api.md) | プラグイン API はグローバル vy に統一する | implemented | グローバル `vy` への集約 |
+| [0020](./0020-plugin-source-and-bundles.md) | プラグインはソース形態とバンドル形態の2つを許す | implemented | ソース・バンドルの 2 形態許可 |
+| [0021](./0021-bundle-validation.md) | バンドル検証とエントリの制限 | implemented | ロード時のバンドル整合性検査 |
+| [0022](./0022-command-surfaces.md) | コマンドの入口と設定の分離 | implemented | コマンド面と設定状態の分離 |
+| [0025](./0025-plugin-api-declaration-and-codegen.md) | プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する | implemented | Specta 型生成と trait 一本化（0007-0009, 0012-0016, 0023 を集約） |
+
+### 3. 機能・UX (`feature`)
+
+| 番号 | タイトル | ステータス | 概要 |
+| :--- | :--- | :--- | :--- |
+| [0006](./0006-user-controlled-ui-and-slots.md) | ユーザー制御 UI とスロットによるステータスライン | implemented | スロット構造とユーザー主導 UI |
+| [0024](./0024-keyboard-first-plugin-ui.md) | キーボードファーストなプラグイン UI | accepted | フォーカス層、コンテキスト、セマンティックアクション、picker |
+| [0029](./0029-editor-ux-and-keymap.md) | エディタ操作・キーマップ・UI拡張 | proposed | 未実装キーバインド、Ex コマンド、ステータスライン、CRLF |
+
+### 4. 改善・保守 (`maintenance`)
+
+| 番号 | タイトル | ステータス | 概要 |
+| :--- | :--- | :--- | :--- |
+| [0030](./0030-logic-state-refactor.md) | 純粋ロジックの状態モデル整理計画 | proposed | 入力状態の enum 化、視覚行計算の単一実装 |
+| [0031](./0031-runtime-safety-and-infrastructure.md) | 実行時・基盤・セキュリティの負債整理計画 | proposed | 保存の原子性、未保存保護、ケイパビリティ境界、CI |
+
+---
+
+## 置き換えられた ADR (Superseded)
+
+方針変更により置き換えられた過去の ADR は [`superseded/`](./superseded/README.md) に保管されています。
+

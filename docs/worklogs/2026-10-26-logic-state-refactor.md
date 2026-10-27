@@ -9,7 +9,7 @@ tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 # [Worklog] 純粋ロジックの状態モデル整理ログ
 
 - **日付**: 2026-10-26
-- **関連フェーズ/タスク**: [`0005-logic-state-refactor.md`](../proposals/0005-logic-state-refactor.md) Phase 0, A, B, C
+- **関連フェーズ/タスク**: [`0030-logic-state-refactor.md`](../adr/0030-logic-state-refactor.md) Phase 0, A, B, C
 - **目的**: GPUI 非依存のロジックに散在する暗黙の状態と重複した視覚行計算を、挙動を変えずに整理する。Phase 0 で後続フェーズの前提になる小さな不整合を直し、Phase A で視覚行の計算を 1 実装に寄せ、Phase B でエディタの入力状態を、Phase C でキーマップのプレフィックス状態を 1 つの値にまとめる。
 
 ## 進め方

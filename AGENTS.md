@@ -16,9 +16,8 @@ Vy の開発方針です。作業を始める前に [`docs/README.md`](./docs/RE
 設計の決定や現在の仕様については `docs/` 配下を参照してください。個別のアーキテクチャや設計ルールはコードに直接埋め込まず、ドキュメントを正とします。
 
 - **現在の仕様・設計**: [`docs/specs/`](./docs/specs/README.md)
-- **意思決定の記録 (ADR)**: [`docs/adr/`](./docs/adr/README.md)
-  - 設計上の決定を変えるときは既存の ADR を書き換えず、新しい ADR を追加します。
-- **未決定事項・検討案**: [`docs/proposals/`](./docs/proposals/README.md)
+- **意思決定・提案の記録 (ADR)**: [`docs/adr/`](./docs/adr/README.md)
+  - 設計上の決定を変えるときは既存の ADR を書き換えず、新しい ADR を追加します。未決定の提案やロードマップも ADR として起草・検討します。
 - **作業ログ**: [`docs/worklogs/`](./docs/worklogs/README.md)
 - **開発方針・運用ルール**: [`docs/development.md`](./docs/development.md)
 

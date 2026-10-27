@@ -2,7 +2,8 @@
 id: "0019"
 title: "プラグイン API はグローバル vy に統一する"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-24
 supersedes: ["0016"]
 superseded_by: null

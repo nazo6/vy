@@ -1,22 +1,25 @@
 ---
-id: "0006"
+id: "0031"
 title: "実行時・基盤・セキュリティの負債整理計画"
-type: "proposal"
-status: "open"
+type: "adr"
+status: "proposed"
+category: "maintenance"
 date: 2026-10-25
+related_adrs: ["0030"]
 tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 ---
 
-# [Proposal] 実行時・基盤・セキュリティの負債整理計画
+# ADR 0031: 実行時・基盤・セキュリティの負債整理計画
 
+- **状態**: 提案中 (proposed)
 - **日付**: 2026-10-25
+- **カテゴリー**: maintenance
 - **関連タスク**: 品質改善、Phase 4 の仕上げ、Phase 5 以降の前提整備
-- **状態**: open（未着手）
-- **目的**: 純粋ロジックの整理（[`0005-logic-state-refactor.md`](./0005-logic-state-refactor.md)）とは独立に、実行時の安全性・データ保護・開発基盤に残っている負債を洗い出し、優先度付きで解消する。
+- **目的**: 純粋ロジックの整理（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)）とは独立に、実行時の安全性・データ保護・開発基盤に残っている負債を洗い出し、優先度付きで解消する。
 
 ## 1. 背景と範囲
 
-純粋ロジック側の提案（[`0005-logic-state-refactor.md`](./0005-logic-state-refactor.md)、以下「0005」）は「状態の持ち方」と「視覚行計算」を対象にした。本提案はそれ以外、つまり**利用者のデータを守る経路・プラグインとの境界・ビルドと検証の基盤・モジュール構造**を対象にする。文書構造の変更で旧来の改善バックログ表は解体されたため、非ロジック系の残債は本提案で追跡する。
+純粋ロジック側の ADR（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)、以下「0030」）は「状態の持ち方」と「視覚行計算」を対象にした。本 ADR はそれ以外、つまり**利用者のデータを守る経路・プラグインとの境界・ビルドと検証の基盤・モジュール構造**を対象にする。文書構造の変更で旧来の改善バックログ表は解体されたため、非ロジック系の残債は本ドキュメントで追跡する。
 
 先行して作成した改善計画メモの項目を実コードで検証したところ、次の2点が判明した。
 
@@ -35,11 +38,11 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 | `shim.ts` と `bindings.ts` の型重複    | 妥当（ただし単純置換は不可） | `crates/vy-js/src/shim.ts` の手書き型に対し、生成側の `CommandArgInfo` は `choices` / `required` / `rest` が非オプショナル。`CommandsRegisterParams` を使い、`Partial` などで受ける必要がある                      |
 | Specta の二重ヘッダー                  | 妥当                         | `crates/vy-api-schema/src/codegen.rs` の `.header(...)` と Specta 既定のヘッダーが重複し、`packages/vy-api/types/bindings.ts` の先頭に2行出ている                                                                  |
 | codegen 差分チェックを `cargo test` へ | 方向は妥当、根拠は要修正     | `vy-api-codegen --check` は実装済みで現在は clean。ただし「CI のみ」ではなく CI 自体がない。また `--check` は `packages/vy-api/types` と `api-base.d.ts` だけを比較し、`shim.d.ts` と `generated/shim.js` は対象外 |
-| 折り返しキャッシュの健全化             | 妥当（主因は別）             | 64bit ハッシュ衝突の実害はほぼ無い。実際のコストは「可視行ごとのハッシュ計算と `String` 確保」「1024 件で全消去」。視覚行の単一実装（0005 Phase A）と同時に扱うのが効率的                                          |
-| `ViewState` と `Editor` の手動同期     | 妥当                         | 呼び出しは 30 箇所超。ただし RAII ガードは `documents` と `panes` の二重可変借用で成立しない。0005 Phase F の `PaneViewport` で扱う                                                                                |
+| 折り返しキャッシュの健全化             | 妥当（主因は別）             | 64bit ハッシュ衝突の実害はほぼ無い。実際のコストは「可視行ごとのハッシュ計算と `String` 確保」「1024 件で全消去」。視覚行の単一実装（0030 Phase A）と同時に扱うのが効率的                                          |
+| `ViewState` と `Editor` の手動同期     | 妥当                         | 呼び出しは 30 箇所超。ただし RAII ガードは `documents` と `panes` の二重可変借用で成立しない。0030 Phase F の `PaneViewport` で扱う                                                                                |
 | `commands.rs` の分割                   | 妥当（対象を追加）           | `crates/vy-app/src/view/commands.rs` は約 1772 行。同様に `crates/vy-app/src/commands.rs`（約 1635 行、Ex パーサ・レジストリ・引数検証）も対象                                                                     |
 | `pane/resize` のクライアント連携       | 実装済み（除外）             | `PaneCommand::Resize` / `Equalize`、`Ctrl-w + - > < =`、`:resize` / `:equalize`、ディバイダーのドラッグまで実装されている                                                                                          |
-| レジスタ（ヤンク・削除）の共有         | 対象外                       | 状態モデルの変更なので 0005 側の課題として扱う。`.` の履歴は Vim と同じく文書単位のままでよい                                                                                                                      |
+| レジスタ（ヤンク・削除）の共有         | 対象外                       | 状態モデルの変更なので 0030 側の課題として扱う。`.` の履歴は Vim と同じく文書単位のままでよい                                                                                                                      |
 
 ## 3. 新たに確認した負債
 
@@ -113,9 +116,9 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 ### 3.8 優先度 P1: 設定・表示の残債
 
-- **`tabstop` 設定**: `DEFAULT_TAB_STOP` が `text_layout.rs`、`editor/motion.rs`、`view/render.rs`、`view/commands.rs`、`ui/pane.rs`、`on_scroll_wheel` に固定値で入っている。`crates/vy-client-api/src/settings.rs` に `editor.tabStop` を追加し、`PaneState::is_wrap` と同じ形で解決する。0005 の `VisualOptions` に `tab_stop` を渡す形にしておくと移行が楽になる。
+- **`tabstop` 設定**: `DEFAULT_TAB_STOP` が `text_layout.rs`、`editor/motion.rs`、`view/render.rs`、`view/commands.rs`、`ui/pane.rs`、`on_scroll_wheel` に固定値で入っている。`crates/vy-client-api/src/settings.rs` に `editor.tabStop` を追加し、`PaneState::is_wrap` と同じ形で解決する。0030 の `VisualOptions` に `tab_stop` を渡す形にしておくと移行が楽になる。
 - **ホイールのルーティング**: `on_scroll_wheel` は `active_pane` 固定。オーバーレイ表示中も背後のエディタが動き、`ui` / `list` ビューは無反応。`geometry::collect_pane_rects` と `window.bounds()` でポインタ下のペインを求め、オーバーレイが開いている間はスクロールを止める。
-- **フレーム毎コスト**: `PaneState::is_wrap` が毎回 `Value` を clone し、`Editor::line` が可視行ごとに `String` を確保し、`ui/pane.rs` の文字幅キャッシュが無上限。0005 Phase A と同時に整理する。
+- **フレーム毎コスト**: `PaneState::is_wrap` が毎回 `Value` を clone し、`Editor::line` が可視行ごとに `String` を確保し、`ui/pane.rs` の文字幅キャッシュが無上限。0030 Phase A と同時に整理する。
 
 ### 3.9 優先度 P2: 構造と整合性
 
@@ -270,7 +273,7 @@ rg -n '[ぁ-んァ-ヶ一-龠]' crates
 
 ## 7. 対象外
 
-- 状態機械・視覚行計算の整理（[`0005-logic-state-refactor.md`](./0005-logic-state-refactor.md)）
+- 状態機械・視覚行計算の整理（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)）
 - レジスタのワークスペース共有、未実装の編集キー
 - フローティングペイン、`session.json` によるウィンドウ位置の復元（保留中）
 - Phase 6 以降（バックエンドプラグイン、LSP、Webview）
@@ -283,4 +286,4 @@ rg -n '[ぁ-んァ-ヶ一-龠]' crates
 - [`../specs/plugin-system.md`](../specs/plugin-system.md): マニフェスト、`trusted.json`、承認
 - [`../specs/commands.md`](../specs/commands.md): Ex コマンドの一覧と実装状況
 - [`../development.md`](../development.md): 検証手順と CI の記述
-- [`./0005-logic-state-refactor.md`](./0005-logic-state-refactor.md): 純粋ロジック側の提案
+- [`./0030-logic-state-refactor.md`](./0030-logic-state-refactor.md): 純粋ロジック側の ADR

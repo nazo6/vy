@@ -3,6 +3,7 @@ id: "0012"
 title: "共有するホスト API の型と宣言は vy-host-api に置く"
 type: "adr"
 status: "superseded"
+category: "architecture"
 date: 2026-10-24
 supersedes: []
 superseded_by: "0025"

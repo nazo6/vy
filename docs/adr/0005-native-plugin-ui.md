@@ -2,7 +2,8 @@
 id: "0005"
 title: "プラグイン UI はネイティブのウィジェット木で作る"
 type: "adr"
-status: "accepted"
+status: "implemented"
+category: "architecture"
 date: 2026-10-22
 supersedes: []
 superseded_by: null
