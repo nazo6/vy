@@ -24,6 +24,7 @@ pub enum PaneKind {
     Ui,
     Webview,
     Terminal,
+    Overlay,
 }
 
 impl PaneKind {
@@ -34,6 +35,7 @@ impl PaneKind {
             Self::Ui => "ui",
             Self::Webview => "webview",
             Self::Terminal => "terminal",
+            Self::Overlay => "overlay",
         }
     }
 
@@ -43,6 +45,7 @@ impl PaneKind {
             "ui" => Some(Self::Ui),
             "webview" => Some(Self::Webview),
             "terminal" => Some(Self::Terminal),
+            "overlay" => Some(Self::Overlay),
             _ => None,
         }
     }
@@ -104,6 +107,16 @@ impl OverlayKind {
     /// Whether the surface locks keyboard focus while it is open.
     pub fn is_modal(self) -> bool {
         !matches!(self, Self::None | Self::Hover | Self::Menu | Self::Custom)
+    }
+
+    /// Default widget role reported by this surface (ADR 0034 §1).
+    pub fn default_ui_role(self) -> Option<UiRole> {
+        match self {
+            Self::Palette | Self::Picker | Self::Settings => Some(UiRole::List),
+            Self::Ex | Self::Prompt => Some(UiRole::TextInput),
+            Self::Approval => Some(UiRole::Button),
+            _ => None,
+        }
     }
 }
 
@@ -262,23 +275,35 @@ impl Default for KeyContext {
 }
 
 impl KeyContext {
+    /// Role of the focused widget, falling back to the surface's default role when modal.
+    pub fn effective_ui_role(&self) -> Option<UiRole> {
+        self.ui_role.or_else(|| self.overlay.default_ui_role())
+    }
+
     fn value(&self, name: &str) -> Option<Value> {
         match name {
-            "editorFocus" => Some(Value::Bool(self.editor_focus)),
+            "editorFocus" => Some(Value::Bool(
+                self.editor_focus
+                    && self.overlay == OverlayKind::None
+                    && self.pane_kind == PaneKind::Editor,
+            )),
             "mode" => Some(Value::Text(self.mode.name().to_string())),
             "normalMode" => Some(Value::Bool(self.mode == Mode::Normal)),
             "insertMode" => Some(Value::Bool(self.mode == Mode::Insert)),
             "selectMode" => Some(Value::Bool(self.mode.is_select())),
             "selectLineMode" => Some(Value::Bool(self.mode == Mode::SelectLine)),
             "selectBlockMode" => Some(Value::Bool(self.mode == Mode::SelectBlock)),
-            "hasSelection" => Some(Value::Bool(self.has_selection)),
+            "modal" => Some(Value::Bool(self.overlay.is_modal())),
+            "hasSelection" => Some(Value::Bool(
+                self.effective_ui_role().is_some_and(UiRole::has_selection),
+            )),
             "operatorPending" => Some(Value::Bool(self.operator_pending)),
             "textObjectPending" => Some(Value::Bool(self.text_object_pending)),
             "remote" => Some(Value::Bool(self.remote)),
             "paneKind" => Some(Value::Text(self.pane_kind.name().to_string())),
             "viewType" => Some(Value::Text(self.view_type.clone())),
             "uiRole" => self
-                .ui_role
+                .effective_ui_role()
                 .map(|role| Value::Text(role.name().to_string())),
             "uiFocus" => self.ui_focus.clone().map(Value::Text),
             "uiSelectionCount" => Some(Value::Number(self.ui_selection_count as f64)),
@@ -412,18 +437,26 @@ impl Keymap {
     /// Builds the keymap from `builtin/keymaps/default.json`.
     pub fn load_default(sequence_timeout: Duration) -> Result<Self, KeymapError> {
         let mut keymap = Self::new(sequence_timeout);
-        let specs: Vec<BindingSpec> =
+        let blocks: Vec<ContextBlockSpec> =
             serde_json::from_str(include_str!("../../../builtin/keymaps/default.json"))
                 .map_err(|error| KeymapError::DefaultKeymap(error.to_string()))?;
 
-        for spec in specs {
-            keymap.bind_with_args(
-                &spec.keys,
-                spec.command,
-                spec.when.as_deref(),
-                spec.args.unwrap_or(JsonValue::Null),
-                Owner::Builtin,
-            )?;
+        for block in blocks {
+            for (keys, target) in block.bindings {
+                let (command, args) = match target {
+                    BindingTarget::Command(cmd) => (cmd, JsonValue::Null),
+                    BindingTarget::Detailed { command, args } => {
+                        (command, args.unwrap_or(JsonValue::Null))
+                    }
+                };
+                keymap.bind_with_args(
+                    &keys,
+                    command,
+                    block.when.as_deref(),
+                    args,
+                    Owner::Builtin,
+                )?;
+            }
         }
         Ok(keymap)
     }
@@ -678,13 +711,21 @@ impl Keymap {
 }
 
 #[derive(Debug, Deserialize)]
-struct BindingSpec {
-    keys: String,
-    command: String,
+struct ContextBlockSpec {
     #[serde(default)]
     when: Option<String>,
-    #[serde(default)]
-    args: Option<JsonValue>,
+    bindings: indexmap::IndexMap<String, BindingTarget>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum BindingTarget {
+    Command(String),
+    Detailed {
+        command: String,
+        #[serde(default)]
+        args: Option<JsonValue>,
+    },
 }
 
 /// Why a binding could not be built.
@@ -1361,6 +1402,7 @@ mod tests {
             PaneKind::Ui,
             PaneKind::Webview,
             PaneKind::Terminal,
+            PaneKind::Overlay,
         ] {
             assert_eq!(PaneKind::parse(kind.name()), Some(kind));
         }
@@ -1383,6 +1425,510 @@ mod tests {
         assert!(OverlayKind::Palette.is_modal());
         assert!(!OverlayKind::Hover.is_modal());
         assert!(!OverlayKind::Custom.is_modal());
+    }
+
+    #[test]
+    fn semantic_predicates_and_orthogonal_context() {
+        // 1. Editor context
+        let editor = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(editor.value("editorFocus"), Some(Value::Bool(true)));
+        assert_eq!(editor.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(editor.value("hasSelection"), Some(Value::Bool(false)));
+
+        // 2. UI context with list
+        let ui_list = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(ui_list.value("editorFocus"), Some(Value::Bool(false)));
+        assert_eq!(ui_list.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(ui_list.value("hasSelection"), Some(Value::Bool(true)));
+        assert_eq!(ui_list.value("uiRole"), Some(Value::Text("list".into())));
+
+        // 3. UI context without widget focus (!uiRole)
+        let ui_no_role = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: None,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(ui_no_role.value("editorFocus"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("hasSelection"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("uiRole"), None);
+
+        // 4. Modal overlay contexts inherit default surface role and mask editor focus
+        for (overlay, expected_role, expected_has_selection) in [
+            (OverlayKind::Palette, "list", true),
+            (OverlayKind::Picker, "list", true),
+            (OverlayKind::Ex, "textInput", false),
+            (OverlayKind::Prompt, "textInput", false),
+            (OverlayKind::Approval, "button", false),
+            (OverlayKind::Settings, "list", true),
+        ] {
+            let modal_ctx = KeyContext {
+                mode: Mode::Insert,
+                pane_kind: PaneKind::Overlay,
+                overlay,
+                ..KeyContext::default()
+            };
+            assert_eq!(
+                modal_ctx.value("editorFocus"),
+                Some(Value::Bool(false)),
+                "modal {overlay:?} masks editor focus"
+            );
+            assert_eq!(
+                modal_ctx.value("modal"),
+                Some(Value::Bool(true)),
+                "modal {overlay:?}"
+            );
+            assert_eq!(
+                modal_ctx.value("hasSelection"),
+                Some(Value::Bool(expected_has_selection)),
+                "hasSelection for {overlay:?}"
+            );
+            assert_eq!(
+                modal_ctx.value("uiRole"),
+                Some(Value::Text(expected_role.into())),
+                "uiRole for {overlay:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reachable_contexts_key_dispatch_matrix() {
+        let mut keymap = keymap();
+
+        // Editor normal mode
+        let ed_normal = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &ed_normal)).0,
+            "vy.motion.down"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char(':'), &ed_normal)).0,
+            "vy.ui.ex_command_line"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char(' '), &ed_normal)).0,
+            "vy.ui.command_palette"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('i'), &ed_normal)).0,
+            "vy.mode.insert"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('a'), &ed_normal)).0,
+            "vy.mode.insert_after"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('d'), &ed_normal)).0,
+            "vy.operator.delete"
+        );
+
+        // Editor operator pending: motions still work, 'i' and 'a' become inner/around
+        let ed_op_pending = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            operator_pending: true,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('w'), &ed_op_pending)).0,
+            "vy.motion.word_forward"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('d'), &ed_op_pending)).0,
+            "vy.operator.delete"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('i'), &ed_op_pending)).0,
+            "vy.operator.inner"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('a'), &ed_op_pending)).0,
+            "vy.operator.around"
+        );
+
+        // Editor text-object pending: text object bindings apply, general motions excluded
+        let ed_to_pending = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            text_object_pending: true,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('w'), &ed_to_pending)).0,
+            "vy.text_object.word"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('p'), &ed_to_pending)).0,
+            "vy.text_object.paragraph"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('('), &ed_to_pending)).0,
+            "vy.text_object.paren"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('j'), &ed_to_pending),
+            KeymapOutcome::Ignored
+        );
+
+        // Editor insert mode: insert navigation/editing keys apply
+        let ed_insert = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Enter, &ed_insert)).0,
+            "vy.insert.newline"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Tab, &ed_insert)).0,
+            "vy.insert.tab"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Backspace, &ed_insert)).0,
+            "vy.insert.backspace"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Esc, &ed_insert)).0,
+            "vy.mode.normal"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('j'), &ed_insert),
+            KeymapOutcome::Ignored
+        );
+
+        // UI pane with List: shared UI motion and selection actions
+        let ui_list = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &ui_list)).0,
+            "vy.ui.next"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('k'), &ui_list)).0,
+            "vy.ui.prev"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Ctrl('d'), &ui_list)).0,
+            "vy.ui.page_down"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Ctrl('u'), &ui_list)).0,
+            "vy.ui.page_up"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Tab, &ui_list)).0,
+            "vy.ui.focus_next"
+        );
+        assert_eq!(
+            keymap.feed(Key::Char('l'), &ui_list),
+            KeymapOutcome::Ignored
+        );
+
+        // UI pane with Tree: expand and collapse
+        let ui_tree = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::Tree),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('l'), &ui_tree)).0,
+            "vy.ui.expand"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('h'), &ui_tree)).0,
+            "vy.ui.collapse"
+        );
+
+        // UI pane without focused widget: navigation still works, but not page_up/yank
+        let ui_unfocused = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: None,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &ui_unfocused)).0,
+            "vy.ui.next"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Tab, &ui_unfocused)).0,
+            "vy.ui.focus_next"
+        );
+        assert_eq!(
+            keymap.feed(Key::Ctrl('d'), &ui_unfocused),
+            KeymapOutcome::Ignored
+        );
+
+        // Modal Palette/Picker
+        let palette = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Overlay,
+            overlay: OverlayKind::Palette,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &palette)).0,
+            "vy.ui.next"
+        );
+        assert_eq!(command(keymap.feed(Key::Esc, &palette)).0, "vy.ui.cancel");
+        assert_eq!(
+            command(keymap.feed(Key::Backspace, &palette)).0,
+            "vy.ui.delete_char"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Ctrl('u'), &palette)).0,
+            "vy.ui.clear_input"
+        );
+        // Background keys are masked
+        assert_eq!(
+            keymap.feed(Key::Char(' '), &palette),
+            KeymapOutcome::Ignored
+        );
+
+        // Modal Ex line
+        let ex = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Overlay,
+            overlay: OverlayKind::Ex,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Up, &ex)).0, "vy.ui.history_prev");
+        assert_eq!(command(keymap.feed(Key::Down, &ex)).0, "vy.ui.history_next");
+        assert_eq!(command(keymap.feed(Key::Tab, &ex)).0, "vy.ui.complete_next");
+        assert_eq!(command(keymap.feed(Key::Enter, &ex)).0, "vy.ui.activate");
+        assert_eq!(command(keymap.feed(Key::Esc, &ex)).0, "vy.ui.cancel");
+        assert_eq!(keymap.feed(Key::Char('j'), &ex), KeymapOutcome::Ignored);
+    }
+
+    #[test]
+    fn semantic_predicates_and_orthogonal_context() {
+        // 1. Editor context
+        let editor = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(editor.value("editorFocus"), Some(Value::Bool(true)));
+        assert_eq!(editor.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(editor.value("hasSelection"), Some(Value::Bool(false)));
+
+        // 2. UI context with list
+        let ui_list = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(ui_list.value("editorFocus"), Some(Value::Bool(false)));
+        assert_eq!(ui_list.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(ui_list.value("hasSelection"), Some(Value::Bool(true)));
+        assert_eq!(ui_list.value("uiRole"), Some(Value::Text("list".into())));
+
+        // 3. UI context without widget focus (!uiRole)
+        let ui_no_role = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: None,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(ui_no_role.value("editorFocus"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("modal"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("hasSelection"), Some(Value::Bool(false)));
+        assert_eq!(ui_no_role.value("uiRole"), None);
+
+        // 4. Modal overlay contexts inherit default surface role and mask editor focus
+        for (overlay, expected_role, expected_has_selection) in [
+            (OverlayKind::Palette, "list", true),
+            (OverlayKind::Picker, "list", true),
+            (OverlayKind::Ex, "textInput", false),
+            (OverlayKind::Prompt, "textInput", false),
+            (OverlayKind::Approval, "button", false),
+            (OverlayKind::Settings, "list", true),
+        ] {
+            let modal_ctx = KeyContext {
+                mode: Mode::Insert,
+                pane_kind: PaneKind::Overlay,
+                overlay,
+                ..KeyContext::default()
+            };
+            assert_eq!(
+                modal_ctx.value("editorFocus"),
+                Some(Value::Bool(false)),
+                "modal {overlay:?} masks editor focus"
+            );
+            assert_eq!(
+                modal_ctx.value("modal"),
+                Some(Value::Bool(true)),
+                "modal {overlay:?}"
+            );
+            assert_eq!(
+                modal_ctx.value("hasSelection"),
+                Some(Value::Bool(expected_has_selection)),
+                "hasSelection for {overlay:?}"
+            );
+            assert_eq!(
+                modal_ctx.value("uiRole"),
+                Some(Value::Text(expected_role.into())),
+                "uiRole for {overlay:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reachable_contexts_key_dispatch_matrix() {
+        let mut keymap = keymap();
+
+        // Editor normal mode
+        let ed_normal = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('j'), &ed_normal)).0, "vy.motion.down");
+        assert_eq!(command(keymap.feed(Key::Char(':'), &ed_normal)).0, "vy.ui.ex_command_line");
+        assert_eq!(command(keymap.feed(Key::Char(' '), &ed_normal)).0, "vy.ui.command_palette");
+        assert_eq!(command(keymap.feed(Key::Char('i'), &ed_normal)).0, "vy.mode.insert");
+        assert_eq!(command(keymap.feed(Key::Char('a'), &ed_normal)).0, "vy.mode.insert_after");
+        assert_eq!(command(keymap.feed(Key::Char('d'), &ed_normal)).0, "vy.operator.delete");
+
+        // Editor operator pending: motions still work, 'i' and 'a' become inner/around
+        let ed_op_pending = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            operator_pending: true,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('w'), &ed_op_pending)).0, "vy.motion.word_forward");
+        assert_eq!(command(keymap.feed(Key::Char('d'), &ed_op_pending)).0, "vy.operator.delete");
+        assert_eq!(command(keymap.feed(Key::Char('i'), &ed_op_pending)).0, "vy.operator.inner");
+        assert_eq!(command(keymap.feed(Key::Char('a'), &ed_op_pending)).0, "vy.operator.around");
+
+        // Editor text-object pending: text object bindings apply, general motions excluded
+        let ed_to_pending = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            text_object_pending: true,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('w'), &ed_to_pending)).0, "vy.text_object.word");
+        assert_eq!(command(keymap.feed(Key::Char('p'), &ed_to_pending)).0, "vy.text_object.paragraph");
+        assert_eq!(command(keymap.feed(Key::Char('('), &ed_to_pending)).0, "vy.text_object.paren");
+        assert_eq!(keymap.feed(Key::Char('j'), &ed_to_pending), KeymapOutcome::Ignored);
+
+        // Editor insert mode: insert navigation/editing keys apply
+        let ed_insert = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Enter, &ed_insert)).0, "vy.insert.newline");
+        assert_eq!(command(keymap.feed(Key::Tab, &ed_insert)).0, "vy.insert.tab");
+        assert_eq!(command(keymap.feed(Key::Backspace, &ed_insert)).0, "vy.insert.backspace");
+        assert_eq!(command(keymap.feed(Key::Esc, &ed_insert)).0, "vy.mode.normal");
+        assert_eq!(keymap.feed(Key::Char('j'), &ed_insert), KeymapOutcome::Ignored);
+
+        // UI pane with List: shared UI motion and selection actions
+        let ui_list = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('j'), &ui_list)).0, "vy.ui.next");
+        assert_eq!(command(keymap.feed(Key::Char('k'), &ui_list)).0, "vy.ui.prev");
+        assert_eq!(command(keymap.feed(Key::Ctrl('d'), &ui_list)).0, "vy.ui.page_down");
+        assert_eq!(command(keymap.feed(Key::Ctrl('u'), &ui_list)).0, "vy.ui.page_up");
+        assert_eq!(command(keymap.feed(Key::Tab, &ui_list)).0, "vy.ui.focus_next");
+        assert_eq!(keymap.feed(Key::Char('l'), &ui_list), KeymapOutcome::Ignored);
+
+        // UI pane with Tree: expand and collapse
+        let ui_tree = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::Tree),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('l'), &ui_tree)).0, "vy.ui.expand");
+        assert_eq!(command(keymap.feed(Key::Char('h'), &ui_tree)).0, "vy.ui.collapse");
+
+        // UI pane without focused widget: navigation still works, but not page_up/yank
+        let ui_unfocused = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: None,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('j'), &ui_unfocused)).0, "vy.ui.next");
+        assert_eq!(command(keymap.feed(Key::Tab, &ui_unfocused)).0, "vy.ui.focus_next");
+        assert_eq!(keymap.feed(Key::Ctrl('d'), &ui_unfocused), KeymapOutcome::Ignored);
+
+        // Modal Palette/Picker
+        let palette = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Overlay,
+            overlay: OverlayKind::Palette,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Char('j'), &palette)).0, "vy.ui.next");
+        assert_eq!(command(keymap.feed(Key::Esc, &palette)).0, "vy.ui.cancel");
+        assert_eq!(command(keymap.feed(Key::Backspace, &palette)).0, "vy.ui.delete_char");
+        assert_eq!(command(keymap.feed(Key::Ctrl('u'), &palette)).0, "vy.ui.clear_input");
+        // Background keys are masked
+        assert_eq!(keymap.feed(Key::Char(' '), &palette), KeymapOutcome::Ignored);
+
+        // Modal Ex line
+        let ex = KeyContext {
+            mode: Mode::Insert,
+            pane_kind: PaneKind::Overlay,
+            overlay: OverlayKind::Ex,
+            ..KeyContext::default()
+        };
+        assert_eq!(command(keymap.feed(Key::Up, &ex)).0, "vy.ui.history_prev");
+        assert_eq!(command(keymap.feed(Key::Down, &ex)).0, "vy.ui.history_next");
+        assert_eq!(command(keymap.feed(Key::Tab, &ex)).0, "vy.ui.complete_next");
+        assert_eq!(command(keymap.feed(Key::Enter, &ex)).0, "vy.ui.activate");
+        assert_eq!(command(keymap.feed(Key::Esc, &ex)).0, "vy.ui.cancel");
+        assert_eq!(keymap.feed(Key::Char('j'), &ex), KeymapOutcome::Ignored);
     }
 }
 

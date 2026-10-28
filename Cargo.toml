@@ -37,6 +37,7 @@ ropey = "1"
 # Client
 async-channel = "2"
 dirs = "5"
+indexmap = { version = "2", features = ["serde"] }
 semver = "1"
 serde_json = "1"
 sha2 = "0.10"

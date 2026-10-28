@@ -37,6 +37,7 @@ use vy_app::state::{DocumentState, PaneState};
 use vy_app::statusline::Statusline;
 use vy_app::text_layout::scroll_lines;
 use vy_app::workspace::{document_uri, workspace_info_for};
+use vy_client_api::widget::UiRole;
 use vy_core::{LayoutNode, PaneId};
 use vy_js::RemoteEnv;
 
@@ -911,23 +912,46 @@ impl EditorView {
             .unwrap_or_default()
     }
 
-    /// Fills the host-owned keymap context values from the active pane.
+    /// Fills the host-owned keymap context values from the active pane or overlay.
     ///
-    /// The overlay and the focused widget live only in the client, so they are
-    /// read here rather than in the pane state (ADR 0024 §2, ADR 0032 §6).
+    /// When a modal surface is open, it owns keyboard focus exclusively (ADR 0024 §3,
+    /// ADR 0032 §5, ADR 0034 §1). The background pane is masked (`paneKind = 'overlay'`),
+    /// and the surface reports its own widget role.
     pub(super) fn apply_key_context(&self, context: &mut KeyContext) {
         let overlay = self.overlay_kind();
         context.overlay = overlay;
         context.surface_id = self.overlay_surface_id();
         context.remote = self.connection.is_remote();
-        match self.active_pane_state() {
-            Some(pane) => {
-                pane.apply_key_context(context);
-                context.editor_focus = pane.context_editor_focus(overlay);
+        if overlay.is_modal() {
+            context.editor_focus = false;
+            context.pane_kind = PaneKind::Overlay;
+            context.view_type.clear();
+            context.ui_focus = None;
+            context.ui_selection_count = 0;
+            context.ui_role = self.overlay_ui_role();
+        } else {
+            match self.active_pane_state() {
+                Some(pane) => {
+                    pane.apply_key_context(context);
+                    context.editor_focus = pane.context_editor_focus(overlay);
+                }
+                None => {
+                    context.editor_focus = overlay == OverlayKind::None;
+                }
             }
-            None => {
-                context.editor_focus = overlay == OverlayKind::None;
+        }
+    }
+
+    /// The widget role reported by the topmost modal surface.
+    pub(super) fn overlay_ui_role(&self) -> Option<UiRole> {
+        match self.overlay.as_ref() {
+            Some(Overlay::Palette(_)) => Some(UiRole::List),
+            Some(Overlay::Ex(_)) | Some(Overlay::Prompt(_)) | Some(Overlay::SettingPrompt(_)) => {
+                Some(UiRole::TextInput)
             }
+            Some(Overlay::Approval(_)) => Some(UiRole::Button),
+            Some(Overlay::Settings(_)) | Some(Overlay::SettingChoice(_)) => Some(UiRole::List),
+            None => None,
         }
     }
 

@@ -3,7 +3,7 @@ title: "キーマップ一覧と実装状況"
 type: "spec"
 status: "active"
 updated_at: 2026-10-26
-related_adrs: ["0016", "0022"]
+related_adrs: ["0016", "0022", "0034"]
 tags: ["keymap", "modal-editing", "helix"]
 ---
 

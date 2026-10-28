@@ -10,6 +10,7 @@ async-channel.workspace = true
 dirs.workspace = true
 gpui.workspace = true
 gpui-base.workspace = true
+indexmap.workspace = true
 rmp-serde.workspace = true
 rmpv.workspace = true
 semver.workspace = true

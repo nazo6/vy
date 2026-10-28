@@ -2,7 +2,7 @@
 id: "0034"
 title: "キーマップコンテキストの直交化とブロック構造への再構成"
 type: "adr"
-status: "proposed"
+status: "accepted"
 category: "maintenance"
 date: 2026-10-28
 tags: ["keymap", "refactor", "context", "when"]
@@ -13,10 +13,10 @@ related_adrs: ["0024", "0029", "0031", "0032"]
 
 # ADR 0034: キーマップコンテキストの直交化とブロック構造への再構成
 
-- 状態: 提案
+- 状態: 承認（実装完了）
 - 日付: 2026-10-28
 - カテゴリー: maintenance
-- 実装: 未着手（本ドキュメントの「実装計画」を参照）
+- 実装: 完了
 
 ## 文脈
 
@@ -139,7 +139,7 @@ ADR 0024 §3 および ADR 0032 §5 の基本原則「**キーボードのフォ
 
   // 4. エディタ基本操作（移動・編集・モード遷移）
   {
-    "when": "editorFocus && !insertMode && !operatorPending && !textObjectPending",
+    "when": "editorFocus && !insertMode && !textObjectPending",
     "bindings": {
       "h": "vy.motion.left",
       "left": "vy.motion.left",
@@ -169,9 +169,7 @@ ADR 0024 §3 および ADR 0032 §5 の基本原則「**キーボードのフォ
       "p": "vy.edit.paste_after",
       "P": "vy.edit.paste_before",
       ".": "vy.edit.repeat",
-      "i": "vy.mode.insert",
       "I": "vy.mode.insert_line_start",
-      "a": "vy.mode.insert_after",
       "A": "vy.mode.insert_line_end",
       "v": "vy.mode.select",
       "V": "vy.mode.select_line",
@@ -185,6 +183,15 @@ ADR 0024 §3 および ADR 0032 §5 の基本原則「**キーボードのフォ
       "z b": "vy.view.scroll_cursor_bottom",
       "z h": "vy.view.scroll_right",
       "z l": "vy.view.scroll_left",
+    },
+  },
+
+  // 4b. エディタ挿入遷移（オペレータ待機時は operator.inner/around と排他）
+  {
+    "when": "editorFocus && !insertMode && !operatorPending && !textObjectPending",
+    "bindings": {
+      "i": "vy.mode.insert",
+      "a": "vy.mode.insert_after",
     },
   },
 
@@ -308,6 +315,7 @@ ADR 0024 §3 および ADR 0032 §5 の基本原則「**キーボードのフォ
       "ctrl-n": "vy.ui.history_next",
       "tab": "vy.ui.complete_next",
       "backtab": "vy.ui.complete_prev",
+      "enter": "vy.ui.activate",
     },
   },
 ]

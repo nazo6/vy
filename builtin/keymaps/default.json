@@ -1,736 +1,190 @@
 [
   {
-    "keys": "space",
-    "command": "vy.ui.command_palette",
-    "when": "normalMode"
-  },
-  {
-    "keys": ":",
-    "command": "vy.ui.ex_command_line",
-    "when": "mode != 'insert' && overlay == 'none'"
-  },
-  {
-    "keys": "h",
-    "command": "vy.motion.left",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "left",
-    "command": "vy.motion.left",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "l",
-    "command": "vy.motion.right",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "right",
-    "command": "vy.motion.right",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "j",
-    "command": "vy.motion.down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "down",
-    "command": "vy.motion.down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "k",
-    "command": "vy.motion.up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "up",
-    "command": "vy.motion.up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "w",
-    "command": "vy.motion.word_forward",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "b",
-    "command": "vy.motion.word_backward",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "e",
-    "command": "vy.motion.word_end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "0",
-    "command": "vy.motion.line_start",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "home",
-    "command": "vy.motion.line_start",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "$",
-    "command": "vy.motion.line_end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "end",
-    "command": "vy.motion.line_end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g g",
-    "command": "vy.motion.document_start",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g j",
-    "command": "vy.motion.display_down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g down",
-    "command": "vy.motion.display_down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g k",
-    "command": "vy.motion.display_up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g up",
-    "command": "vy.motion.display_up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "g v",
-    "command": "vy.edit.last_visual",
-    "when": "paneKind == 'editor' && overlay == 'none' && (normalMode)"
-  },
-  {
-    "keys": "G",
-    "command": "vy.motion.document_end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "x",
-    "command": "vy.edit.delete",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "d",
-    "command": "vy.operator.delete",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "y",
-    "command": "vy.operator.yank",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "Y",
-    "command": "vy.edit.yank_line",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "p",
-    "command": "vy.edit.paste_after",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "P",
-    "command": "vy.edit.paste_before",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": ".",
-    "command": "vy.edit.repeat",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "i",
-    "command": "vy.mode.insert",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "I",
-    "command": "vy.mode.insert_line_start",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "a",
-    "command": "vy.mode.insert_after",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "A",
-    "command": "vy.mode.insert_line_end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "o",
-    "command": "vy.mode.open_below",
-    "when": "paneKind == 'editor' && overlay == 'none' && (normalMode)"
-  },
-  {
-    "keys": "O",
-    "command": "vy.mode.open_above",
-    "when": "paneKind == 'editor' && overlay == 'none' && (normalMode)"
-  },
-  {
-    "keys": "v",
-    "command": "vy.mode.select",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "V",
-    "command": "vy.mode.select_line",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "ctrl-v",
-    "command": "vy.mode.select_block",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "esc",
-    "command": "vy.mode.normal"
-  },
-  {
-    "keys": "u",
-    "command": "vy.history.undo",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "ctrl-r",
-    "command": "vy.history.redo",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "ctrl-d",
-    "command": "vy.view.scroll_half_page_down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "ctrl-u",
-    "command": "vy.view.scroll_half_page_up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "z z",
-    "command": "vy.view.center_cursor",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "z t",
-    "command": "vy.view.scroll_cursor_top",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "z b",
-    "command": "vy.view.scroll_cursor_bottom",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "z h",
-    "command": "vy.view.scroll_right",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "z l",
-    "command": "vy.view.scroll_left",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode != 'insert')"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.insert.newline",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "tab",
-    "command": "vy.insert.tab",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "backspace",
-    "command": "vy.insert.backspace",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "left",
-    "command": "vy.insert.left",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "right",
-    "command": "vy.insert.right",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "up",
-    "command": "vy.insert.up",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "down",
-    "command": "vy.insert.down",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "home",
-    "command": "vy.insert.home",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "end",
-    "command": "vy.insert.end",
-    "when": "paneKind == 'editor' && overlay == 'none' && (mode == 'insert')"
-  },
-  {
-    "keys": "i",
-    "command": "vy.operator.inner",
-    "when": "paneKind == 'editor' && overlay == 'none' && (operatorPending)"
-  },
-  {
-    "keys": "a",
-    "command": "vy.operator.around",
-    "when": "paneKind == 'editor' && overlay == 'none' && (operatorPending)"
-  },
-  {
-    "keys": "w",
-    "command": "vy.text_object.word",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "p",
-    "command": "vy.text_object.paragraph",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "(",
-    "command": "vy.text_object.paren",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": ")",
-    "command": "vy.text_object.paren",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "[",
-    "command": "vy.text_object.bracket",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "]",
-    "command": "vy.text_object.bracket",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "{",
-    "command": "vy.text_object.brace",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "}",
-    "command": "vy.text_object.brace",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "<",
-    "command": "vy.text_object.angle",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": ">",
-    "command": "vy.text_object.angle",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "\"",
-    "command": "vy.text_object.double_quote",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "'",
-    "command": "vy.text_object.single_quote",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "`",
-    "command": "vy.text_object.backtick",
-    "when": "paneKind == 'editor' && overlay == 'none' && (textObjectPending)"
-  },
-  {
-    "keys": "ctrl-w h",
-    "command": "vy.pane.focus_left",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w j",
-    "command": "vy.pane.focus_down",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w k",
-    "command": "vy.pane.focus_up",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w l",
-    "command": "vy.pane.focus_right",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w v",
-    "command": "vy.pane.split_right",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w s",
-    "command": "vy.pane.split_down",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w q",
-    "command": "vy.pane.close",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w w",
-    "command": "vy.pane.next",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w +",
-    "command": "vy.pane.increase_height",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w -",
-    "command": "vy.pane.decrease_height",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w >",
-    "command": "vy.pane.increase_width",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w <",
-    "command": "vy.pane.decrease_width",
-    "when": "normalMode"
-  },
-  {
-    "keys": "ctrl-w =",
-    "command": "vy.pane.equalize",
-    "when": "normalMode"
-  },
-  {
-    "keys": "j",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "down",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "ctrl-n",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "k",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "up",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "ctrl-p",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "ctrl-d",
-    "command": "vy.ui.page_down",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "ctrl-u",
-    "command": "vy.ui.page_up",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "g g",
-    "command": "vy.ui.first",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "G",
-    "command": "vy.ui.last",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "l",
-    "command": "vy.ui.expand",
-    "when": "overlay == 'none' && (uiRole == 'tree')"
-  },
-  {
-    "keys": "h",
-    "command": "vy.ui.collapse",
-    "when": "overlay == 'none' && (uiRole == 'tree')"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.ui.activate",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "x",
-    "command": "vy.ui.toggle",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "y",
-    "command": "vy.ui.yank",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table')"
-  },
-  {
-    "keys": "tab",
-    "command": "vy.ui.focus_next",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "backtab",
-    "command": "vy.ui.focus_prev",
-    "when": "overlay == 'none' && (uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "esc",
-    "command": "vy.ui.cancel",
-    "when": "overlay == 'palette' || overlay == 'picker' || overlay == 'ex' || overlay == 'prompt' || overlay == 'approval' || overlay == 'settings'"
-  },
-  {
-    "keys": "j",
-    "command": "vy.ui.next",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "down",
-    "command": "vy.ui.next",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "ctrl-n",
-    "command": "vy.ui.next",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "k",
-    "command": "vy.ui.prev",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "up",
-    "command": "vy.ui.prev",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "ctrl-p",
-    "command": "vy.ui.prev",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "ctrl-d",
-    "command": "vy.ui.page_down",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "ctrl-u",
-    "command": "vy.ui.page_up",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "g g",
-    "command": "vy.ui.first",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "G",
-    "command": "vy.ui.last",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.ui.activate",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.ui.activate",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "x",
-    "command": "vy.ui.toggle",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "y",
-    "command": "vy.ui.yank",
-    "when": "overlay != 'none' && overlay != 'ex'"
-  },
-  {
-    "keys": "up",
-    "command": "vy.ui.history_prev",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "ctrl-p",
-    "command": "vy.ui.history_prev",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "down",
-    "command": "vy.ui.history_next",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "ctrl-n",
-    "command": "vy.ui.history_next",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "tab",
-    "command": "vy.ui.complete_next",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "backtab",
-    "command": "vy.ui.complete_prev",
-    "when": "overlay == 'ex'"
-  },
-  {
-    "keys": "backspace",
-    "command": "vy.ui.delete_char",
-    "when": "overlay != 'none'"
-  },
-  {
-    "keys": "ctrl-u",
-    "command": "vy.ui.clear_input",
-    "when": "overlay != 'none'"
-  },
-  {
-    "keys": "j",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "down",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "ctrl-n",
-    "command": "vy.ui.next",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "k",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "up",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "ctrl-p",
-    "command": "vy.ui.prev",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "g g",
-    "command": "vy.ui.first",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "G",
-    "command": "vy.ui.last",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.ui.activate",
-    "when": "overlay == 'none' && uiRole == 'button'"
-  },
-  {
-    "keys": "j",
-    "command": "vy.ui.next",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "down",
-    "command": "vy.ui.next",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "ctrl-n",
-    "command": "vy.ui.next",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "k",
-    "command": "vy.ui.prev",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "up",
-    "command": "vy.ui.prev",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "ctrl-p",
-    "command": "vy.ui.prev",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "g g",
-    "command": "vy.ui.first",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "G",
-    "command": "vy.ui.last",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "enter",
-    "command": "vy.ui.activate",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "tab",
-    "command": "vy.ui.focus_next",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
-  },
-  {
-    "keys": "backtab",
-    "command": "vy.ui.focus_prev",
-    "when": "paneKind == 'ui' && overlay == 'none' && !(uiRole == 'list' || uiRole == 'tree' || uiRole == 'table' || uiRole == 'textInput' || uiRole == 'button')"
+    "bindings": {
+      "esc": "vy.mode.normal"
+    }
+  },
+  {
+    "when": "normalMode && !modal",
+    "bindings": {
+      "space": "vy.ui.command_palette",
+      "ctrl-w h": "vy.pane.focus_left",
+      "ctrl-w j": "vy.pane.focus_down",
+      "ctrl-w k": "vy.pane.focus_up",
+      "ctrl-w l": "vy.pane.focus_right",
+      "ctrl-w v": "vy.pane.split_right",
+      "ctrl-w s": "vy.pane.split_down",
+      "ctrl-w q": "vy.pane.close",
+      "ctrl-w w": "vy.pane.next",
+      "ctrl-w +": "vy.pane.increase_height",
+      "ctrl-w -": "vy.pane.decrease_height",
+      "ctrl-w >": "vy.pane.increase_width",
+      "ctrl-w <": "vy.pane.decrease_width",
+      "ctrl-w =": "vy.pane.equalize"
+    }
+  },
+  {
+    "when": "editorFocus && !insertMode",
+    "bindings": {
+      ":": "vy.ui.ex_command_line"
+    }
+  },
+  {
+    "when": "editorFocus && !insertMode && !textObjectPending",
+    "bindings": {
+      "h": "vy.motion.left",
+      "left": "vy.motion.left",
+      "l": "vy.motion.right",
+      "right": "vy.motion.right",
+      "j": "vy.motion.down",
+      "down": "vy.motion.down",
+      "k": "vy.motion.up",
+      "up": "vy.motion.up",
+      "w": "vy.motion.word_forward",
+      "b": "vy.motion.word_backward",
+      "e": "vy.motion.word_end",
+      "0": "vy.motion.line_start",
+      "home": "vy.motion.line_start",
+      "$": "vy.motion.line_end",
+      "end": "vy.motion.line_end",
+      "g g": "vy.motion.document_start",
+      "g j": "vy.motion.display_down",
+      "g down": "vy.motion.display_down",
+      "g k": "vy.motion.display_up",
+      "g up": "vy.motion.display_up",
+      "G": "vy.motion.document_end",
+      "x": "vy.edit.delete",
+      "d": "vy.operator.delete",
+      "y": "vy.operator.yank",
+      "Y": "vy.edit.yank_line",
+      "p": "vy.edit.paste_after",
+      "P": "vy.edit.paste_before",
+      ".": "vy.edit.repeat",
+      "I": "vy.mode.insert_line_start",
+      "A": "vy.mode.insert_line_end",
+      "v": "vy.mode.select",
+      "V": "vy.mode.select_line",
+      "ctrl-v": "vy.mode.select_block",
+      "u": "vy.history.undo",
+      "ctrl-r": "vy.history.redo",
+      "ctrl-d": "vy.view.scroll_half_page_down",
+      "ctrl-u": "vy.view.scroll_half_page_up",
+      "z z": "vy.view.center_cursor",
+      "z t": "vy.view.scroll_cursor_top",
+      "z b": "vy.view.scroll_cursor_bottom",
+      "z h": "vy.view.scroll_right",
+      "z l": "vy.view.scroll_left"
+    }
+  },
+  {
+    "when": "editorFocus && !insertMode && !operatorPending && !textObjectPending",
+    "bindings": {
+      "i": "vy.mode.insert",
+      "a": "vy.mode.insert_after"
+    }
+  },
+  {
+    "when": "editorFocus && normalMode && !operatorPending && !textObjectPending",
+    "bindings": {
+      "o": "vy.mode.open_below",
+      "O": "vy.mode.open_above",
+      "g v": "vy.edit.last_visual"
+    }
+  },
+  {
+    "when": "editorFocus && insertMode",
+    "bindings": {
+      "enter": "vy.insert.newline",
+      "tab": "vy.insert.tab",
+      "backspace": "vy.insert.backspace",
+      "left": "vy.insert.left",
+      "right": "vy.insert.right",
+      "up": "vy.insert.up",
+      "down": "vy.insert.down",
+      "home": "vy.insert.home",
+      "end": "vy.insert.end"
+    }
+  },
+  {
+    "when": "editorFocus && operatorPending",
+    "bindings": {
+      "i": "vy.operator.inner",
+      "a": "vy.operator.around"
+    }
+  },
+  {
+    "when": "editorFocus && textObjectPending",
+    "bindings": {
+      "w": "vy.text_object.word",
+      "p": "vy.text_object.paragraph",
+      "(": "vy.text_object.paren",
+      ")": "vy.text_object.paren",
+      "[": "vy.text_object.bracket",
+      "]": "vy.text_object.bracket",
+      "{": "vy.text_object.brace",
+      "}": "vy.text_object.brace",
+      "<": "vy.text_object.angle",
+      ">": "vy.text_object.angle",
+      "\"": "vy.text_object.double_quote",
+      "'": "vy.text_object.single_quote",
+      "`": "vy.text_object.backtick"
+    }
+  },
+  {
+    "when": "hasSelection || uiRole == 'button' || (paneKind == 'ui' && !uiRole)",
+    "bindings": {
+      "j": "vy.ui.next",
+      "down": "vy.ui.next",
+      "ctrl-n": "vy.ui.next",
+      "k": "vy.ui.prev",
+      "up": "vy.ui.prev",
+      "ctrl-p": "vy.ui.prev",
+      "g g": "vy.ui.first",
+      "G": "vy.ui.last",
+      "enter": "vy.ui.activate"
+    }
+  },
+  {
+    "when": "hasSelection",
+    "bindings": {
+      "ctrl-d": "vy.ui.page_down",
+      "ctrl-u": "vy.ui.page_up",
+      "x": "vy.ui.toggle",
+      "y": "vy.ui.yank"
+    }
+  },
+  {
+    "when": "uiRole == 'tree'",
+    "bindings": {
+      "l": "vy.ui.expand",
+      "h": "vy.ui.collapse"
+    }
+  },
+  {
+    "when": "paneKind == 'ui' && !modal",
+    "bindings": {
+      "tab": "vy.ui.focus_next",
+      "backtab": "vy.ui.focus_prev"
+    }
+  },
+  {
+    "when": "modal",
+    "bindings": {
+      "esc": "vy.ui.cancel",
+      "backspace": "vy.ui.delete_char",
+      "ctrl-u": "vy.ui.clear_input"
+    }
+  },
+  {
+    "when": "overlay == 'ex'",
+    "bindings": {
+      "up": "vy.ui.history_prev",
+      "ctrl-p": "vy.ui.history_prev",
+      "down": "vy.ui.history_next",
+      "ctrl-n": "vy.ui.history_next",
+      "tab": "vy.ui.complete_next",
+      "backtab": "vy.ui.complete_prev",
+      "enter": "vy.ui.activate"
+    }
   }
 ]
