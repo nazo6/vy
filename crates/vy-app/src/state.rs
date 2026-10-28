@@ -141,11 +141,26 @@ impl PaneState {
     }
 
     /// Drops focus when the tree no longer contains the focused widget.
+    ///
+    /// A UI pane that gains its first tree also gains focus: without a focused
+    /// widget `uiRole` is unset, so every `vy.ui.*` default key would miss and
+    /// the user would have to click before `j` did anything.
     pub fn normalize_focus(&mut self) {
         if self.focus_path.is_empty() {
+            self.focus_path = focus_path::first(self.widget_tree.as_ref());
             return;
         }
         self.focus_path = focus_path::normalize(self.widget_tree.as_ref(), &self.focus_path);
+    }
+
+    /// Focuses the first focusable widget when nothing has focus.
+    ///
+    /// Called after a tree update so a freshly opened panel is usable from the
+    /// keyboard straight away.
+    pub fn ensure_focus(&mut self) {
+        if self.focus_path.is_empty() {
+            self.focus_path = focus_path::first(self.widget_tree.as_ref());
+        }
     }
 
     /// Moves focus to the next or previous focusable widget, wrapping.
@@ -536,5 +551,49 @@ mod tests {
         // A key that changes nothing keeps it equal.
         let before = pane.ui_snapshot();
         assert_eq!(before, pane.ui_snapshot());
+    }
+
+    #[test]
+    fn a_first_tree_takes_focus_so_the_keys_work_without_a_click() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.panel".to_string();
+        assert!(pane.focus_path.is_empty());
+
+        // A UI pane with no tree has no role, so the movement keys would miss.
+        let mut context = KeyContext::default();
+        pane.apply_key_context(&mut context);
+        assert_eq!(context.ui_role, None);
+
+        pane.widget_tree = Some(panel_tree());
+        pane.normalize_list_states();
+        pane.ensure_focus();
+
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "run"]));
+        pane.apply_key_context(&mut context);
+        assert_eq!(context.ui_role, Some(UiRole::Button));
+        assert_eq!(context.ui_focus.as_deref(), Some("run"));
+
+        // A tree with nothing focusable leaves focus empty instead of guessing.
+        let mut empty = PaneState::new(2, Some(2));
+        empty.view_type = "example.empty".to_string();
+        empty.widget_tree = Some(WidgetNode::Container {
+            id: Some("panel".to_string()),
+            kind: crate::widget::ContainerKind::Column,
+            gap: None,
+            children: vec![],
+        });
+        empty.ensure_focus();
+        assert!(empty.focus_path.is_empty());
+    }
+
+    #[test]
+    fn ensure_focus_keeps_an_existing_focus() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.panel".to_string();
+        pane.widget_tree = Some(panel_tree());
+        pane.set_focus_path(FocusPath::from_ids(["panel", "query"]));
+
+        pane.ensure_focus();
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "query"]));
     }
 }

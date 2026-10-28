@@ -420,9 +420,11 @@ impl EditorView {
             // back the last one a script rendered for this view.
             pane.widget_tree = self.view_widget_trees.get(&info.view).cloned();
             pane.view_type = info.view;
-            // Restored panes start with no widget focus; `Tab` refocuses.
+            // Restored panes start with no widget focus; give them the first
+            // focusable widget so the keyboard works without a click.
             pane.normalize_focus();
             pane.normalize_list_states();
+            pane.ensure_focus();
             if let Some(document_id) = info.document_id {
                 if let std::collections::hash_map::Entry::Vacant(entry) =
                     documents.entry(document_id)

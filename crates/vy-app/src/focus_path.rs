@@ -158,6 +158,15 @@ pub fn normalize(root: Option<&WidgetNode>, path: &FocusPath) -> FocusPath {
     paths.first().cloned().unwrap_or_default()
 }
 
+/// The first focusable path in the tree, or an empty path when there is none.
+///
+/// Used when a pane gains a tree: a pane with no focus reports no `uiRole`, so
+/// every `vy.ui.*` default key would miss.
+pub fn first(root: Option<&WidgetNode>) -> FocusPath {
+    root.and_then(|root| focusable_paths(root).into_iter().next())
+        .unwrap_or_default()
+}
+
 /// The next (`forward`) or previous focusable path, wrapping at both ends.
 pub fn step(root: &WidgetNode, path: &FocusPath, forward: bool) -> FocusPath {
     let paths = focusable_paths(root);

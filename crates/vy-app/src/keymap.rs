@@ -1311,6 +1311,50 @@ mod tests {
     }
 
     #[test]
+    fn ui_pane_without_a_role_still_gets_the_movement_keys() {
+        let mut keymap = keymap();
+        // A UI pane whose tree has not arrived yet reports no `uiRole`.
+        let context = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            view_type: "example.tree".to_string(),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(context.value("uiRole"), None);
+
+        for (key, expected) in [
+            (Key::Char('j'), "vy.ui.next"),
+            (Key::Char('k'), "vy.ui.prev"),
+            (Key::Char('G'), "vy.ui.last"),
+            (Key::Tab, "vy.ui.focus_next"),
+            (Key::BackTab, "vy.ui.focus_prev"),
+        ] {
+            assert_eq!(
+                command(keymap.feed(key, &context)).0,
+                expected,
+                "key {key:?}"
+            );
+        }
+
+        // `g g` needs two keys.
+        assert_eq!(
+            keymap.feed(Key::Char('g'), &context),
+            KeymapOutcome::Pending
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('g'), &context)).0,
+            "vy.ui.first"
+        );
+
+        // An editor pane keeps its own keys.
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &normal())).0,
+            "vy.motion.down"
+        );
+    }
+
+    #[test]
     fn overlay_and_pane_kind_names_round_trip() {
         for kind in [
             PaneKind::Editor,

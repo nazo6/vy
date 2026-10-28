@@ -1938,13 +1938,16 @@ impl EditorView {
     }
 
     pub(super) fn open_view_pane(&mut self, view_id: &str, direction: &str) {
-        // If a pane with this view already exists, focus it
+        // If a pane with this view already exists, focus it and give its tree
+        // keyboard focus so `j` works without a click first.
         if let Some((pane_id, pane)) = self.panes.iter_mut().find(|(_, p)| p.view_type == view_id) {
             if pane.widget_tree.is_none() {
                 pane.widget_tree = self.view_widget_trees.get(view_id).cloned();
             }
+            pane.normalize_list_states();
+            pane.ensure_focus();
             let pid = *pane_id;
-            self.active_pane = Some(pid);
+            self.switch_active_pane(Some(pid));
             return;
         }
 

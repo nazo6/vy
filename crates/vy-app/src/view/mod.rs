@@ -487,6 +487,12 @@ impl EditorView {
         self.store_active_view();
         self.active_pane = pane;
         self.activate_active_view();
+        // Switching to a UI pane puts keyboard focus on its first widget, so
+        // `j` scrolls that panel instead of reaching the editor behind it.
+        if let Some(pane) = pane.and_then(|id| self.panes.get_mut(&id)) {
+            pane.normalize_list_states();
+            pane.ensure_focus();
+        }
     }
 
     fn clamp_views_for_document(&mut self, document_id: u64) {
@@ -963,12 +969,19 @@ impl EditorView {
     /// `Shift-Tab` resolve to `vy.ui.focus_next` / `vy.ui.focus_prev` in a UI
     /// pane, so this runs from the command rather than from `on_key_down`
     /// (ADR 0024 §3).
+    ///
+    /// A pane with no focus yet starts from the first focusable widget, so the
+    /// movement keys work without a click first.
     pub(super) fn step_widget_focus(&mut self, forward: bool) -> bool {
         let Some(pane) = self.active_pane_state_mut() else {
             return false;
         };
         if pane.widget_tree.is_none() {
             return false;
+        }
+        if pane.focus_path.is_empty() {
+            pane.ensure_focus();
+            return true;
         }
         pane.step_focus(forward);
         true

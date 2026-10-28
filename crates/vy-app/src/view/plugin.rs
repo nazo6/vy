@@ -555,6 +555,9 @@ impl EditorView {
                         pane.normalize_focus();
                         // Rows and widgets may have disappeared as well.
                         pane.normalize_list_states();
+                        // A first tree starts with focus on its first widget,
+                        // so the panel is keyboard-usable without a click.
+                        pane.ensure_focus();
                     }
                 }
                 self.view_widget_trees.insert(view_id, tree);
