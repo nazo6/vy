@@ -44,6 +44,8 @@ pub enum ButtonVariant {
 /// One row of a list or table.
 ///
 /// `text` is copied by `vy.ui.yank`; when it is absent the label is used.
+/// `command` runs when `vy.ui.activate` fires on the row, so a list can act as
+/// a menu without a button per entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
@@ -53,6 +55,8 @@ pub struct ListItem {
     pub description: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
 }
 
 impl ListItem {
@@ -62,6 +66,7 @@ impl ListItem {
             label: label.into(),
             description: None,
             text: None,
+            command: None,
         }
     }
 
@@ -72,6 +77,10 @@ impl ListItem {
 }
 
 /// One node of a tree widget.
+///
+/// `expanded` lets the plugin own expansion, which is what a lazily loaded
+/// directory needs: the host cannot fetch the children, so the plugin decides
+/// whether they are shown. When it is absent the host keeps expansion state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
@@ -79,6 +88,10 @@ pub struct TreeNode {
     pub label: String,
     #[serde(default)]
     pub text: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub expanded: Option<bool>,
     #[serde(default)]
     pub children: Vec<TreeNode>,
 }
@@ -89,6 +102,8 @@ impl TreeNode {
             id: id.into(),
             label: label.into(),
             text: None,
+            command: None,
+            expanded: None,
             children: Vec::new(),
         }
     }

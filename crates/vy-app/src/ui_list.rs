@@ -131,6 +131,8 @@ pub struct Row {
     pub description: Option<String>,
     /// Depth in a tree. Lists and tables always report zero.
     pub depth: usize,
+    /// Whether this tree row has children.
+    pub has_children: bool,
     /// Whether this tree row has children hidden by a collapse.
     pub collapsed: bool,
 }
@@ -142,6 +144,7 @@ impl Row {
             label: label.to_string(),
             description: description.map(str::to_string),
             depth: 0,
+            has_children: false,
             collapsed: false,
         }
     }
@@ -174,17 +177,22 @@ pub fn tree_rows(nodes: &[TreeNode]) -> Vec<Row> {
 }
 
 /// The rows a user can see: collapsed subtrees are skipped.
+///
+/// A node that sets `expanded` owns its own expansion, which is what a lazily
+/// loaded directory needs: the plugin decides whether children are shown, and
+/// the host only keeps state for nodes that leave it unset.
 pub fn visible_tree_rows(nodes: &[TreeNode], expanded: &BTreeSet<String>) -> Vec<Row> {
     fn walk(nodes: &[TreeNode], depth: usize, expanded: &BTreeSet<String>, rows: &mut Vec<Row>) {
         for node in nodes {
             let has_children = !node.children.is_empty();
-            let is_expanded = expanded.contains(&node.id);
+            let is_expanded = node.expanded.unwrap_or_else(|| expanded.contains(&node.id));
             let mut row = Row::new(&node.id, &node.label, None);
             row.depth = depth;
+            row.has_children = has_children;
             row.collapsed = has_children && !is_expanded;
             rows.push(row);
-            // A node without children may still be a collapsed leaf; only walk
-            // children when the node is expanded.
+            // Children are listed only when the node is expanded. A collapsed
+            // node hides them even if they are present in the data.
             if is_expanded {
                 walk(&node.children, depth + 1, expanded, rows);
             }
@@ -226,6 +234,54 @@ pub fn yank_text(node: &WidgetNode, id: &str) -> Option<String> {
                     }
                     if let Some(text) = find(&node.children, id) {
                         return Some(text);
+                    }
+                }
+                None
+            }
+            find(nodes, id)
+        }
+        _ => None,
+    }
+}
+
+/// Whether a tree row is open, reading the node's own flag when it has one.
+pub fn is_expanded(node: &WidgetNode, id: &str, state: &ListState) -> bool {
+    fn find(nodes: &[TreeNode], id: &str) -> Option<bool> {
+        for node in nodes {
+            if node.id == id {
+                return Some(node.expanded.unwrap_or(false));
+            }
+            if let Some(found) = find(&node.children, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    match node {
+        WidgetNode::Tree { nodes, .. } => find(nodes, id).unwrap_or_else(|| state.is_expanded(id)),
+        _ => state.is_expanded(id),
+    }
+}
+
+/// The command `vy.ui.activate` runs for `id`.
+///
+/// A row without a command is still selectable; activation then reports the id
+/// instead of running anything.
+pub fn command_for(node: &WidgetNode, id: &str) -> Option<String> {
+    match node {
+        WidgetNode::List { items, .. } | WidgetNode::Table { items, .. } => items
+            .iter()
+            .find(|item| item.id == id)
+            .and_then(|item| item.command.clone()),
+        WidgetNode::Tree { nodes, .. } => {
+            fn find(nodes: &[TreeNode], id: &str) -> Option<String> {
+                for node in nodes {
+                    if node.id == id {
+                        return node.command.clone();
+                    }
+                    if let Some(command) = find(&node.children, id) {
+                        return Some(command);
                     }
                 }
                 None
@@ -366,6 +422,7 @@ mod tests {
                     label: "Beta".to_string(),
                     description: None,
                     text: Some("beta-line".to_string()),
+                    command: None,
                 },
             ],
             multiple: false,

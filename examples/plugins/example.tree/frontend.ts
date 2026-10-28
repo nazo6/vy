@@ -1,4 +1,9 @@
-import type { DirEntry, WidgetNode, WorkspaceInfoReply } from "vy-api";
+import type {
+  DirEntry,
+  TreeNode,
+  WidgetNode,
+  WorkspaceInfoReply,
+} from "vy-api";
 
 declare global {
   namespace Vy {
@@ -43,29 +48,31 @@ async function loadDirectory(dirUri: string): Promise<void> {
   }
 }
 
-function renderTree(dirUri: string, depth = 0): WidgetNode[] {
+/**
+ * Builds the tree nodes for one directory.
+ *
+ * Directories carry the command that expands them and report `expanded`, so
+ * the host shows the children only after the plugin has fetched them. Files
+ * carry the command that opens them, so `Enter` on a row acts on the file.
+ */
+function buildNodes(dirUri: string): TreeNode[] {
   const entries = treeCache.get(dirUri) ?? [];
-  const nodes: WidgetNode[] = [];
+  const nodes: TreeNode[] = [];
 
   for (const entry of entries) {
-    const indent = "  ".repeat(depth);
     if (entry.is_directory) {
       const isExpanded = expandedDirs.has(entry.uri);
-      const icon = isExpanded ? "▾ 📁 " : "▸ 📁 ";
       nodes.push({
-        type: "button",
-        id: `dir_${entry.uri}`,
-        label: `${indent}${icon}${entry.name}`,
+        id: entry.uri,
+        label: `📁 ${entry.name}`,
         command: `example.tree.toggle_dir ${entry.uri}`,
+        expanded: isExpanded,
+        children: isExpanded ? buildNodes(entry.uri) : [],
       });
-      if (isExpanded) {
-        nodes.push(...renderTree(entry.uri, depth + 1));
-      }
     } else {
       nodes.push({
-        type: "button",
-        id: `file_${entry.uri}`,
-        label: `${indent}  📄 ${entry.name}`,
+        id: entry.uri,
+        label: `📄 ${entry.name}`,
         command: `vy.editor.open ${entry.uri}`,
       });
     }
@@ -93,27 +100,25 @@ function renderView(): WidgetNode {
     ],
   };
 
-  const items = renderTree(root);
-  const body: WidgetNode[] =
-    items.length > 0
-      ? items
-      : [
-          {
-            type: "text",
-            text: "  (Empty folder or loading...)",
-            color: "muted",
-          },
-        ];
+  const nodes = buildNodes(root);
+  const body: WidgetNode =
+    nodes.length > 0
+      ? {
+          type: "tree",
+          id: "example.tree.files",
+          nodes,
+        }
+      : {
+          type: "text",
+          text: "  (Empty folder or loading...)",
+          color: "muted",
+        };
 
   return {
     type: "container",
     kind: "column",
     gap: "sm",
-    children: [
-      header,
-      { type: "separator" },
-      { type: "container", kind: "column", children: body },
-    ],
+    children: [header, { type: "separator" }, body],
   };
 }
 

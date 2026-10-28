@@ -1578,17 +1578,31 @@ impl EditorView {
             return;
         }
 
+        // A focused button has no selection, so `activate` runs its command.
+        if args == UiAction::Activate
+            && let Some(command) = self.focused_button_command()
+        {
+            self.execute_command_string(&command);
+            return;
+        }
+
         // No widget handled the action: fall back to the role-agnostic cases.
         match args {
-            UiAction::FocusNext => {
+            UiAction::FocusNext | UiAction::Next => {
                 if !self.step_widget_focus(true) {
                     self.status = "there is no widget to focus".into();
                 }
             }
-            UiAction::FocusPrev => {
+            UiAction::FocusPrev | UiAction::Prev => {
                 if !self.step_widget_focus(false) {
                     self.status = "there is no widget to focus".into();
                 }
+            }
+            UiAction::First => {
+                self.focus_edge_widget(true);
+            }
+            UiAction::Last => {
+                self.focus_edge_widget(false);
             }
             UiAction::Cancel => {
                 let mode = self.editor().mode();
@@ -1715,7 +1729,25 @@ impl EditorView {
             ui_action::apply_to_widget(&widget, state, action_name, count, page.max(1))
         };
 
-        matches!(outcome, UiActionOutcome::Handled)
+        match outcome {
+            UiActionOutcome::Handled => true,
+            // The row owns an action; run it now so the plugin can re-render.
+            UiActionOutcome::RunCommand(command) => {
+                self.execute_command_string(&command);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The command of the focused `button`, when a button has focus.
+    fn focused_button_command(&self) -> Option<String> {
+        let pane = self.active_pane_state()?;
+        let widget = pane.focused_widget()?;
+        match widget {
+            vy_app::widget::WidgetNode::Button { command, .. } => Some(command.clone()),
+            _ => None,
+        }
     }
 
     /// Builds the arguments a plugin command receives for one action.
@@ -1754,10 +1786,10 @@ impl EditorView {
         }
     }
 
-    /// `vy.ui.activate`: run the row's command, or the view's action mapping.
+    /// `vy.ui.activate`: run the cursor row's command.
     ///
-    /// Lists and trees carry no per-row command yet, so the host reports that
-    /// nothing happened instead of guessing.
+    /// A row without a command is still selectable; activation then reports the
+    /// id instead of running anything, so a read-only list stays usable.
     fn activate_focused_entry(
         &mut self,
         widget_id: &str,
@@ -1772,8 +1804,11 @@ impl EditorView {
         let Some(selected) = selected else {
             return;
         };
-        let _ = widget;
-        self.status = format!("{action_name}: {selected}").into();
+
+        match vy_app::ui_list::command_for(widget, &selected) {
+            Some(command) => self.execute_command_string(&command),
+            None => self.status = format!("{action_name}: {selected}").into(),
+        }
     }
 
     /// Applies an action to the open surface. Returns whether it was handled.

@@ -632,5 +632,50 @@
     "keys": "ctrl-u",
     "command": "vy.ui.clear_input",
     "when": "overlay != 'none'"
+  },
+  {
+    "keys": "j",
+    "command": "vy.ui.next",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "down",
+    "command": "vy.ui.next",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "ctrl-n",
+    "command": "vy.ui.next",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "k",
+    "command": "vy.ui.prev",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "up",
+    "command": "vy.ui.prev",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "ctrl-p",
+    "command": "vy.ui.prev",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "g g",
+    "command": "vy.ui.first",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "G",
+    "command": "vy.ui.last",
+    "when": "overlay == 'none' && uiRole == 'button'"
+  },
+  {
+    "keys": "enter",
+    "command": "vy.ui.activate",
+    "when": "overlay == 'none' && uiRole == 'button'"
   }
 ]

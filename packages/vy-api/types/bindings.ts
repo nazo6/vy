@@ -353,12 +353,15 @@ export type KeymapUnbindParams = {
  *  One row of a list or table.
  * 
  *  `text` is copied by `vy.ui.yank`; when it is absent the label is used.
+ *  `command` runs when `vy.ui.activate` fires on the row, so a list can act as
+ *  a menu without a button per entry.
  */
 export type ListItem = {
 	id: string,
 	label: string,
 	description?: string | null,
 	text?: string | null,
+	command?: string | null,
 };
 
 /**  Severity of a log line or notification. */
@@ -575,11 +578,19 @@ export type TextEdit = {
  */
 export type ThemeColor = "default" | "muted" | "subtle" | "accent" | "prompt" | "primary" | "info" | "success" | "warning" | "danger" | "error" | "secondary";
 
-/**  One node of a tree widget. */
+/**
+ *  One node of a tree widget.
+ * 
+ *  `expanded` lets the plugin own expansion, which is what a lazily loaded
+ *  directory needs: the host cannot fetch the children, so the plugin decides
+ *  whether they are shown. When it is absent the host keeps expansion state.
+ */
 export type TreeNode = {
 	id: string,
 	label: string,
 	text?: string | null,
+	command?: string | null,
+	expanded?: boolean | null,
 	children?: TreeNode[],
 };
 

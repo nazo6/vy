@@ -249,12 +249,8 @@ fn render_node(
                 if row.depth > 0 {
                     line = line.pl(px(12.0) * row.depth as f32);
                 }
-                if row.collapsed {
-                    line = line.child("▸");
-                } else if node.focus_role() == Some(UiRole::Tree) && !row.collapsed {
-                    // A tree row that is not collapsed may still be a leaf; the
-                    // marker is only cosmetic.
-                    line = line.child("▾");
+                if node.focus_role() == Some(UiRole::Tree) && row.has_children {
+                    line = line.child(if row.collapsed { "▸" } else { "▾" });
                 }
 
                 line = line.child(row.label);

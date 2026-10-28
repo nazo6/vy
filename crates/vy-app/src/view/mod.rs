@@ -114,6 +114,17 @@ fn classify_overlay_keystroke(
     OverlayTarget::Key
 }
 
+/// Widget focus and list selection of one pane.
+///
+/// Comparing this before and after a key press is what tells the view that a
+/// `vy.ui.*` command changed something worth drawing. Without it, `Tab` moved
+/// focus but the frame was not requested, so the ring appeared on the next
+/// cursor blink instead.
+type PaneUiSnapshot = (
+    vy_app::focus_path::FocusPath,
+    std::collections::BTreeMap<String, vy_app::ui_list::ListState>,
+);
+
 /// Active drag operation resizing a split.
 #[derive(Debug, Clone)]
 pub(super) struct SplitDragState {
@@ -836,6 +847,9 @@ impl EditorView {
         let before_scroll = self.active_pane_state().map(scroll_position);
         let before_version = self.editor().version();
         let before_overlay = self.overlay.is_some();
+        // Widget focus and list state live outside the editor, so a command that
+        // only moves focus (`Tab`) or the cursor of a list must still repaint.
+        let before_ui = self.active_pane_ui_snapshot();
 
         let selection = self.editor().selection();
         let mut context = KeyContext {
@@ -878,6 +892,17 @@ impl EditorView {
             || before_scroll != self.active_pane_state().map(scroll_position)
             || before_version != self.editor().version()
             || before_overlay != self.overlay.is_some()
+            || before_ui != self.active_pane_ui_snapshot()
+    }
+
+    /// The widget focus and list state of the active pane, for change detection.
+    ///
+    /// Cloned on every key press. The maps hold one entry per list-like widget
+    /// and a short id path per pane, so the copy is small next to a frame.
+    fn active_pane_ui_snapshot(&self) -> PaneUiSnapshot {
+        self.active_pane_state()
+            .map(PaneState::ui_snapshot)
+            .unwrap_or_default()
     }
 
     /// Fills the host-owned keymap context values from the active pane.
@@ -960,6 +985,26 @@ impl EditorView {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.set_focus_path(path.clone());
         }
+    }
+
+    /// Focuses the first or last focusable widget of the active pane.
+    ///
+    /// Used by `g g` and `G` when the focused widget is not a list: a panel
+    /// built from buttons still needs a way to jump to either end.
+    pub(super) fn focus_edge_widget(&mut self, first: bool) -> bool {
+        let Some(pane) = self.active_pane_state_mut() else {
+            return false;
+        };
+        let Some(tree) = pane.widget_tree.as_ref() else {
+            return false;
+        };
+        let paths = vy_app::focus_path::focusable_paths(tree);
+        let Some(path) = (if first { paths.first() } else { paths.last() }) else {
+            return false;
+        };
+        let path = path.clone();
+        pane.set_focus_path(path);
+        true
     }
 
     /// The focused widget of the active pane, for `ui.focused` (ADR 0024 §5).

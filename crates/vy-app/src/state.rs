@@ -217,6 +217,14 @@ impl PaneState {
         Some((self.focus_path.focused()?, widget))
     }
 
+    /// Widget focus and list selection, for change detection.
+    ///
+    /// The view compares this before and after a key press so a command that
+    /// only moves focus or a list cursor still requests a frame.
+    pub fn ui_snapshot(&self) -> (FocusPath, BTreeMap<String, ListState>) {
+        (self.focus_path.clone(), self.list_states.clone())
+    }
+
     /// Keeps every list state in step with a freshly rendered tree.
     ///
     /// Rows that disappeared are dropped, and a widget that left the tree
@@ -504,5 +512,29 @@ mod tests {
         pane.normalize_list_states();
         assert!(pane.list_state("results").is_none());
         assert!(pane.list_states.is_empty());
+    }
+
+    #[test]
+    fn a_snapshot_changes_when_focus_or_a_list_cursor_moves() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.panel".to_string();
+        pane.widget_tree = Some(panel_tree());
+        pane.normalize_list_states();
+
+        // Moving focus alone changes the snapshot, which is what makes the
+        // view repaint for `Tab` instead of waiting for the next cursor blink.
+        let before = pane.ui_snapshot();
+        pane.step_focus(true);
+        let after = pane.ui_snapshot();
+        assert_ne!(before, after);
+
+        // Moving a list cursor alone changes it too.
+        let before = pane.ui_snapshot();
+        pane.list_state_mut("results").select_single("b");
+        assert_ne!(before, pane.ui_snapshot());
+
+        // A key that changes nothing keeps it equal.
+        let before = pane.ui_snapshot();
+        assert_eq!(before, pane.ui_snapshot());
     }
 }

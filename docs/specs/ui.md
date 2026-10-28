@@ -251,14 +251,15 @@ vy.views.register("example.greeting.view", {
 - 一覧、ツリー、表のカーソル、マーク、展開はホストが持つ `ListState` に保存します。木を作り直しても、行が残っている限り状態は引き継ぎます。行が消えたら、その行の状態だけを捨てます。
 - ツリーは既定ですべて折りたたみます。`l`（`vy.ui.expand`）、`h`（`vy.ui.collapse`）、`x`（`vy.ui.toggle`）で展開を変えます。
 - 表の列見出しはホストが描きます。セルの値は `label` に入れます。
-- 行にコマンドを持たせる仕組み（`items[].command`）はまだありません。`vy.ui.activate` はカーソル行の `id` を状態として出すだけで、コマンドは実行しません。
+- 行に `command` を付けると、`vy.ui.activate`（`Enter`）がそれを実行します。ツリーでは `x`、`l`、`h` もそのコマンドを実行します。子の読み込みはプラグインにしかできないためです。
+- ツリーの行に `expanded` を付けると、展開の状態をプラグインが持ちます。`expanded` が無いノードはホストが `ListState` で覚えます。
 
 ```typescript
 vy.ui.list({
   id: "results",
   multiple: true,
   items: [
-    { id: "a", label: "Alpha" },
+    { id: "a", label: "Alpha", command: "example.open a" },
     { id: "b", label: "Beta" },
   ],
 });
@@ -266,11 +267,21 @@ vy.ui.list({
 vy.ui.tree({
   id: "files",
   nodes: [
-    { id: "src", label: "src", children: [{ id: "main", label: "main.ts" }] },
-    { id: "readme", label: "README.md" },
+    {
+      id: "src",
+      label: "src",
+      command: "example.tree.toggle_dir src",
+      expanded: true,
+      children: [
+        { id: "main", label: "main.ts", command: "vy.editor.open main.ts" },
+      ],
+    },
+    { id: "readme", label: "README.md", command: "vy.editor.open README.md" },
   ],
 });
 ```
+
+一覧をボタンの羅列で組むと `uiRole` が `button` になり、選択の概念がないため `j`/`k` の既定キーが一致しません。行を選ぶ UI には `list` か `tree` を使ってください。ボタンだけのパネルでは、`j`/`k`/`g g`/`G` がフォーカス移動として働きます。
 
 ### 3.2 見た目
 

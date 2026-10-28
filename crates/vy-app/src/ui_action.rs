@@ -42,6 +42,8 @@ pub enum UiActionOutcome {
     Focus { forward: bool },
     /// The action asked to leave insert mode.
     LeaveInsert,
+    /// The row's command should run. The view owns command execution.
+    RunCommand(String),
     /// The action was not handled, so the caller falls through to `Esc` layers.
     Unhandled,
 }
@@ -106,6 +108,12 @@ pub fn apply_to_widget(
             let Some(cursor) = state.cursor().map(str::to_string) else {
                 return UiActionOutcome::None;
             };
+            // A row command owns the meaning of toggling. That is how a file
+            // explorer expands a directory: the plugin fetches the children and
+            // renders a new tree, so the host cannot guess.
+            if let Some(command) = ui_list::command_for(node, &cursor) {
+                return UiActionOutcome::RunCommand(command);
+            }
             if role == Some(UiRole::Tree) {
                 state.toggle_expanded(cursor);
             } else if node.multiple() {
@@ -119,12 +127,30 @@ pub fn apply_to_widget(
             let Some(cursor) = state.cursor().map(str::to_string) else {
                 return UiActionOutcome::None;
             };
+            let expands = action == "expand";
+            // A row command owns expansion for the same reason as `toggle`:
+            // only the plugin can load the children.
+            if let Some(command) = ui_list::command_for(node, &cursor) {
+                if role != Some(UiRole::Tree) {
+                    return if expands {
+                        UiActionOutcome::RunCommand(command)
+                    } else {
+                        UiActionOutcome::Unhandled
+                    };
+                }
+                // A tree row reports whether it is open through its own data, so
+                // repeating `l` on an open row does nothing.
+                let is_open = ui_list::is_expanded(node, &cursor, state);
+                if is_open != expands {
+                    return UiActionOutcome::RunCommand(command);
+                }
+                return UiActionOutcome::None;
+            }
             if role != Some(UiRole::Tree) {
                 return UiActionOutcome::Unhandled;
             }
             let expanded = state.is_expanded(&cursor);
-            let want_expanded = action == "expand";
-            if expanded == want_expanded {
+            if expanded == expands {
                 return UiActionOutcome::None;
             }
             state.toggle_expanded(cursor);
@@ -368,6 +394,104 @@ mod tests {
         state.reset();
         state.select_single("d");
         assert_eq!(yank_text(&node, &state).as_deref(), Some("Delta"));
+    }
+
+    #[test]
+    fn a_row_command_owns_toggle_and_expand() {
+        let node = WidgetNode::List {
+            id: "results".to_string(),
+            items: vec![
+                ListItem {
+                    id: "open".to_string(),
+                    label: "Open".to_string(),
+                    description: None,
+                    text: None,
+                    command: Some("example.open".to_string()),
+                },
+                ListItem::new("plain", "Plain"),
+            ],
+            multiple: false,
+        };
+        let mut state = ListState::new();
+        state.normalize(&ui_list::all_ids(&node));
+        state.select_single("open");
+
+        // The row command runs instead of the host marking the row.
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "toggle", None, 10),
+            UiActionOutcome::RunCommand("example.open".to_string())
+        );
+
+        // A row without a command still toggles through the host.
+        state.select_single("plain");
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "toggle", None, 10),
+            UiActionOutcome::Handled
+        );
+    }
+
+    #[test]
+    fn a_tree_row_command_runs_on_expand_and_collapse() {
+        let node = WidgetNode::Tree {
+            id: "files".to_string(),
+            nodes: vec![crate::widget::TreeNode {
+                id: "src".to_string(),
+                label: "src".to_string(),
+                text: None,
+                command: Some("example.tree.toggle_dir".to_string()),
+                expanded: Some(false),
+                children: vec![],
+            }],
+            multiple: false,
+        };
+        let mut state = ListState::new();
+        state.normalize(&ui_list::all_ids(&node));
+
+        // `l` asks the plugin to expand.
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "expand", None, 10),
+            UiActionOutcome::RunCommand("example.tree.toggle_dir".to_string())
+        );
+
+        // `x` delegates too, because the plugin owns the children.
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "toggle", None, 10),
+            UiActionOutcome::RunCommand("example.tree.toggle_dir".to_string())
+        );
+
+        // The row is closed, so `h` has nothing to close.
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "collapse", None, 10),
+            UiActionOutcome::None
+        );
+    }
+
+    #[test]
+    fn an_open_tree_row_runs_its_command_on_collapse() {
+        let node = WidgetNode::Tree {
+            id: "files".to_string(),
+            nodes: vec![crate::widget::TreeNode {
+                id: "src".to_string(),
+                label: "src".to_string(),
+                text: None,
+                command: Some("example.tree.toggle_dir".to_string()),
+                expanded: Some(true),
+                children: vec![],
+            }],
+            multiple: false,
+        };
+        let mut state = ListState::new();
+        state.normalize(&ui_list::all_ids(&node));
+
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "collapse", None, 10),
+            UiActionOutcome::RunCommand("example.tree.toggle_dir".to_string())
+        );
+        // `l` on an open row does nothing.
+        assert_eq!(
+            apply_to_widget(&node, &mut state, "expand", None, 10),
+            UiActionOutcome::None
+        );
     }
 
     #[test]
