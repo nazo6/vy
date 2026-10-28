@@ -18,7 +18,7 @@ impl Paths {
     /// Reads the roots from the environment, with the platform defaults as fallback.
     pub fn from_env() -> Self {
         Self {
-            config: env_path("VY_CONFIG_HOME", || dirs::config_dir().map(app_dir)),
+            config: env_path("VY_CONFIG_HOME", || config_base().map(app_dir)),
             data: env_path("VY_DATA_HOME", || dirs::data_dir().map(app_dir)),
             cache: env_path("VY_CACHE_HOME", || dirs::cache_dir().map(app_cache_dir)),
         }
@@ -86,6 +86,27 @@ fn env_path(variable: &str, fallback: impl FnOnce() -> Option<PathBuf>) -> PathB
     fallback().unwrap_or_else(|| PathBuf::from(".vy"))
 }
 
+/// Base directory that holds the `vy` configuration directory.
+///
+/// macOS keeps application data under `~/Library/Application Support`, but Vy follows the
+/// convention of other terminal editors: user-editable files live in `~/.config/vy` on every
+/// Unix-like system and in `%APPDATA%\vy` on Windows ([ADR 0033]). `XDG_CONFIG_HOME` still
+/// overrides the default. Data and cache keep the platform defaults, so they stay separate
+/// from the files a user edits.
+///
+/// [ADR 0033]: ../../../docs/adr/0033-config-directory.md
+fn config_base() -> Option<PathBuf> {
+    if cfg!(unix) {
+        if let Some(base) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+            return Some(PathBuf::from(base));
+        }
+        if cfg!(target_os = "macos") {
+            return dirs::home_dir().map(|home| home.join(".config"));
+        }
+    }
+    dirs::config_dir()
+}
+
 /// Name of the directory included in the platform roots.
 const APP_DIR: &str = "vy";
 
@@ -137,6 +158,20 @@ mod tests {
             assert_eq!(cache, PathBuf::from("/base/vy/cache"));
         } else {
             assert_eq!(cache, PathBuf::from("/base/vy"));
+        }
+    }
+
+    #[test]
+    fn config_base_follows_the_platform_convention() {
+        let Some(base) = config_base() else {
+            return;
+        };
+        let config = app_dir(base);
+        if cfg!(target_os = "macos") {
+            let expected = dirs::home_dir().map(|home| home.join(".config").join(APP_DIR));
+            assert_eq!(Some(config), expected);
+        } else {
+            assert!(config.ends_with(APP_DIR));
         }
     }
 }

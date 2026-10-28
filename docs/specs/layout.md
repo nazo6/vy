@@ -61,13 +61,20 @@ Vy
 （[ADR 0010](../adr/0010-remote-connection.md)）。接続先の `vy-server`
 は導入済みのものを使い、自動では転送しません。
 
-OS ごとの既定の場所は次のとおりです。
+OS ごとの既定の場所は次のとおりです。設定はターミナルエディタの慣習に合わせて
+すべての Unix 系 OS で `~/.config/vy` に統一します
+（[ADR 0033](../adr/0033-config-directory.md)）。データとキャッシュはプラットフォーム
+既定の場所を使い、利用者が編集する設定と同じ階層には置きません。
 
-| OS      | 設定                               | キャッシュ                | データ                             |
-| :------ | :--------------------------------- | :------------------------ | :--------------------------------- |
-| Linux   | `~/.config/vy`                     | `~/.cache/vy`             | `~/.local/share/vy`                |
-| macOS   | `~/Library/Application Support/vy` | `~/Library/Caches/vy`     | `~/Library/Application Support/vy` |
-| Windows | `%APPDATA%\vy`                     | `%LOCALAPPDATA%\vy\cache` | `%APPDATA%\vy`                     |
+| OS      | 設定           | キャッシュ                | データ                             |
+| :------ | :------------- | :------------------------ | :--------------------------------- |
+| Linux   | `~/.config/vy` | `~/.cache/vy`             | `~/.local/share/vy`                |
+| macOS   | `~/.config/vy` | `~/Library/Caches/vy`     | `~/Library/Application Support/vy` |
+| Windows | `%APPDATA%\vy` | `%LOCALAPPDATA%\vy\cache` | `%APPDATA%\vy`                     |
+
+設定の場所は `VY_CONFIG_HOME`、データは `VY_DATA_HOME`、キャッシュは
+`VY_CACHE_HOME` で上書きできます。Unix 系では `XDG_CONFIG_HOME` が設定されていれば
+そちらを優先します。
 
 ## 2. キャッシュとデータ
 

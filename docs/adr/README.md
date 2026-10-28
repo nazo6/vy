@@ -126,6 +126,7 @@ related_adrs: [] # 任意: 関連するADR番号
 | [0022](./0022-command-surfaces.md)                   | コマンドの入口と設定の分離                                           | implemented | コマンド面と設定状態の分離                                          |
 | [0025](./0025-plugin-api-declaration-and-codegen.md) | プラグイン API の宣言・型・生成を名前空間 trait と Specta に集約する | implemented | Specta 型生成と trait 一本化（0007-0009, 0012-0016, 0023 を集約）   |
 | [0032](./0032-floating-surfaces.md)                  | 浮遊 UI をサーフェスとフローティングペインの 2 層に分ける            | proposed    | 任意矩形のサーフェス、z 順、picker のプレビュー、浮遊 UI のキー経路 |
+| [0033](./0033-config-directory.md)                   | 設定ディレクトリはすべての OS で `~/.config/vy` に統一する           | accepted    | macOS でも `~/.config/vy`、data/cache はプラットフォーム既定        |
 
 ### 3. 機能・UX (`feature`)
 
