@@ -78,7 +78,7 @@ mod tests {
     fn ui_namespaces_are_grouped() {
         // The `ui` namespace now holds `ui.focused`, so it is no longer empty.
         assert_eq!(namespaces::ui::METHODS.len(), 1);
-        assert_eq!(namespaces::views::METHODS.len(), 4);
+        assert_eq!(namespaces::views::METHODS.len(), 5);
         assert_eq!(namespaces::ui_statusline::METHODS.len(), 3);
         assert_eq!(namespaces::ui_picker::METHODS.len(), 1);
     }
@@ -475,6 +475,13 @@ mod tests {
     }
 
     impl namespaces::views::ViewsApi for TestHost {
+        fn register(
+            &mut self,
+            _params: namespaces::views::ViewsRegisterParams,
+        ) -> Result<Reply<()>, CallError> {
+            Ok(Reply::Value(()))
+        }
+
         fn open(
             &mut self,
             _params: namespaces::views::ViewOpenParams,

@@ -349,6 +349,18 @@ export type KeymapUnbindParams = {
 	keys: string,
 };
 
+/**
+ *  One row of a list or table.
+ * 
+ *  `text` is copied by `vy.ui.yank`; when it is absent the label is used.
+ */
+export type ListItem = {
+	id: string,
+	label: string,
+	description?: string | null,
+	text?: string | null,
+};
+
 /**  Severity of a log line or notification. */
 export type LogLevel = "info" | "warn" | "error";
 
@@ -563,6 +575,14 @@ export type TextEdit = {
  */
 export type ThemeColor = "default" | "muted" | "subtle" | "accent" | "prompt" | "primary" | "info" | "success" | "warning" | "danger" | "error" | "secondary";
 
+/**  One node of a tree widget. */
+export type TreeNode = {
+	id: string,
+	label: string,
+	text?: string | null,
+	children?: TreeNode[],
+};
+
 /**
  *  The focused widget, as `ui.focused` reports it.
  * 
@@ -613,6 +633,25 @@ export type ViewToggleParams = {
 };
 
 /**
+ *  `views.register` parameters.
+ * 
+ *  `actions` maps an action name (`next`, `activate`, ...) to a command id the
+ *  view implements, overriding the host default
+ *  ([ADR 0024](../../docs/adr/0024-keyboard-first-plugin-ui.md) §6).
+ */
+export type ViewsRegisterParams = {
+	/**  View id, used by `views.open` and `viewType`. */
+	id: string,
+	title?: string | null,
+	/**  View kind shown by `views.open`. `ui` is the widget tree kind. */
+	kind?: string | null,
+	/**  Action name to command id. */
+	actions?: { [key in string]: string },
+	/**  Command id that restores the view from `params` and `state`. */
+	restore?: string | null,
+};
+
+/**
  *  `views.render` parameters.
  * 
  *  `tree` is the widget tree returned by the view's render callback.
@@ -632,6 +671,14 @@ export type WidgetNode =
 { type: "button"; id: string; label: string; command: string; variant?: ButtonVariant | null } | 
 /**  Text input field. */
 { type: "textInput"; id?: string | null; value?: string; placeholder?: string | null } | 
+/**  Scrollable list with one selected row. */
+{ type: "list"; id: string; items?: ListItem[]; 
+/**  Whether `x` marks several rows instead of replacing the selection. */
+multiple?: boolean } | 
+/**  Collapsible tree. `vy.ui.toggle` expands and collapses. */
+{ type: "tree"; id: string; nodes?: TreeNode[]; multiple?: boolean } | 
+/**  Table drawn from rows of cells. Selection works like a list. */
+{ type: "table"; id: string; columns?: string[]; items?: ListItem[]; multiple?: boolean } | 
 /**  Visual separator line. */
 { type: "separator"; id?: string | null };
 

@@ -69,6 +69,7 @@ import type {
   ViewCloseParams,
   ViewOpenParams,
   ViewToggleParams,
+  ViewsRegisterParams,
   ViewsRenderParams,
   WorkspaceInfoReply,
 } from "./bindings";
@@ -180,6 +181,8 @@ export interface HostMethods {
   "views.close": { params: ViewCloseParams; result: null };
   /** Opens a view pane. */
   "views.open": { params: ViewOpenParams; result: null };
+  /** Declares a view: its kind, its action overrides, and its restore command. */
+  "views.register": { params: ViewsRegisterParams; result: null };
   /** Renders a registered view into a widget tree. */
   "views.render": { params: ViewsRenderParams; result: null };
   /** Toggles a view pane. */

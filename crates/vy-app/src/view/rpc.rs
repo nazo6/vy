@@ -422,6 +422,7 @@ impl EditorView {
             pane.view_type = info.view;
             // Restored panes start with no widget focus; `Tab` refocuses.
             pane.normalize_focus();
+            pane.normalize_list_states();
             if let Some(document_id) = info.document_id {
                 if let std::collections::hash_map::Entry::Vacant(entry) =
                     documents.entry(document_id)

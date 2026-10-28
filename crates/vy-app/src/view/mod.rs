@@ -197,6 +197,8 @@ pub struct EditorView {
     pub(crate) char_width: f32,
     /// Hover popup currently displayed, if any.
     hover: Option<HoverState>,
+    /// Rows marked in the open list surface, by item id.
+    pub(super) marks: std::collections::BTreeSet<String>,
     /// Where the pointer went down on the titlebar. A window move starts only
     /// once the pointer leaves this point, so that double clicks still reach
     /// the titlebar instead of being swallowed by the compositor's move grab.
@@ -205,6 +207,8 @@ pub struct EditorView {
     last_reported_selections: Option<Vec<vy_core::Selection>>,
     pub(super) pending_view_for_next_open: Option<String>,
     pub(super) view_widget_trees: HashMap<String, vy_app::widget::WidgetNode>,
+    /// Action name to command id, per view id. Set by `views.register`.
+    pub(super) view_actions: HashMap<String, HashMap<String, String>>,
     /// Which runtime spawned each process, so stream events go to its owner.
     pub(super) stream_owners: HashMap<u32, Option<String>>,
     pub(super) cursor_visible: bool,
@@ -326,11 +330,13 @@ impl EditorView {
             statusline: Statusline::new(),
             gutter: GutterRegistry::new(),
             hover: None,
+            marks: std::collections::BTreeSet::new(),
             titlebar_press: Rc::new(Cell::new(None)),
             last_reported_document_id: None,
             last_reported_selections: None,
             pending_view_for_next_open: None,
             view_widget_trees: HashMap::new(),
+            view_actions: HashMap::new(),
             stream_owners: HashMap::new(),
             cursor_visible: true,
             status_generation: 0,
@@ -723,18 +729,6 @@ impl EditorView {
             return;
         };
 
-        // `Tab` and `Shift-Tab` move widget focus inside the active pane. A pane
-        // showing only an editor has nothing to focus, so the key still reaches
-        // the keymap (ADR 0024 §3).
-        if matches!(key, Key::Tab | Key::BackTab) && self.editor().mode() != Mode::Insert {
-            let forward = key == Key::Tab;
-            if self.step_widget_focus(forward) {
-                cx.stop_propagation();
-                cx.notify();
-                return;
-            }
-        }
-
         // Printable text reaches Insert mode through `replace_text_in_range`, which every
         // platform calls for the same key press. Inserting here would duplicate it.
         self.activate_active_view();
@@ -792,7 +786,15 @@ impl EditorView {
 
         match self.keymap.feed(key, &context) {
             KeymapOutcome::Command { id, args, values } => {
-                self.enqueue_command(Invocation::keymap_with_args(id, args, values));
+                // `vy.ui.*` runs here, not through the command queue: movement
+                // and selection must not wait for a queue turn and a timeout
+                // (ADR 0024 §5). The host defaults live in `ui_action`.
+                if let Some(command) = vy_app::commands::UiActionCommand::parse(&id) {
+                    let invocation = Invocation::keymap_with_args(id, args, values);
+                    self.run_ui_action_command(command, &invocation);
+                } else {
+                    self.enqueue_command(Invocation::keymap_with_args(id, args, values));
+                }
             }
             KeymapOutcome::Pending | KeymapOutcome::Ignored => {}
         }
@@ -870,8 +872,10 @@ impl EditorView {
     /// Moves widget focus inside the active pane in depth-first order.
     ///
     /// Returns whether the focused pane has a widget tree to walk. `Tab` and
-    /// `Shift-Tab` fall through to the keymap otherwise (ADR 0024 §3).
-    fn step_widget_focus(&mut self, forward: bool) -> bool {
+    /// `Shift-Tab` resolve to `vy.ui.focus_next` / `vy.ui.focus_prev` in a UI
+    /// pane, so this runs from the command rather than from `on_key_down`
+    /// (ADR 0024 §3).
+    pub(super) fn step_widget_focus(&mut self, forward: bool) -> bool {
         let Some(pane) = self.active_pane_state_mut() else {
             return false;
         };

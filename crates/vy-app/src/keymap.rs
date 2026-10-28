@@ -911,8 +911,10 @@ mod tests {
         let (id, _) = command(keymap.feed(Key::Char('h'), &normal()));
         assert_eq!(id, "user.left");
 
-        assert_eq!(keymap.unbind("h").expect("unbind"), 2);
-        // `unbind` removes the default too, so the key is no longer bound.
+        // The editor motion, the select/visual motion, and the tree collapse key
+        // (`vy.ui.collapse`, limited to `uiRole == 'tree'`).
+        assert_eq!(keymap.unbind("h").expect("unbind"), 3);
+        // `unbind` removes the defaults too, so the key is no longer bound.
         assert_eq!(
             keymap.feed(Key::Char('h'), &normal()),
             KeymapOutcome::Ignored
@@ -985,6 +987,116 @@ mod tests {
             command(keymap.feed(Key::Char('j'), &overlay)).0,
             "vy.ui.next"
         );
+    }
+
+    #[test]
+    fn the_default_keymap_binds_the_ui_action_vocabulary() {
+        let mut keymap = keymap();
+
+        let list = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            ui_focus: Some("results".to_string()),
+            ..KeyContext::default()
+        };
+        for (keys, expected) in [
+            (vec![Key::Char('j')], "vy.ui.next"),
+            (vec![Key::Down], "vy.ui.next"),
+            (vec![Key::Ctrl('n')], "vy.ui.next"),
+            (vec![Key::Char('k')], "vy.ui.prev"),
+            (vec![Key::Up], "vy.ui.prev"),
+            (vec![Key::Ctrl('p')], "vy.ui.prev"),
+            (vec![Key::Ctrl('d')], "vy.ui.page_down"),
+            (vec![Key::Ctrl('u')], "vy.ui.page_up"),
+            (vec![Key::Char('g'), Key::Char('g')], "vy.ui.first"),
+            (vec![Key::Char('G')], "vy.ui.last"),
+            (vec![Key::Enter], "vy.ui.activate"),
+            (vec![Key::Char('x')], "vy.ui.toggle"),
+            (vec![Key::Char('y')], "vy.ui.yank"),
+        ] {
+            let mut last = None;
+            for key in keys {
+                last = Some(keymap.feed(key, &list));
+            }
+            let (id, _) = command(last.expect("at least one key"));
+            assert_eq!(id, expected, "list keys");
+        }
+
+        // A list has no expansion, so `h` and `l` stay unbound in a list.
+        assert_eq!(keymap.feed(Key::Char('l'), &list), KeymapOutcome::Ignored);
+
+        let tree = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::Tree),
+            ui_focus: Some("files".to_string()),
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('l'), &tree)).0,
+            "vy.ui.expand"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::Char('h'), &tree)).0,
+            "vy.ui.collapse"
+        );
+
+        // An editor pane keeps its own keys.
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &normal())).0,
+            "vy.motion.down"
+        );
+    }
+
+    #[test]
+    fn focus_keys_reach_the_keymap_in_a_ui_pane() {
+        let mut keymap = keymap();
+        let context = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            ui_role: Some(UiRole::List),
+            ui_focus: Some("results".to_string()),
+            ..KeyContext::default()
+        };
+
+        assert_eq!(
+            command(keymap.feed(Key::Tab, &context)).0,
+            "vy.ui.focus_next"
+        );
+        assert_eq!(
+            command(keymap.feed(Key::BackTab, &context)).0,
+            "vy.ui.focus_prev"
+        );
+    }
+
+    #[test]
+    fn surfaces_bind_their_own_keys() {
+        let mut keymap = keymap();
+        for overlay in [OverlayKind::Palette, OverlayKind::Picker] {
+            let context = KeyContext {
+                mode: Mode::Normal,
+                overlay,
+                ..KeyContext::default()
+            };
+            assert_eq!(command(keymap.feed(Key::Esc, &context)).0, "vy.ui.cancel");
+            assert_eq!(
+                command(keymap.feed(Key::Char('j'), &context)).0,
+                "vy.ui.next"
+            );
+            assert_eq!(
+                command(keymap.feed(Key::Enter, &context)).0,
+                "vy.ui.activate"
+            );
+        }
+
+        // The Ex line keeps its own editing keys for now.
+        let ex = KeyContext {
+            mode: Mode::Normal,
+            overlay: OverlayKind::Ex,
+            ..KeyContext::default()
+        };
+        assert_eq!(keymap.feed(Key::Char('j'), &ex), KeymapOutcome::Ignored);
     }
 
     #[test]

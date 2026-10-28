@@ -397,6 +397,161 @@ impl UiCommand {
     }
 }
 
+/// A semantic action a plugin UI widget can take
+/// ([ADR 0024](../../docs/adr/0024-keyboard-first-plugin-ui.md) §4).
+///
+/// The vocabulary is closed on purpose: the host provides a default key for
+/// every action, so a user rebinds the command and the meaning stays the same.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UiAction {
+    Next,
+    Prev,
+    PageDown,
+    PageUp,
+    First,
+    Last,
+    Expand,
+    Collapse,
+    Activate,
+    Cancel,
+    Toggle,
+    Yank,
+    FocusNext,
+    FocusPrev,
+}
+
+impl UiAction {
+    /// Name a `when`-free action map and `args.action` use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Next => "next",
+            Self::Prev => "prev",
+            Self::PageDown => "pageDown",
+            Self::PageUp => "pageUp",
+            Self::First => "first",
+            Self::Last => "last",
+            Self::Expand => "expand",
+            Self::Collapse => "collapse",
+            Self::Activate => "activate",
+            Self::Cancel => "cancel",
+            Self::Toggle => "toggle",
+            Self::Yank => "yank",
+            Self::FocusNext => "focusNext",
+            Self::FocusPrev => "focusPrev",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "next" => Some(Self::Next),
+            "prev" => Some(Self::Prev),
+            "pageDown" => Some(Self::PageDown),
+            "pageUp" => Some(Self::PageUp),
+            "first" => Some(Self::First),
+            "last" => Some(Self::Last),
+            "expand" => Some(Self::Expand),
+            "collapse" => Some(Self::Collapse),
+            "activate" => Some(Self::Activate),
+            "cancel" => Some(Self::Cancel),
+            "toggle" => Some(Self::Toggle),
+            "yank" => Some(Self::Yank),
+            "focusNext" => Some(Self::FocusNext),
+            "focusPrev" => Some(Self::FocusPrev),
+            _ => None,
+        }
+    }
+
+    /// The command that runs this action.
+    pub fn command(self) -> UiActionCommand {
+        match self {
+            Self::Next => UiActionCommand::Next,
+            Self::Prev => UiActionCommand::Prev,
+            Self::PageDown => UiActionCommand::PageDown,
+            Self::PageUp => UiActionCommand::PageUp,
+            Self::First => UiActionCommand::First,
+            Self::Last => UiActionCommand::Last,
+            Self::Expand => UiActionCommand::Expand,
+            Self::Collapse => UiActionCommand::Collapse,
+            Self::Activate => UiActionCommand::Activate,
+            Self::Cancel => UiActionCommand::Cancel,
+            Self::Toggle => UiActionCommand::Toggle,
+            Self::Yank => UiActionCommand::Yank,
+            Self::FocusNext => UiActionCommand::FocusNext,
+            Self::FocusPrev => UiActionCommand::FocusPrev,
+        }
+    }
+
+    /// Every action, in the order the spec lists them.
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::Next,
+            Self::Prev,
+            Self::PageDown,
+            Self::PageUp,
+            Self::First,
+            Self::Last,
+            Self::Expand,
+            Self::Collapse,
+            Self::Activate,
+            Self::Cancel,
+            Self::Toggle,
+            Self::Yank,
+            Self::FocusNext,
+            Self::FocusPrev,
+        ]
+    }
+}
+
+define_command_enum! {
+    /// A `vy.ui.*` command that resolves to a [`UiAction`].
+    ///
+    /// These are key-only: absent from the palette and without Ex names
+    /// (ADR 0024 §4, `docs/specs/commands.md` §4.1).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum UiActionCommand {
+        Next => ("vy.ui.next", "UI Next"),
+        Prev => ("vy.ui.prev", "UI Prev"),
+        PageDown => ("vy.ui.page_down", "UI Page Down"),
+        PageUp => ("vy.ui.page_up", "UI Page Up"),
+        First => ("vy.ui.first", "UI First"),
+        Last => ("vy.ui.last", "UI Last"),
+        Expand => ("vy.ui.expand", "UI Expand"),
+        Collapse => ("vy.ui.collapse", "UI Collapse"),
+        Activate => ("vy.ui.activate", "UI Activate"),
+        Cancel => ("vy.ui.cancel", "UI Cancel"),
+        Toggle => ("vy.ui.toggle", "UI Toggle"),
+        Yank => ("vy.ui.yank", "UI Yank"),
+        FocusNext => ("vy.ui.focus_next", "UI Focus Next"),
+        FocusPrev => ("vy.ui.focus_prev", "UI Focus Prev"),
+    }
+}
+
+impl UiActionCommand {
+    /// The action this command runs.
+    pub fn action(self) -> UiAction {
+        match self {
+            Self::Next => UiAction::Next,
+            Self::Prev => UiAction::Prev,
+            Self::PageDown => UiAction::PageDown,
+            Self::PageUp => UiAction::PageUp,
+            Self::First => UiAction::First,
+            Self::Last => UiAction::Last,
+            Self::Expand => UiAction::Expand,
+            Self::Collapse => UiAction::Collapse,
+            Self::Activate => UiAction::Activate,
+            Self::Cancel => UiAction::Cancel,
+            Self::Toggle => UiAction::Toggle,
+            Self::Yank => UiAction::Yank,
+            Self::FocusNext => UiAction::FocusNext,
+            Self::FocusPrev => UiAction::FocusPrev,
+        }
+    }
+
+    pub fn meta(self) -> CommandMeta {
+        CommandMeta::hidden(CommandCategory::App)
+    }
+}
+
 define_command_enum! {
     /// A command that scrolls or positions the view within an editor pane.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

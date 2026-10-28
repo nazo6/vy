@@ -72,6 +72,7 @@ import type {
   ViewCloseParams,
   ViewOpenParams,
   ViewToggleParams,
+  ViewsRegisterParams,
   ViewsRenderParams,
   WorkspaceFoldersChange,
   WorkspaceInfoReply,
@@ -259,6 +260,8 @@ export interface ViewsApi {
   close(params: ViewCloseParams): Promise<void>;
   /** Opens a view pane. */
   open(params: ViewOpenParams): Promise<void>;
+  /** Declares a view: its kind, its action overrides, and its restore command. */
+  register(params: ViewsRegisterParams): Promise<void>;
   /** Renders a registered view into a widget tree. */
   render(params: ViewsRenderParams): Promise<void>;
   /** Toggles a view pane. */

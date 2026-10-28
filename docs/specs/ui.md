@@ -90,29 +90,60 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 
 ### 2.2 アクションへの解決
 
-> **実装状況**: この節のアクションの語彙と既定キーは未実装です。ホストの既定動作とキーマップ経由の解決は [ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) の計画に従います。
+> **実装状況**: 語彙、既定キー、`UiActionArgs`、ホストの既定動作は実装済みです（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) Phase 2）。`views.register` の `actions` による上書きは API だけ入っており、ホストからの呼び出し経路は未実装です。
 
 フォーカス中のウィジェットは、組み込みのコマンド名に対して自分のアクションを対応づけます。ホストの組み込みコマンドは、対応表にあるアクションを探して実行します。
 
-| 組み込みコマンド | ウィジェットのアクション | 既定のキー            |
-| :--------------- | :----------------------- | :-------------------- |
-| `vy.ui.next`     | `next`                   | `j`、`Down`、`Ctrl-n` |
-| `vy.ui.prev`     | `prev`                   | `k`、`Up`、`Ctrl-p`   |
-| `vy.ui.pageDown` | `pageDown`               | `Ctrl-d`              |
-| `vy.ui.pageUp`   | `pageUp`                 | `Ctrl-u`              |
-| `vy.ui.first`    | `first`                  | `g g`                 |
-| `vy.ui.last`     | `last`                   | `G`                   |
-| `vy.ui.activate` | `activate`               | `Enter`               |
-| `vy.ui.cancel`   | `cancel`                 | `Esc`                 |
-| `vy.ui.toggle`   | `toggle`                 | `x`                   |
-| `vy.ui.yank`     | `yank`                   | `y`                   |
+| 組み込みコマンド   | ウィジェットのアクション | 既定のキー            |
+| :----------------- | :----------------------- | :-------------------- |
+| `vy.ui.next`       | `next`                   | `j`、`Down`、`Ctrl-n` |
+| `vy.ui.prev`       | `prev`                   | `k`、`Up`、`Ctrl-p`   |
+| `vy.ui.page_down`  | `pageDown`               | `Ctrl-d`              |
+| `vy.ui.page_up`    | `pageUp`                 | `Ctrl-u`              |
+| `vy.ui.first`      | `first`                  | `g g`                 |
+| `vy.ui.last`       | `last`                   | `G`                   |
+| `vy.ui.expand`     | `expand`                 | `l`（tree のみ）      |
+| `vy.ui.collapse`   | `collapse`               | `h`（tree のみ）      |
+| `vy.ui.activate`   | `activate`               | `Enter`               |
+| `vy.ui.cancel`     | `cancel`                 | `Esc`                 |
+| `vy.ui.toggle`     | `toggle`                 | `x`                   |
+| `vy.ui.yank`       | `yank`                   | `y`                   |
+| `vy.ui.focus_next` | `focusNext`              | `Tab`                 |
+| `vy.ui.focus_prev` | `focusPrev`              | `Shift-Tab`           |
 
 既定のキーは `uiRole == 'list'`
 などの条件付きで登録します。利用者は同じコマンドを別のキーに割り当てられます。プラグインがキーを直接握らないため、操作の意味は変えずにキーだけを変えられます。
 
+- `activate` は `args.action` で別のアクション名に展開できます。`Ctrl-s` を `vy.ui.activate` と `args: { action: "split" }` に割り当てると、プラグインは分割オープンを実装できます。
+- `toggle` の意味は役割で決めます。ツリーでは展開、一覧と表ではマークです。マークは複数選択の一覧だけで増え、単一選択ではカーソル行の選択を置き換えます。
+- `yank` は項目の `text` を unnamed レジストへコピーします。`text` が無い項目は `label` を使います。
+- `button` は `activate` で対応するコマンドを実行します。
+- `vy.ui.*` はパレットに表示せず、Ex 名も持ちません（[`commands.md`](./commands.md) §4.1 の規則）。
+
 ウィジェットが対応を持たないコマンドは、通常のグローバルコマンドとして実行されます。`space`
 は既定のアクションに割り当てません。リーダーキーとして使えるようにするためです。一覧の上で
 `space f f` を押すと、ファイル検索が開きます。
+
+### 2.2.1 `UiActionArgs`
+
+プラグインのコマンドには、キーマップの引数に加えて次の引数を渡します。プラグインはフォーカスや選択を問い合わせずに操作できます。
+
+| フィールド    | 内容                                           |
+| :------------ | :--------------------------------------------- |
+| `action`      | 実行されたアクション名                         |
+| `viewId`      | ビューの ID                                    |
+| `paneId`      | ペインの ID                                    |
+| `role`        | `list`、`tree`、`table`、`textInput`、`button` |
+| `focusId`     | フォーカス中のノードの `id`                    |
+| `selectedIds` | 選択中の項目の `id`（単一選択でも 1 件入る）   |
+| `anchorId`    | カーソル位置の項目の `id`                      |
+| `expandedIds` | ツリーで展開中のノードの `id`                  |
+| `depth`       | ツリーでの深さ                                 |
+| `query`       | picker の検索語                                |
+| `count`       | キーマップのカウント                           |
+| `register`    | キーマップのレジスタ                           |
+
+移動と選択の既定動作はクライアントの Rust で完結します。`vy.ui.*` はコマンド実行キューを通さずに実行するため、連続した移動が遅れません。
 
 ### 2.3 insert モードの例外
 
@@ -201,11 +232,45 @@ vy.views.register("example.greeting.view", {
   を指定します。ホストはコマンドを実行するだけで、プラグインの関数を直接呼びません。クリックとキー入力を同じ経路に通すためです。
 - `menu` と `select`
   のポップアップはホストが描きます。プラグインは位置を指定できません。
-- 一覧は単一選択と複数選択を持ちます。選択の状態はウィジェットが持ち、アクションの引数としてプラグインへ渡します。
+- 一覧は単一選択と複数選択を持ちます。選択の状態はホストが持ち、`UiActionArgs` としてプラグインへ渡します。
 - `textInput` は1行と複数行を持ちます。フォーカスしたときのモードは
   `insertOnFocus`（プロンプト向き）と `modal`（エディタ向き）から選びます。
 - `markdown` と `codeBlock`
   のハイライトはホストが提供します。実装は段階的に足します。
+
+#### 3.1.1 一覧・ツリー・表
+
+| ウィジェット | データ                         | フォーカス時の `uiRole` | `toggle` の意味  |
+| :----------- | :----------------------------- | :---------------------- | :--------------- |
+| `list`       | `items`（`id`、`label`）       | `list`                  | 行をマークする   |
+| `tree`       | `nodes`（再帰する `children`） | `tree`                  | 展開と折りたたみ |
+| `table`      | `columns` と `items`           | `table`                 | 行をマークする   |
+
+- `id` は必須です。一覧は `vy.ui.*` の対象になります。
+- `multiple: true` のとき、`x` は行を足したり外したりします。既定（`false`）ではカーソル行の選択を置き換えます。
+- 一覧、ツリー、表のカーソル、マーク、展開はホストが持つ `ListState` に保存します。木を作り直しても、行が残っている限り状態は引き継ぎます。行が消えたら、その行の状態だけを捨てます。
+- ツリーは既定ですべて折りたたみます。`l`（`vy.ui.expand`）、`h`（`vy.ui.collapse`）、`x`（`vy.ui.toggle`）で展開を変えます。
+- 表の列見出しはホストが描きます。セルの値は `label` に入れます。
+- 行にコマンドを持たせる仕組み（`items[].command`）はまだありません。`vy.ui.activate` はカーソル行の `id` を状態として出すだけで、コマンドは実行しません。
+
+```typescript
+vy.ui.list({
+  id: "results",
+  multiple: true,
+  items: [
+    { id: "a", label: "Alpha" },
+    { id: "b", label: "Beta" },
+  ],
+});
+
+vy.ui.tree({
+  id: "files",
+  nodes: [
+    { id: "src", label: "src", children: [{ id: "main", label: "main.ts" }] },
+    { id: "readme", label: "README.md" },
+  ],
+});
+```
 
 ### 3.2 見た目
 

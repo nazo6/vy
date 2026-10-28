@@ -9,8 +9,8 @@ use serde_json::Value as JsonValue;
 
 pub use vy_client_api::command::{
     Arg, ArgKind, ArgList, ArgSpec, BuiltinCommand, CommandArg, CommandCategory, CommandMeta,
-    DocumentCommand, PaletteVisibility, PaneCommand, RangeSpec, SettingCommand, UiCommand,
-    ViewCommand, display_title,
+    DocumentCommand, PaletteVisibility, PaneCommand, RangeSpec, SettingCommand, UiAction,
+    UiActionCommand, UiCommand, ViewCommand, display_title,
 };
 
 /// Who registered a command. Registrations from `init.ts` are dropped on reload.
@@ -940,6 +940,14 @@ impl CommandRegistry {
                 command.meta(),
             ));
         }
+        for command in UiActionCommand::all() {
+            descriptors.push(CommandDescriptor::from_meta(
+                command.id(),
+                command.title(),
+                CommandSource::Ui,
+                command.meta(),
+            ));
+        }
         for id in self.script_commands() {
             let Some(script) = self.scripts.get(&id) else {
                 continue;
@@ -988,6 +996,11 @@ fn builtin_ex_names() -> impl Iterator<Item = &'static str> {
         )
         .chain(
             SettingCommand::all()
+                .iter()
+                .map(|command| command.meta().ex_names),
+        )
+        .chain(
+            UiActionCommand::all()
                 .iter()
                 .map(|command| command.meta().ex_names),
         )

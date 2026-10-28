@@ -2,4 +2,6 @@
 //!
 //! The types live in `vy-client-api` because they cross the plugin boundary.
 
-pub use vy_client_api::widget::{ButtonVariant, ContainerKind, Font, Gap, UiRole, WidgetNode};
+pub use vy_client_api::widget::{
+    ButtonVariant, ContainerKind, Font, Gap, ListItem, TreeNode, UiRole, WidgetNode,
+};

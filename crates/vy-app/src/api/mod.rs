@@ -127,7 +127,7 @@ mod tests {
     fn declares_every_method_and_namespace() {
         let methods = declarations();
         let names: Vec<&str> = methods.iter().map(|entry| entry.method).collect();
-        assert_eq!(names.len(), 56);
+        assert_eq!(names.len(), 57);
 
         let mut unique = names.clone();
         unique.sort_unstable();

@@ -553,9 +553,24 @@ impl EditorView {
                         pane.widget_tree = Some(tree.clone());
                         // The focused widget may not exist in the new tree.
                         pane.normalize_focus();
+                        // Rows and widgets may have disappeared as well.
+                        pane.normalize_list_states();
                     }
                 }
                 self.view_widget_trees.insert(view_id, tree);
+            }
+            HostAction::RegisterView {
+                id,
+                actions,
+                restore,
+            } => {
+                if actions.is_empty() {
+                    self.view_actions.remove(&id);
+                } else {
+                    self.view_actions
+                        .insert(id.clone(), actions.into_iter().collect());
+                }
+                let _ = restore;
             }
             HostAction::ShowPicker {
                 id,

@@ -528,6 +528,7 @@ impl EditorView {
                     tree,
                     pane.id,
                     &pane.focus_path,
+                    &pane.list_states,
                     cx,
                 ));
             } else {

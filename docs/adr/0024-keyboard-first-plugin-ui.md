@@ -16,7 +16,7 @@ tags: ["ui", "keymap", "plugin", "focus"]
 - 状態: 採用
 - 日付: 2026-10-27
 - カテゴリー: feature
-- 実装: 進行中（Phase 1 完了。実装計画は本ドキュメント末尾に記載）
+- 実装: 進行中（Phase 1–2 完了。実装計画は本ドキュメント末尾に記載）
 
 ## 文脈
 
@@ -264,6 +264,8 @@ oil.nvim のようにバッファ自体が UI になる方式は、キーボー�
 - 一覧・ツリー・表の既定動作をクライアントの Rust に実装する。移動と選択はコマンド実行キューを通さない。
 - `UiActionArgs` をプラグインのコマンドへ渡す経路を作る。
 - `ui.focused()` を追加する。
+
+> **実装済み（2026-10-28）**: `UiAction` と `UiActionCommand`（`vy.ui.*`）を `crates/vy-client-api/src/command.rs` に追加し、`List`、`Tree`、`Table` のウィジェットと `ListState`（カーソル、マーク、展開）を実装しました。既定動作は `crates/vy-app/src/ui_action.rs`、`UiActionArgs` の組み立ては `view/commands.rs` にあります。`vy.ui.*` はキー入力から直接実行し、実行キューを通しません。既定キーは `builtin/keymaps/default.json` に `uiRole` と `overlay` の条件付きで入れました。`actions` による上書きは API（`views.register`）だけを追加し、ホストからの呼び出しは未実装です。`activate` は行のコマンドを持たないため、状態を出すだけです。
 
 ### Phase 3: picker のキーマップ化
 

@@ -3,11 +3,11 @@
 use gpui::ScrollStrategy;
 use vy_app::commands::{
     ArgKind, BuiltinCommand, CommandDescriptor, CommandSource, DocumentCommand, ExAddress, ExRange,
-    Invocation, InvocationSource, LineRange, Owner, PaletteVisibility, PaneCommand, RangeSpec,
-    SettingCommand, UiCommand, ViewCommand, argument_error, ex_name_candidates, parse_ex_args,
-    parse_ex_line, resolve_ex_name, validate_json_args,
+    Invocation, InvocationSource, KeymapArgs, LineRange, Owner, PaletteVisibility, PaneCommand,
+    RangeSpec, SettingCommand, UiAction, UiActionCommand, UiCommand, ViewCommand, argument_error,
+    ex_name_candidates, parse_ex_args, parse_ex_line, resolve_ex_name, validate_json_args,
 };
-use vy_app::editor::{Action, Key};
+use vy_app::editor::{Action, Key, Mode};
 use vy_app::ex::ExState;
 use vy_app::geometry::{collect_pane_ids, focus_neighbor};
 use vy_app::overlay::{
@@ -23,6 +23,7 @@ use vy_app::state::DocumentState;
 use vy_app::text_layout::{
     half_page_lines, scroll_cursor_bottom, scroll_cursor_center, scroll_cursor_top, scroll_lines,
 };
+use vy_app::ui_action::{self, UiActionArgs, UiActionOutcome};
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_client_api::settings::{self, SettingKind, SettingScope};
 use vy_proto::{
@@ -1433,6 +1434,10 @@ impl EditorView {
             self.run_ui_command(command, &invocation);
             return false;
         }
+        if let Some(command) = UiActionCommand::parse(&id) {
+            self.run_ui_action_command(command, &invocation);
+            return false;
+        }
         if let Some(command) = PaneCommand::parse(&id) {
             self.run_pane_command(command, &invocation);
             return false;
@@ -1519,6 +1524,289 @@ impl EditorView {
                     let direction = invocation.args.string("direction").unwrap_or("left");
                     self.toggle_view_pane(view_id, direction);
                 }
+            }
+        }
+    }
+
+    /// Runs one `vy.ui.*` action against the focused widget or surface.
+    ///
+    /// Movement and selection stay in the client: the host defaults in
+    /// `ui_action` run here instead of going through the command queue twice
+    /// ([ADR 0024](../../docs/adr/0024-keyboard-first-plugin-ui.md) §5).
+    pub(super) fn run_ui_action_command(
+        &mut self,
+        command: UiActionCommand,
+        invocation: &Invocation,
+    ) {
+        // `args.action` lets a key expand `activate` into another action name.
+        let action = invocation
+            .args
+            .string("action")
+            .or_else(|| {
+                invocation
+                    .args
+                    .keymap_args()
+                    .count
+                    .map(|_| command.action().name())
+            })
+            .map(str::to_string)
+            .unwrap_or_else(|| command.action().name().to_string());
+        let args = UiAction::parse(&action).unwrap_or(command.action());
+
+        let count = invocation.keymap_args().count;
+
+        // A surface owns the keys while it is open, so actions apply to it first.
+        if self.overlay.is_some() {
+            if self.run_ui_action_on_overlay(args, &action, invocation) {
+                return;
+            }
+            if args == UiAction::Cancel {
+                self.handle_overlay_key(Key::Esc);
+            }
+            return;
+        }
+
+        if self.run_ui_action_on_widget(args, &action, count) {
+            return;
+        }
+
+        // No widget handled the action: fall back to the role-agnostic cases.
+        match args {
+            UiAction::FocusNext => {
+                if !self.step_widget_focus(true) {
+                    self.status = "there is no widget to focus".into();
+                }
+            }
+            UiAction::FocusPrev => {
+                if !self.step_widget_focus(false) {
+                    self.status = "there is no widget to focus".into();
+                }
+            }
+            UiAction::Cancel => {
+                let mode = self.editor().mode();
+                if mode != Mode::Normal {
+                    self.activate_active_view();
+                    let action = self
+                        .editor_mut()
+                        .execute(BuiltinCommand::NormalMode, KeymapArgs::default());
+                    self.store_active_view();
+                    self.clamp_active_views();
+                    if let Action::Edit(transaction) = action {
+                        self.send_transaction(transaction);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Applies an action to the list, tree, or table that holds focus.
+    ///
+    /// Returns whether the widget handled the action. A view that maps the
+    /// action to one of its own commands wins first (ADR 0024 §5 step 3).
+    fn run_ui_action_on_widget(
+        &mut self,
+        action: UiAction,
+        action_name: &str,
+        count: Option<u32>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane else {
+            return false;
+        };
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return false;
+        };
+        let Some((widget_id, widget)) = pane.focused_list() else {
+            return false;
+        };
+        let widget_id = widget_id.to_string();
+        let widget = widget.clone();
+
+        let args = self.ui_action_args(&widget_id, &widget, action_name, count);
+
+        // A view can override an action by naming one of its own commands.
+        if let Some(command) = self
+            .view_actions
+            .get(&args.view_id)
+            .and_then(|actions| actions.get(action_name).cloned())
+        {
+            self.enqueue_command(Invocation::script(
+                command,
+                serde_json::to_value(&args).unwrap_or(serde_json::Value::Null),
+            ));
+            return true;
+        }
+
+        if action == UiAction::Activate {
+            self.activate_focused_entry(&widget_id, &widget, action_name);
+            return true;
+        }
+
+        if action == UiAction::Yank {
+            let text = self
+                .panes
+                .get(&pane_id)
+                .and_then(|pane| pane.list_state(&widget_id))
+                .and_then(|state| ui_action::yank_text(&widget, state));
+            if let Some(text) = text {
+                self.activate_active_view();
+                self.editor_mut().yank_text(text, None);
+                self.status = "yanked".into();
+                return true;
+            }
+            return false;
+        }
+
+        let page = self
+            .active_pane_state()
+            .map_or(1, |pane| pane.viewport_rows);
+        let outcome = {
+            let Some(pane) = self.panes.get_mut(&pane_id) else {
+                return false;
+            };
+            let state = pane.list_state_mut(&widget_id);
+            ui_action::apply_to_widget(&widget, state, action_name, count, page.max(1))
+        };
+
+        matches!(outcome, UiActionOutcome::Handled)
+    }
+
+    /// Builds the arguments a plugin command receives for one action.
+    fn ui_action_args(
+        &self,
+        widget_id: &str,
+        widget: &vy_app::widget::WidgetNode,
+        action_name: &str,
+        count: Option<u32>,
+    ) -> UiActionArgs {
+        let pane = self.active_pane.and_then(|id| self.panes.get(&id));
+        let state = pane
+            .and_then(|pane| pane.list_state(widget_id))
+            .cloned()
+            .unwrap_or_default();
+
+        let rows = vy_app::ui_list::rows(widget, &state);
+        let depth = state
+            .cursor()
+            .and_then(|cursor| rows.iter().find(|row| row.id == cursor))
+            .map_or(0, |row| row.depth);
+
+        UiActionArgs {
+            action: action_name.to_string(),
+            view_id: pane.map_or_else(String::new, |pane| pane.view_type.clone()),
+            pane_id: pane.map_or(0, |pane| pane.id),
+            role: widget.focus_role(),
+            focus_id: pane.and_then(|pane| pane.focus_path.focused().map(str::to_string)),
+            selected_ids: state.selected().cloned().collect(),
+            anchor_id: state.cursor().map(str::to_string),
+            expanded_ids: state.expanded_ids(),
+            depth,
+            query: self.overlay_input_value().to_string(),
+            count,
+            register: None,
+        }
+    }
+
+    /// `vy.ui.activate`: run the row's command, or the view's action mapping.
+    ///
+    /// Lists and trees carry no per-row command yet, so the host reports that
+    /// nothing happened instead of guessing.
+    fn activate_focused_entry(
+        &mut self,
+        widget_id: &str,
+        widget: &vy_app::widget::WidgetNode,
+        action_name: &str,
+    ) {
+        let selected = self
+            .panes
+            .get(&self.active_pane.unwrap_or_default())
+            .and_then(|pane| pane.list_state(widget_id))
+            .and_then(|state| state.cursor().map(str::to_string));
+        let Some(selected) = selected else {
+            return;
+        };
+        let _ = widget;
+        self.status = format!("{action_name}: {selected}").into();
+    }
+
+    /// Applies an action to the open surface. Returns whether it was handled.
+    fn run_ui_action_on_overlay(
+        &mut self,
+        action: UiAction,
+        action_name: &str,
+        _invocation: &Invocation,
+    ) -> bool {
+        match action {
+            UiAction::Next => {
+                self.move_overlay_selection(1);
+                true
+            }
+            UiAction::Prev => {
+                self.move_overlay_selection(-1);
+                true
+            }
+            UiAction::First => {
+                self.move_overlay_selection(isize::MIN / 2);
+                true
+            }
+            UiAction::Last => {
+                self.move_overlay_selection(isize::MAX / 2);
+                true
+            }
+            UiAction::PageDown => {
+                let page = self
+                    .active_pane_state()
+                    .map_or(10, |pane| pane.viewport_rows);
+                self.move_overlay_selection(page.max(1) as isize);
+                true
+            }
+            UiAction::PageUp => {
+                let page = self
+                    .active_pane_state()
+                    .map_or(10, |pane| pane.viewport_rows);
+                self.move_overlay_selection(-(page.max(1) as isize));
+                true
+            }
+            UiAction::Toggle => self.toggle_overlay_mark(),
+            UiAction::Activate => self.confirm_overlay(action_name),
+            UiAction::Yank => {
+                if let Some(id) = self.overlay_selected_id() {
+                    self.editor_mut().yank_text(id, None);
+                    self.status = "yanked".into();
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Toggles a mark in the open list surface. Returns whether it changed.
+    fn toggle_overlay_mark(&mut self) -> bool {
+        let Some(id) = self.overlay_selected_id() else {
+            return false;
+        };
+        match self.overlay.as_mut() {
+            Some(Overlay::Palette(_))
+            | Some(Overlay::Settings(_))
+            | Some(Overlay::SettingChoice(_)) => {
+                self.marks.insert(id);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Confirms the selected row of the open surface.
+    fn confirm_overlay(&mut self, _action_name: &str) -> bool {
+        match self.overlay.as_ref() {
+            Some(Overlay::Ex(_)) => {
+                self.handle_ex_key(Key::Enter);
+                true
+            }
+            _ => {
+                self.handle_overlay_key(Key::Enter);
+                true
             }
         }
     }

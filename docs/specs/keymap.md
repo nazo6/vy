@@ -190,7 +190,27 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 | `uiSelectionCount` | 選択中の項目数                                                           | 一部     |
 
 - `overlay` は `none` 以外のとき、どのオーバーレイが開いているかを表します。パレットのうちプラグインが `ui.picker.show` で開いたものは `picker`、ホストのコマンド一覧と文書一覧は `palette` です。設定の選択と設定の入力は `settings` にまとめます。
-- `Tab` と `Shift-Tab` は、UI ペインにフォーカス可能なウィジェットがある間はフォーカス移動になります。キーマップへは流れません（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §3）。
+- `Tab` と `Shift-Tab` は、UI ペインで `vy.ui.focus_next` / `vy.ui.focus_prev` に解決します。ウィジェットにフォーカスがある間はフォーカス移動になり、エディタペインではキーマップ上のほかの束縛へ流れます（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §3）。
+
+### 7.2 `vy.ui.*` の既定キー
+
+| キー                    | コマンド                                | 条件                        | 動作                         |
+| :---------------------- | :-------------------------------------- | :-------------------------- | :--------------------------- |
+| `j` / `Down` / `Ctrl-n` | `vy.ui.next`                            | `uiRole == 'list'` など     | カーソルを次へ               |
+| `k` / `Up` / `Ctrl-p`   | `vy.ui.prev`                            | `uiRole == 'list'` など     | カーソルを前へ               |
+| `Ctrl-d`                | `vy.ui.page_down`                       | `uiRole == 'list'` など     | 1 ページ進む                 |
+| `Ctrl-u`                | `vy.ui.page_up`                         | `uiRole == 'list'` など     | 1 ページ戻る                 |
+| `g g`                   | `vy.ui.first`                           | `uiRole == 'list'` など     | 先頭へ                       |
+| `G`                     | `vy.ui.last`                            | `uiRole == 'list'` など     | 末尾へ                       |
+| `l`                     | `vy.ui.expand`                          | `uiRole == 'tree'`          | 展開する                     |
+| `h`                     | `vy.ui.collapse`                        | `uiRole == 'tree'`          | 折りたたむ                   |
+| `Enter`                 | `vy.ui.activate`                        | `uiRole == 'list'` など     | 決定する                     |
+| `x`                     | `vy.ui.toggle`                          | `uiRole == 'list'` など     | マークする／展開を切り替える |
+| `y`                     | `vy.ui.yank`                            | `uiRole == 'list'` など     | 項目のテキストをコピー       |
+| `Tab` / `Shift-Tab`     | `vy.ui.focus_next` / `vy.ui.focus_prev` | `uiRole` がある             | 次のフォーカス可能ノードへ   |
+| `Esc`                   | `vy.ui.cancel`                          | `overlay == 'palette'` など | 一時状態を戻す／閉じる       |
+
+エディタ系のバインドは `paneKind == 'editor' && overlay == 'none'` を条件に含みます。同じキー列が両方に一致しないよう、条件で排他にしています。
 
 ## 8. キーマップ API
 

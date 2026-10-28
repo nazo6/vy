@@ -159,6 +159,15 @@ impl Editor {
         }
     }
 
+    /// Yanks `text` into the unnamed register, and into `register` when given.
+    ///
+    /// `vy.ui.yank` copies list rows this way; there is no buffer text and no
+    /// change to send to the core, so the copy is local to the client.
+    pub fn yank_text(&mut self, text: impl Into<String>, register: Option<char>) {
+        let index = register.and_then(register_index);
+        self.store_register(&text.into(), RegisterKind::Linewise, index);
+    }
+
     /// Text of a named register. Only used by tests.
     #[cfg(test)]
     pub fn named_register_text(&self, name: char) -> &str {

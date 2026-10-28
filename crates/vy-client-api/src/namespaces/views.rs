@@ -1,9 +1,34 @@
 //! `views` declarations.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use vy_host_api::{CallError, Reply};
 
 use crate::WidgetNode;
+
+/// `views.register` parameters.
+///
+/// `actions` maps an action name (`next`, `activate`, ...) to a command id the
+/// view implements, overriding the host default
+/// ([ADR 0024](../../docs/adr/0024-keyboard-first-plugin-ui.md) §6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewsRegisterParams {
+    /// View id, used by `views.open` and `viewType`.
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// View kind shown by `views.open`. `ui` is the widget tree kind.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Action name to command id.
+    #[serde(default)]
+    pub actions: BTreeMap<String, String>,
+    /// Command id that restores the view from `params` and `state`.
+    #[serde(default)]
+    pub restore: Option<String>,
+}
 
 /// `views.render` parameters.
 ///
@@ -63,6 +88,10 @@ pub struct ViewToggleParams {
 /// Registers and looks up pane views.
 #[vy_api_schema::vy_api_trait("views")]
 pub trait ViewsApi {
+    /// Declares a view: its kind, its action overrides, and its restore command.
+    #[vy_api_schema::vy_api_method]
+    fn register(&mut self, params: ViewsRegisterParams) -> Result<Reply<()>, CallError>;
+
     /// Opens a view pane.
     #[vy_api_schema::vy_api_method]
     fn open(&mut self, params: ViewOpenParams) -> Result<Reply<()>, CallError>;

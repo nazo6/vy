@@ -1,7 +1,7 @@
 //! Client-side document and pane state models.
 
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use vy_core::PaneId;
 
@@ -9,6 +9,7 @@ use crate::config::{Config, SettingSource};
 use crate::editor::{Editor, ViewState};
 use crate::focus_path::{self, FocusPath};
 use crate::keymap::{KeyContext, OverlayKind, PaneKind};
+use crate::ui_list::ListState;
 use crate::widget::{UiRole, WidgetNode};
 
 /// Default rows drawn before measuring the window.
@@ -76,6 +77,9 @@ pub struct PaneState {
     ///
     /// Empty when the pane shows an editor or nothing in its tree has focus.
     pub focus_path: FocusPath,
+    /// Cursor, marks, and expansion of each list, tree, and table widget,
+    /// keyed by the widget id. Kept across redraws.
+    pub list_states: BTreeMap<String, ListState>,
 }
 
 impl PaneState {
@@ -95,6 +99,7 @@ impl PaneState {
             view_type: "editor".to_string(),
             widget_tree: None,
             focus_path: FocusPath::new(),
+            list_states: BTreeMap::new(),
         }
     }
 
@@ -183,11 +188,68 @@ impl PaneState {
     }
 
     /// Number of selected items in the focused widget.
-    ///
-    /// Lists, trees, and tables keep their selection in the widget itself, so
-    /// this is zero until that state lands.
     pub fn ui_selection_count(&self) -> usize {
-        0
+        let Some((id, _)) = self.focused_list() else {
+            return 0;
+        };
+        self.list_state(id).map_or(0, ListState::selected_count)
+    }
+
+    /// Selection state of one widget in this pane's tree.
+    ///
+    /// The state is created on demand and kept across redraws, so the cursor
+    /// and marked rows survive a new tree from the plugin.
+    pub fn list_state_mut(&mut self, widget_id: &str) -> &mut ListState {
+        self.list_states.entry(widget_id.to_string()).or_default()
+    }
+
+    pub fn list_state(&self, widget_id: &str) -> Option<&ListState> {
+        self.list_states.get(widget_id)
+    }
+
+    /// The focused widget, when it has a selection role.
+    pub fn focused_list(&self) -> Option<(&str, &WidgetNode)> {
+        let widget = self.focused_widget()?;
+        let role = widget.focus_role()?;
+        if !role.has_selection() {
+            return None;
+        }
+        Some((self.focus_path.focused()?, widget))
+    }
+
+    /// Keeps every list state in step with a freshly rendered tree.
+    ///
+    /// Rows that disappeared are dropped, and a widget that left the tree
+    /// loses its state so a later tree with the same id starts clean. A widget
+    /// that is new to the tree gets a state with its first row selected.
+    pub fn normalize_list_states(&mut self) {
+        let Some(tree) = self.widget_tree.clone() else {
+            self.list_states.clear();
+            return;
+        };
+
+        let mut selection_ids = BTreeSet::new();
+        let mut nodes = Vec::new();
+        focus_path::walk_widgets(&tree, &mut |node| {
+            nodes.push(node.clone());
+            if let Some(id) = node.id()
+                && node.focus_role().is_some_and(UiRole::has_selection)
+            {
+                selection_ids.insert(id.to_string());
+            }
+        });
+        self.list_states.retain(|id, _| selection_ids.contains(id));
+
+        for node in &nodes {
+            let Some(id) = node.id() else {
+                continue;
+            };
+            if !selection_ids.contains(id) {
+                continue;
+            }
+            let state = self.list_states.entry(id.to_string()).or_default();
+            state.normalize(&crate::ui_list::all_ids(node));
+        }
     }
 
     /// Whether the keymap context should say the editor owns focus.
@@ -362,5 +424,85 @@ mod tests {
 
         config.set("editor.wrap", Value::Bool(true));
         assert!(pane.is_wrap(&config));
+    }
+
+    #[test]
+    fn a_focused_list_reports_its_selected_count() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.results".to_string();
+        pane.widget_tree = Some(WidgetNode::List {
+            id: "results".to_string(),
+            items: vec![
+                crate::widget::ListItem::new("a", "Alpha"),
+                crate::widget::ListItem::new("b", "Beta"),
+            ],
+            multiple: true,
+        });
+        pane.set_focus_path(FocusPath::from_ids(["results"]));
+        pane.normalize_list_states();
+
+        let mut context = KeyContext::default();
+        pane.apply_key_context(&mut context);
+        assert_eq!(context.ui_role, Some(UiRole::List));
+        // A new list starts with its first row selected.
+        assert_eq!(context.ui_selection_count, 1);
+
+        pane.list_state_mut("results").toggle("b");
+        pane.apply_key_context(&mut context);
+        assert_eq!(context.ui_selection_count, 2);
+        assert_eq!(pane.ui_selection_count(), 2);
+    }
+
+    #[test]
+    fn selection_count_is_zero_without_a_focused_selection_widget() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.panel".to_string();
+        pane.widget_tree = Some(panel_tree());
+        pane.normalize_list_states();
+
+        // No widget focus yet.
+        assert_eq!(pane.ui_selection_count(), 0);
+
+        // Focus on a button, not a list.
+        pane.set_focus_path(FocusPath::from_ids(["panel", "run"]));
+        assert_eq!(pane.ui_selection_count(), 0);
+    }
+
+    #[test]
+    fn list_states_follow_a_redrawn_tree() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.results".to_string();
+        pane.widget_tree = Some(WidgetNode::List {
+            id: "results".to_string(),
+            items: vec![
+                crate::widget::ListItem::new("a", "Alpha"),
+                crate::widget::ListItem::new("b", "Beta"),
+            ],
+            multiple: false,
+        });
+        pane.normalize_list_states();
+        pane.list_state_mut("results").select_single("b");
+        assert_eq!(
+            pane.list_state("results").and_then(ListState::cursor),
+            Some("b")
+        );
+
+        // The new tree drops row "b"; the cursor falls back to the first row.
+        pane.widget_tree = Some(WidgetNode::List {
+            id: "results".to_string(),
+            items: vec![crate::widget::ListItem::new("a", "Alpha")],
+            multiple: false,
+        });
+        pane.normalize_list_states();
+        assert_eq!(
+            pane.list_state("results").and_then(ListState::cursor),
+            Some("a")
+        );
+
+        // The widget leaves the tree; its state goes too.
+        pane.widget_tree = Some(panel_tree());
+        pane.normalize_list_states();
+        assert!(pane.list_state("results").is_none());
+        assert!(pane.list_states.is_empty());
     }
 }

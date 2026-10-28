@@ -295,6 +295,12 @@ pub enum HostAction {
         view_id: String,
         tree: WidgetNode,
     },
+    /// A view was declared with `views.register`.
+    RegisterView {
+        id: String,
+        actions: std::collections::BTreeMap<String, String>,
+        restore: Option<String>,
+    },
     ShowPicker {
         id: String,
         items: Vec<PickerItem>,

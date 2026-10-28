@@ -85,6 +85,14 @@ fn walk(node: &WidgetNode, ancestors: &mut FocusPath, paths: &mut Vec<FocusPath>
     ancestors.ids.pop();
 }
 
+/// Every node in the tree, in depth-first order.
+pub fn walk_widgets(root: &WidgetNode, visit: &mut impl FnMut(&WidgetNode)) {
+    visit(root);
+    for child in root.children() {
+        walk_widgets(child, visit);
+    }
+}
+
 /// The focusable node named by `path`.
 pub fn focused_node<'a>(root: &'a WidgetNode, path: &FocusPath) -> Option<&'a WidgetNode> {
     if path.is_empty() {

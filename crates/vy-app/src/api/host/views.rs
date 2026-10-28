@@ -2,7 +2,8 @@
 
 use serde_json::json;
 use vy_client_api::namespaces::views::{
-    ViewCloseParams, ViewDirection, ViewOpenParams, ViewToggleParams, ViewsApi, ViewsRenderParams,
+    ViewCloseParams, ViewDirection, ViewOpenParams, ViewToggleParams, ViewsApi,
+    ViewsRegisterParams, ViewsRenderParams,
 };
 
 use super::ClientHost;
@@ -11,6 +12,15 @@ use crate::commands::UiCommand;
 use crate::plugin_host::HostAction;
 
 impl ViewsApi for ClientHost<'_, '_, '_> {
+    fn register(&mut self, params: ViewsRegisterParams) -> Result<Reply<()>, CallError> {
+        self.call.outcome.action = HostAction::RegisterView {
+            id: params.id,
+            actions: params.actions,
+            restore: params.restore,
+        };
+        Ok(Reply::Value(()))
+    }
+
     fn open(&mut self, params: ViewOpenParams) -> Result<Reply<()>, CallError> {
         self.call.outcome.action = HostAction::Ui {
             command: UiCommand::ViewOpen,

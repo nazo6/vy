@@ -41,6 +41,69 @@ pub enum ButtonVariant {
     Danger,
 }
 
+/// One row of a list or table.
+///
+/// `text` is copied by `vy.ui.yank`; when it is absent the label is used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ListItem {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+impl ListItem {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            description: None,
+            text: None,
+        }
+    }
+
+    /// The text `vy.ui.yank` copies.
+    pub fn yank_text(&self) -> &str {
+        self.text.as_deref().unwrap_or(&self.label)
+    }
+}
+
+/// One node of a tree widget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeNode {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub children: Vec<TreeNode>,
+}
+
+impl TreeNode {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            text: None,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn with_children(mut self, children: Vec<TreeNode>) -> Self {
+        self.children = children;
+        self
+    }
+
+    /// The text `vy.ui.yank` copies.
+    pub fn yank_text(&self) -> &str {
+        self.text.as_deref().unwrap_or(&self.label)
+    }
+}
+
 /// A node in the declarative widget tree rendered by the host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -81,6 +144,33 @@ pub enum WidgetNode {
         value: String,
         #[serde(default)]
         placeholder: Option<String>,
+    },
+    /// Scrollable list with one selected row.
+    List {
+        id: String,
+        #[serde(default)]
+        items: Vec<ListItem>,
+        /// Whether `x` marks several rows instead of replacing the selection.
+        #[serde(default)]
+        multiple: bool,
+    },
+    /// Collapsible tree. `vy.ui.toggle` expands and collapses.
+    Tree {
+        id: String,
+        #[serde(default)]
+        nodes: Vec<TreeNode>,
+        #[serde(default)]
+        multiple: bool,
+    },
+    /// Table drawn from rows of cells. Selection works like a list.
+    Table {
+        id: String,
+        #[serde(default)]
+        columns: Vec<String>,
+        #[serde(default)]
+        items: Vec<ListItem>,
+        #[serde(default)]
+        multiple: bool,
     },
     /// Visual separator line.
     Separator {
@@ -129,7 +219,10 @@ impl WidgetNode {
             | Self::Text { id, .. }
             | Self::TextInput { id, .. }
             | Self::Separator { id } => id.as_deref(),
-            Self::Button { id, .. } => Some(id.as_str()),
+            Self::Button { id, .. }
+            | Self::List { id, .. }
+            | Self::Tree { id, .. }
+            | Self::Table { id, .. } => Some(id.as_str()),
         }
     }
 
@@ -139,16 +232,32 @@ impl WidgetNode {
     pub fn focus_role(&self) -> Option<UiRole> {
         match self {
             Self::Button { .. } => Some(UiRole::Button),
+            Self::List { .. } => Some(UiRole::List),
+            Self::Tree { .. } => Some(UiRole::Tree),
+            Self::Table { .. } => Some(UiRole::Table),
             Self::TextInput { id, .. } if id.is_some() => Some(UiRole::TextInput),
             _ => None,
         }
     }
 
     /// Child nodes in tree order.
+    ///
+    /// Lists, trees, and tables are leaves for focus purposes: their rows are
+    /// data, not widgets.
     pub fn children(&self) -> &[Self] {
         match self {
             Self::Container { children, .. } => children,
             _ => &[],
+        }
+    }
+
+    /// Whether `vy.ui.toggle` marks several rows instead of one.
+    pub fn multiple(&self) -> bool {
+        match self {
+            Self::List { multiple, .. }
+            | Self::Tree { multiple, .. }
+            | Self::Table { multiple, .. } => *multiple,
+            _ => false,
         }
     }
 }
