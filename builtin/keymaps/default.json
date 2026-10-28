@@ -7,7 +7,7 @@
   {
     "keys": ":",
     "command": "vy.ui.ex_command_line",
-    "when": "mode != 'insert'"
+    "when": "mode != 'insert' && overlay == 'none'"
   },
   {
     "keys": "h",
@@ -521,7 +521,7 @@
   {
     "keys": "esc",
     "command": "vy.ui.cancel",
-    "when": "overlay == 'palette' || overlay == 'picker' || overlay == 'prompt' || overlay == 'approval' || overlay == 'settings'"
+    "when": "overlay == 'palette' || overlay == 'picker' || overlay == 'ex' || overlay == 'prompt' || overlay == 'approval' || overlay == 'settings'"
   },
   {
     "keys": "j",
@@ -579,6 +579,11 @@
     "when": "overlay != 'none' && overlay != 'ex'"
   },
   {
+    "keys": "enter",
+    "command": "vy.ui.activate",
+    "when": "overlay == 'ex'"
+  },
+  {
     "keys": "x",
     "command": "vy.ui.toggle",
     "when": "overlay != 'none' && overlay != 'ex'"
@@ -587,5 +592,45 @@
     "keys": "y",
     "command": "vy.ui.yank",
     "when": "overlay != 'none' && overlay != 'ex'"
+  },
+  {
+    "keys": "up",
+    "command": "vy.ui.history_prev",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "ctrl-p",
+    "command": "vy.ui.history_prev",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "down",
+    "command": "vy.ui.history_next",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "ctrl-n",
+    "command": "vy.ui.history_next",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "tab",
+    "command": "vy.ui.complete_next",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "backtab",
+    "command": "vy.ui.complete_prev",
+    "when": "overlay == 'ex'"
+  },
+  {
+    "keys": "backspace",
+    "command": "vy.ui.delete_char",
+    "when": "overlay != 'none'"
+  },
+  {
+    "keys": "ctrl-u",
+    "command": "vy.ui.clear_input",
+    "when": "overlay != 'none'"
   }
 ]

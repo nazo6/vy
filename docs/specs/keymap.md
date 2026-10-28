@@ -37,8 +37,11 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
   `EntityInputHandler` が受け取ります。印字キーでは
   `stop_propagation` を呼ばないでください。macOS では止めると入力メソッド
   （`insertText`）に渡らなくなり、ABC 配列で文字が入らなくなります。
-  Enter / Tab / Backspace / Esc / 矢印 / Ctrl 系は従来どおりオーバーレイ側で
-  処理し、伝播を止めます。
+- 印字キー以外のオーバーレイのキーはキーマップを通ります（ADR 0024 Phase 3）。キーは
+  `overlay` と `uiRole` の条件で `vy.ui.*` に解決し、解決しなかったキーだけが
+  オーバーレイの組み込み処理へフォールバックします。これにより、パレットと Ex の
+  `Esc`、`Enter`、`j`、`k`、`Tab`、`Backspace` を `keymap.bind` で別のキーへ
+  割り当てられます。
 - Normal / Select
   モードでは、文字キーはキーマップが照合して消費し、入力ハンドラへ渡しません。一致したコマンドだけを
   `crates/vy-app/src/editor/` が実行します。
@@ -211,6 +214,25 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 | `Esc`                   | `vy.ui.cancel`                          | `overlay == 'palette'` など | 一時状態を戻す／閉じる       |
 
 エディタ系のバインドは `paneKind == 'editor' && overlay == 'none'` を条件に含みます。同じキー列が両方に一致しないよう、条件で排他にしています。
+
+### 7.3 サーフェスのキー
+
+開いているサーフェスは、入力を insert モードとしてキーマップへ渡します。印字キー以外はキーマップの既定バインドで処理します。
+
+| サーフェス | キー                                          | コマンド                                      | 動作                   |
+| :--------- | :-------------------------------------------- | :-------------------------------------------- | :--------------------- |
+| 共通       | `Backspace`                                   | `vy.ui.delete_char`                           | 入力を 1 文字削除      |
+| 共通       | `Ctrl-u`                                      | `vy.ui.clear_input`                           | 入力を空にする         |
+| 共通       | `Esc`                                         | `vy.ui.cancel`                                | 一時状態を戻す／閉じる |
+| Ex         | `Enter`                                       | `vy.ui.activate`                              | 実行する               |
+| Ex         | `Up` / `Ctrl-p`                               | `vy.ui.history_prev`                          | 履歴を 1 つ前へ        |
+| Ex         | `Down` / `Ctrl-n`                             | `vy.ui.history_next`                          | 履歴を 1 つ後ろへ      |
+| Ex         | `Tab` / `Shift-Tab`                           | `vy.ui.complete_next` / `vy.ui.complete_prev` | 補完候補を巡回する     |
+| 一覧系     | `j` / `k` / `g g` / `G` / `Ctrl-d` / `Ctrl-u` | `vy.ui.next` など                             | 一覧のカーソル移動     |
+| 一覧系     | `Enter`                                       | `vy.ui.activate`                              | 選択を確定する         |
+| 一覧系     | `x` / `y`                                     | `vy.ui.toggle` / `vy.ui.yank`                 | マークする／コピーする |
+
+`:` は `mode != 'insert' && overlay == 'none'` のときだけ Ex を開きます。サーフェス内では入力中の文字として扱います。パレットのヒント行はキーマップから生成するため、`vy.ui.activate` を別のキーへ割り当てるとヒントも変わります。キーマップが解決しなかったキーは、オーバーレイの組み込み処理へフォールバックします。
 
 ## 8. キーマップ API
 

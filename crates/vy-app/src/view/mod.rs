@@ -706,14 +706,14 @@ impl EditorView {
                 // Printable text reaches the input handler via `replace_text_in_range`.
                 // Do not stop propagation here: on macOS, stopping marks the key
                 // as handled and GPUI never calls the input method (`insertText`),
-                // so palette/Ex text input breaks with an ABC layout. The
-                // `Key::Char` branches in `handle_*_key` are therefore unreachable
-                // for text today; they are kept intentionally until ADR 0032
-                // Phase 3 migrates overlay keys to the keymap.
+                // so palette/Ex text input breaks with an ABC layout.
                 OverlayTarget::Text => {}
                 OverlayTarget::Key => {
                     if let Some(key) = key {
-                        self.handle_overlay_key(key);
+                        // Overlay keys go through the keymap, so `overlay == 'palette'`
+                        // and the `vy.ui.*` defaults decide what a key does
+                        // (ADR 0024 §8, ADR 0032 §6).
+                        self.apply_overlay_key(key);
                     }
                 }
             }
@@ -751,6 +751,69 @@ impl EditorView {
             self.sync_modal_focus(window, cx);
             cx.notify();
         }
+    }
+
+    /// Passes one key of an open overlay to the keymap, then runs its command.
+    ///
+    /// A key the keymap does not resolve falls back to the overlay's built-in
+    /// handling, so editing keys that have no default binding (`Backspace`,
+    /// arrows in the Ex line) keep working. The keymap wins where it has a
+    /// binding, which is what makes `overlay == 'palette'` rebindable
+    /// (ADR 0024 §8).
+    fn apply_overlay_key(&mut self, key: Key) {
+        let mut context = KeyContext {
+            mode: self.overlay_mode(),
+            ..KeyContext::default()
+        };
+        self.apply_key_context(&mut context);
+
+        match self.keymap.feed(key, &context) {
+            KeymapOutcome::Command { id, args, values } => {
+                let invocation = Invocation::keymap_with_args(id, args, values);
+                if let Some(command) = vy_app::commands::UiActionCommand::parse(&invocation.id) {
+                    self.run_ui_action_command(command, &invocation);
+                } else {
+                    self.enqueue_command(invocation);
+                }
+            }
+            KeymapOutcome::Pending => {}
+            KeymapOutcome::Ignored => self.handle_overlay_key(key),
+        }
+    }
+
+    /// The mode an open surface reports to the keymap.
+    ///
+    /// The palette, picker, prompt, approval, and settings list start in insert
+    /// mode so typing filters; a text-only surface stays in insert. Ex edits its
+    /// line the same way.
+    pub(super) fn overlay_mode(&self) -> Mode {
+        Mode::Insert
+    }
+
+    /// Key hints for the open surface, in the order the palette shows them.
+    ///
+    /// The labels come from the keymap, so rebinding `vy.ui.activate` changes
+    /// the hint instead of leaving a stale `Enter` in the text
+    /// (ADR 0024 §7).
+    pub(super) fn overlay_hints(&self) -> Vec<String> {
+        let mut context = KeyContext {
+            mode: self.overlay_mode(),
+            ..KeyContext::default()
+        };
+        self.apply_key_context(&mut context);
+
+        [
+            ("vy.ui.next", "move down"),
+            ("vy.ui.prev", "move up"),
+            ("vy.ui.activate", "confirm"),
+            ("vy.ui.cancel", "close"),
+        ]
+        .into_iter()
+        .filter_map(|(command, label)| {
+            let keys = self.keymap.hint_for(&[command], &context)?;
+            Some(format!("{keys} {label}"))
+        })
+        .collect()
     }
 
     /// `:` in an empty command palette closes it and opens the Ex command line.

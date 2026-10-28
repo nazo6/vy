@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use vy_api_schema::codegen::{self, Output};
 use vy_client_api::command::{
     ArgKind, BuiltinCommand, CommandMeta, DocumentCommand, PaneCommand, RangeSpec, SettingCommand,
-    UiCommand, ViewCommand, display_title,
+    UiActionCommand, UiCommand, ViewCommand, display_title,
 };
 use vy_client_api::settings::SETTINGS;
 
@@ -149,6 +149,7 @@ fn write_builtin_commands(directory: &Path) -> io::Result<()> {
     ids.extend(PaneCommand::all().iter().map(|command| command.id()));
     ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
     ids.extend(UiCommand::all().iter().map(|command| command.id()));
+    ids.extend(UiActionCommand::all().iter().map(|command| command.id()));
     ids.extend(ViewCommand::all().iter().map(|command| command.id()));
     ids.extend(SettingCommand::all().iter().map(|command| command.id()));
     ids.sort_unstable();
@@ -242,6 +243,9 @@ fn builtin_metadata() -> Vec<(&'static str, String, CommandMeta)> {
     for command in UiCommand::all() {
         commands.push((command.id(), command.title().to_string(), command.meta()));
     }
+    for command in UiActionCommand::all() {
+        commands.push((command.id(), command.title().to_string(), command.meta()));
+    }
     for command in ViewCommand::all() {
         commands.push((command.id(), display_title(command.id()), command.meta()));
     }
@@ -319,6 +323,7 @@ mod tests {
         ids.extend(PaneCommand::all().iter().map(|command| command.id()));
         ids.extend(DocumentCommand::all().iter().map(|command| command.id()));
         ids.extend(UiCommand::all().iter().map(|command| command.id()));
+        ids.extend(UiActionCommand::all().iter().map(|command| command.id()));
         ids.extend(ViewCommand::all().iter().map(|command| command.id()));
         ids.extend(SettingCommand::all().iter().map(|command| command.id()));
         let mut sorted = ids.clone();

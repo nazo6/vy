@@ -91,29 +91,32 @@ pub fn render_picker_row(theme: &Theme, item: &PickerItem, is_selected: bool) ->
 }
 
 /// Labels around the floating overlay list.
+///
+/// `hint` is built from the keymap, so a rebind changes the hint too.
 struct OverlayLabels {
     count: String,
     empty: &'static str,
-    hint: &'static str,
+    hint: String,
 }
 
-fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
+fn overlay_labels(overlay: &Overlay, filtered_count: usize, hints: &[String]) -> OverlayLabels {
+    let hint = hints.join("  ·  ");
     match overlay {
         Overlay::Palette(palette) => match &palette.mode {
             PaletteMode::Commands => OverlayLabels {
                 count: format!("{filtered_count} commands"),
                 empty: "no matching commands",
-                hint: "Enter run  ·  : for named commands  ·  Esc close  ·  Up/Down move",
+                hint: format!("{hint}  ·  : for named commands"),
             },
             PaletteMode::Documents => OverlayLabels {
                 count: format!("{filtered_count} documents"),
                 empty: "no matching documents",
-                hint: "Enter switch  ·  Esc close  ·  Up/Down move",
+                hint,
             },
             PaletteMode::Custom { .. } => OverlayLabels {
                 count: format!("{filtered_count} items"),
                 empty: "no matching items",
-                hint: "Enter select  ·  Esc close  ·  Up/Down move",
+                hint,
             },
         },
         Overlay::Prompt(prompt) => OverlayLabels {
@@ -123,32 +126,32 @@ fn overlay_labels(overlay: &Overlay, filtered_count: usize) -> OverlayLabels {
                 Some(_) => "no matching choices",
                 None => "argument",
             },
-            hint: "Enter confirm  ·  Esc back",
+            hint,
         },
         Overlay::Approval(approval) => OverlayLabels {
             count: format!("{} permission(s)", approval.missing.len()),
             empty: "no matching options",
-            hint: "Enter choose  ·  Esc deny  ·  Up/Down move",
+            hint,
         },
         Overlay::Settings(_) => OverlayLabels {
             count: format!("{filtered_count} settings"),
             empty: "no matching settings",
-            hint: "Enter change  ·  Esc close  ·  Up/Down move",
+            hint,
         },
         Overlay::SettingChoice(_) => OverlayLabels {
             count: format!("{filtered_count} choices"),
             empty: "no matching choices",
-            hint: "Enter select  ·  Esc back  ·  Up/Down move",
+            hint,
         },
         Overlay::SettingPrompt(_) => OverlayLabels {
             count: "set value".to_string(),
             empty: "type a value and press Enter",
-            hint: "Enter apply  ·  Esc back",
+            hint,
         },
         Overlay::Ex(_) => OverlayLabels {
             count: String::new(),
             empty: "",
-            hint: "",
+            hint: String::new(),
         },
     }
 }
@@ -179,7 +182,7 @@ pub fn render_overlay(
     let filtered = filtered_picker_indices(items, input.value());
     let filtered_count = filtered.len();
     let rows = palette_rows(items, &filtered, shows_palette_headings(input.value()));
-    let labels = overlay_labels(overlay, filtered_count);
+    let labels = overlay_labels(overlay, filtered_count, &view.overlay_hints());
 
     let query = div()
         .flex()

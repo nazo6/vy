@@ -729,6 +729,12 @@ impl EditorView {
         }
     }
 
+    /// Fallback key handling for the Ex line.
+    ///
+    /// `Esc`, `Enter`, history, completion, `Backspace`, and `Ctrl-u` are bound
+    /// in the default keymap to `vy.ui.*`, so they normally never reach here.
+    /// This remains the fallback for a key the keymap does not resolve, which
+    /// keeps a user who unbinds those commands from losing text editing.
     pub(super) fn handle_ex_key(&mut self, key: Key) {
         match key {
             Key::Esc => {
@@ -1538,22 +1544,23 @@ impl EditorView {
         command: UiActionCommand,
         invocation: &Invocation,
     ) {
+        let count = invocation.keymap_args().count;
+
+        // Commands that only edit a surface's input line have no widget role.
+        if command.action().is_none() {
+            self.run_ui_input_command(command);
+            return;
+        }
+
         // `args.action` lets a key expand `activate` into another action name.
+        let default_name = command.action_name().unwrap_or("activate");
         let action = invocation
             .args
             .string("action")
-            .or_else(|| {
-                invocation
-                    .args
-                    .keymap_args()
-                    .count
-                    .map(|_| command.action().name())
-            })
             .map(str::to_string)
-            .unwrap_or_else(|| command.action().name().to_string());
-        let args = UiAction::parse(&action).unwrap_or(command.action());
-
-        let count = invocation.keymap_args().count;
+            .unwrap_or_else(|| default_name.to_string());
+        let args = UiAction::parse(&action)
+            .unwrap_or_else(|| command.action().unwrap_or(UiAction::Activate));
 
         // A surface owns the keys while it is open, so actions apply to it first.
         if self.overlay.is_some() {
@@ -1561,6 +1568,7 @@ impl EditorView {
                 return;
             }
             if args == UiAction::Cancel {
+                // Nothing below the surface handled the key, so close it.
                 self.handle_overlay_key(Key::Esc);
             }
             return;
@@ -1595,6 +1603,45 @@ impl EditorView {
                         self.send_transaction(transaction);
                     }
                 }
+            }
+            _ => {}
+        }
+    }
+
+    /// Runs a `vy.ui.*` command that edits a surface's input line.
+    ///
+    /// These have no widget role: `Backspace`, `Ctrl-u`, and the Ex line's
+    /// history and completion keys. The surface decides what the command means
+    /// (ADR 0032 §2: `bottomBar` for Ex, a floating surface otherwise).
+    fn run_ui_input_command(&mut self, command: UiActionCommand) {
+        match command {
+            UiActionCommand::HistoryPrev | UiActionCommand::HistoryNext => {
+                let delta = if command == UiActionCommand::HistoryPrev {
+                    -1
+                } else {
+                    1
+                };
+                if let Some(Overlay::Ex(ex)) = self.overlay.as_mut() {
+                    self.ex_history.navigate(ex, delta);
+                }
+            }
+            UiActionCommand::CompleteNext | UiActionCommand::CompletePrev => {
+                let backwards = command == UiActionCommand::CompletePrev;
+                self.complete_ex_name(backwards);
+            }
+            UiActionCommand::DeleteChar => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
+            }
+            UiActionCommand::ClearInput => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.clear();
+                }
+                self.palette_scroll_handle
+                    .scroll_to_item(0, ScrollStrategy::Top);
             }
             _ => {}
         }
@@ -1769,6 +1816,14 @@ impl EditorView {
             }
             UiAction::Toggle => self.toggle_overlay_mark(),
             UiAction::Activate => self.confirm_overlay(action_name),
+            UiAction::Cancel => {
+                // Layer 1 of the Esc rules: a surface restores its temporary
+                // state, and closes when there is nothing to restore
+                // (ADR 0024 §9, ADR 0032 §7). `handle_overlay_key` already
+                // clears the query before closing, so let it decide.
+                self.handle_overlay_key(Key::Esc);
+                true
+            }
             UiAction::Yank => {
                 if let Some(id) = self.overlay_selected_id() {
                     self.editor_mut().yank_text(id, None);

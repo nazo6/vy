@@ -166,6 +166,37 @@ impl Key {
         };
         Some(key)
     }
+
+    /// The name [`Key::parse`] accepts for this key.
+    ///
+    /// The name is what a hint shows: `j`, `ctrl-d`, `esc`, `g g` is two names.
+    pub fn name(self) -> String {
+        match self {
+            Self::Char(' ') => "space".to_string(),
+            Self::Char(character) => character.to_string(),
+            Self::Ctrl(character) => format!("ctrl-{character}"),
+            Self::Esc => "esc".to_string(),
+            Self::Enter => "enter".to_string(),
+            Self::Backspace => "backspace".to_string(),
+            Self::Delete => "delete".to_string(),
+            Self::Tab => "tab".to_string(),
+            Self::BackTab => "backtab".to_string(),
+            Self::Left => "left".to_string(),
+            Self::Right => "right".to_string(),
+            Self::Up => "up".to_string(),
+            Self::Down => "down".to_string(),
+            Self::Home => "home".to_string(),
+            Self::End => "end".to_string(),
+        }
+    }
+}
+
+/// Renders a key sequence the way a binding spells it (`g g`, `ctrl-d`).
+pub fn format_sequence(keys: &[Key]) -> String {
+    keys.iter()
+        .map(|key| key.name())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Parses a space-separated sequence such as `g g` or `space f f`.
@@ -450,6 +481,50 @@ impl Keymap {
     /// Adds a context value for `when` expressions from scripts.
     pub fn set_context(&mut self, key: impl Into<String>, value: Value) {
         self.contexts.insert(key.into(), value);
+    }
+
+    /// Keys bound to `command` in `context`, shortest first.
+    ///
+    /// Surfaces use this to draw their hint line from the keymap instead of a
+    /// hard-coded string, so a rebind changes the hint too
+    /// ([ADR 0024](../../../docs/adr/0024-keyboard-first-plugin-ui.md) §7).
+    fn keys_for_command(&self, command: &str, context: &KeyContext) -> Vec<Vec<Key>> {
+        self.bindings
+            .iter()
+            .filter(|binding| binding.command == command && self.matches(binding, context))
+            .map(|binding| binding.keys.clone())
+            .collect()
+    }
+
+    /// The first key sequence bound to `commands`, in the order given.
+    ///
+    /// Returns the sequence that is easiest to show: a single key beats a
+    /// sequence, and shorter beats longer.
+    pub fn hint_for(&self, commands: &[&str], context: &KeyContext) -> Option<String> {
+        let mut best: Option<Vec<Key>> = None;
+        for command in commands {
+            for keys in self.keys_for_command(command, context) {
+                let better = best
+                    .as_ref()
+                    .is_none_or(|current| keys.len() < current.len());
+                if better {
+                    best = Some(keys);
+                }
+            }
+        }
+        best.map(|keys| format_sequence(&keys))
+    }
+
+    /// Every key sequence bound to `commands`, for a complete hint list.
+    pub fn hints_for(&self, commands: &[&str], context: &KeyContext) -> Vec<String> {
+        let mut hints: Vec<String> = commands
+            .iter()
+            .flat_map(|command| self.keys_for_command(command, context))
+            .map(|keys| format_sequence(&keys))
+            .collect();
+        hints.sort();
+        hints.dedup();
+        hints
     }
 
     pub fn sequence_timeout(&self) -> Duration {
@@ -1090,13 +1165,131 @@ mod tests {
             );
         }
 
-        // The Ex line keeps its own editing keys for now.
+        // The Ex line keeps no motion keys, but it does own its editing keys.
         let ex = KeyContext {
             mode: Mode::Normal,
             overlay: OverlayKind::Ex,
             ..KeyContext::default()
         };
         assert_eq!(keymap.feed(Key::Char('j'), &ex), KeymapOutcome::Ignored);
+        for (key, expected) in [
+            (Key::Up, "vy.ui.history_prev"),
+            (Key::Ctrl('p'), "vy.ui.history_prev"),
+            (Key::Down, "vy.ui.history_next"),
+            (Key::Ctrl('n'), "vy.ui.history_next"),
+            (Key::Tab, "vy.ui.complete_next"),
+            (Key::BackTab, "vy.ui.complete_prev"),
+            (Key::Backspace, "vy.ui.delete_char"),
+            (Key::Ctrl('u'), "vy.ui.clear_input"),
+            (Key::Esc, "vy.ui.cancel"),
+            (Key::Enter, "vy.ui.activate"),
+        ] {
+            match keymap.feed(key, &ex) {
+                KeymapOutcome::Command { id, .. } => {
+                    assert_eq!(id, expected, "key {key:?}");
+                }
+                other => panic!("key {key:?} resolved to {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn hints_come_from_the_bindings_and_follow_a_rebind() {
+        let mut keymap = keymap();
+        let context = KeyContext {
+            mode: Mode::Insert,
+            overlay: OverlayKind::Palette,
+            ..KeyContext::default()
+        };
+
+        // The shortest binding is shown: `j` beats `down` and `ctrl-n`.
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.next"], &context).as_deref(),
+            Some("j")
+        );
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.activate"], &context).as_deref(),
+            Some("enter")
+        );
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.cancel"], &context).as_deref(),
+            Some("esc")
+        );
+
+        // A rebind of the same length wins, matching dispatch order (the last
+        // binding is the one that runs).
+        keymap
+            .bind(
+                "ctrl-j",
+                "vy.ui.next",
+                Some("overlay == 'palette'"),
+                Owner::Init,
+            )
+            .expect("bind");
+        assert_eq!(
+            keymap.hints_for(&["vy.ui.next"], &context),
+            vec![
+                "ctrl-j".to_string(),
+                "ctrl-n".to_string(),
+                "down".to_string(),
+                "j".to_string(),
+            ]
+        );
+
+        // `j` is still the shortest, so it stays the shown hint.
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.next"], &context).as_deref(),
+            Some("j")
+        );
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.next"], &context).as_deref(),
+            Some("j")
+        );
+
+        // Unbinding `j` promotes the next shortest key to the hint.
+        keymap.unbind("j").expect("unbind");
+        assert_eq!(
+            keymap.hint_for(&["vy.ui.next"], &context).as_deref(),
+            Some("down")
+        );
+
+        // Commands with no matching binding report no hint.
+        assert_eq!(keymap.hint_for(&["vy.ui.expand"], &context), None);
+    }
+
+    #[test]
+    fn key_names_round_trip_through_parse() {
+        for name in [
+            "j",
+            "G",
+            "space",
+            "ctrl-d",
+            "esc",
+            "enter",
+            "tab",
+            "backtab",
+            "left",
+            "right",
+            "up",
+            "down",
+            "home",
+            "end",
+            "backspace",
+            "delete",
+        ] {
+            let key = Key::parse(name).expect("known key");
+            assert_eq!(key.name(), name, "name of {name}");
+            assert_eq!(parse_sequence(&key.name()), Ok(vec![key]));
+        }
+
+        assert_eq!(
+            format_sequence(&parse_sequence("g g").expect("sequence")),
+            "g g"
+        );
+        assert_eq!(
+            format_sequence(&parse_sequence("space f f").expect("sequence")),
+            "space f f"
+        );
     }
 
     #[test]

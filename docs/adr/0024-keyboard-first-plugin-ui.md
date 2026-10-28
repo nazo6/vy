@@ -16,7 +16,7 @@ tags: ["ui", "keymap", "plugin", "focus"]
 - 状態: 採用
 - 日付: 2026-10-27
 - カテゴリー: feature
-- 実装: 進行中（Phase 1–2 完了。実装計画は本ドキュメント末尾に記載）
+- 実装: 進行中（Phase 1–3 の一部完了。実装計画は本ドキュメント末尾に記載）
 
 ## 文脈
 
@@ -272,6 +272,8 @@ oil.nvim のようにバッファ自体が UI になる方式は、キーボー�
 - `ui.picker.show` の固定キー処理を、`overlay == 'picker'` の既定キーへ移す。
 - `ui.picker.update`、`ui.picker.close`、`requestId` による結果の破棄を実装する。
 - picker を insert / normal の 2 状態で動かす。
+
+> **実装済み（2026-10-28、パレットと Ex のみ）**: `on_key_down` の早期 return をやめ、印字キー以外は `overlay` と `uiRole` の条件でキーマップに解決するようにしました。解決しなかったキーだけが従来の `handle_*_key` にフォールバックします。`Backspace`、`Ctrl-u`、Ex の履歴と補完、`Esc`、`Enter` は `vy.ui.*` の既定バインドになりました。`:` は `mode != 'insert' && overlay == 'none'` に限定しました。パレットのヒント行はキーマップから生成します。**未実装**: picker の 2 状態（insert / normal）、`ui.picker.update` と `ui.picker.close`、`requestId` による古い結果の破棄。
 
 ### Phase 4: views の actions / restore
 

@@ -523,28 +523,48 @@ define_command_enum! {
         Yank => ("vy.ui.yank", "UI Yank"),
         FocusNext => ("vy.ui.focus_next", "UI Focus Next"),
         FocusPrev => ("vy.ui.focus_prev", "UI Focus Prev"),
+        HistoryPrev => ("vy.ui.history_prev", "UI History Prev"),
+        HistoryNext => ("vy.ui.history_next", "UI History Next"),
+        CompleteNext => ("vy.ui.complete_next", "UI Complete Next"),
+        CompletePrev => ("vy.ui.complete_prev", "UI Complete Prev"),
+        DeleteChar => ("vy.ui.delete_char", "UI Delete Char"),
+        ClearInput => ("vy.ui.clear_input", "UI Clear Input"),
     }
 }
 
 impl UiActionCommand {
     /// The action this command runs.
-    pub fn action(self) -> UiAction {
+    ///
+    /// Commands that are only about a surface's input line return `None`:
+    /// they have no widget role and are handled by the surface itself.
+    pub fn action(self) -> Option<UiAction> {
         match self {
-            Self::Next => UiAction::Next,
-            Self::Prev => UiAction::Prev,
-            Self::PageDown => UiAction::PageDown,
-            Self::PageUp => UiAction::PageUp,
-            Self::First => UiAction::First,
-            Self::Last => UiAction::Last,
-            Self::Expand => UiAction::Expand,
-            Self::Collapse => UiAction::Collapse,
-            Self::Activate => UiAction::Activate,
-            Self::Cancel => UiAction::Cancel,
-            Self::Toggle => UiAction::Toggle,
-            Self::Yank => UiAction::Yank,
-            Self::FocusNext => UiAction::FocusNext,
-            Self::FocusPrev => UiAction::FocusPrev,
+            Self::Next => Some(UiAction::Next),
+            Self::Prev => Some(UiAction::Prev),
+            Self::PageDown => Some(UiAction::PageDown),
+            Self::PageUp => Some(UiAction::PageUp),
+            Self::First => Some(UiAction::First),
+            Self::Last => Some(UiAction::Last),
+            Self::Expand => Some(UiAction::Expand),
+            Self::Collapse => Some(UiAction::Collapse),
+            Self::Activate => Some(UiAction::Activate),
+            Self::Cancel => Some(UiAction::Cancel),
+            Self::Toggle => Some(UiAction::Toggle),
+            Self::Yank => Some(UiAction::Yank),
+            Self::FocusNext => Some(UiAction::FocusNext),
+            Self::FocusPrev => Some(UiAction::FocusPrev),
+            Self::HistoryPrev
+            | Self::HistoryNext
+            | Self::CompleteNext
+            | Self::CompletePrev
+            | Self::DeleteChar
+            | Self::ClearInput => None,
         }
+    }
+
+    /// The action name, for the commands that have one.
+    pub fn action_name(self) -> Option<&'static str> {
+        self.action().map(UiAction::name)
     }
 
     pub fn meta(self) -> CommandMeta {
