@@ -26,7 +26,7 @@ use vy_app::config::Config;
 use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState, VisualRow};
 use vy_app::ex::ExHistory;
-use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome};
+use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome, OverlayKind, PaneKind};
 use vy_app::overlay::{ApprovalState, Overlay};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
@@ -723,6 +723,18 @@ impl EditorView {
             return;
         };
 
+        // `Tab` and `Shift-Tab` move widget focus inside the active pane. A pane
+        // showing only an editor has nothing to focus, so the key still reaches
+        // the keymap (ADR 0024 §3).
+        if matches!(key, Key::Tab | Key::BackTab) && self.editor().mode() != Mode::Insert {
+            let forward = key == Key::Tab;
+            if self.step_widget_focus(forward) {
+                cx.stop_propagation();
+                cx.notify();
+                return;
+            }
+        }
+
         // Printable text reaches Insert mode through `replace_text_in_range`, which every
         // platform calls for the same key press. Inserting here would duplicate it.
         self.activate_active_view();
@@ -769,13 +781,14 @@ impl EditorView {
         let before_overlay = self.overlay.is_some();
 
         let selection = self.editor().selection();
-        let context = KeyContext {
+        let mut context = KeyContext {
             mode: self.editor().mode(),
             has_selection: selection.start != selection.end,
             operator_pending: self.editor().operator_pending(),
             text_object_pending: self.editor().text_object_pending(),
             ..KeyContext::default()
         };
+        self.apply_key_context(&mut context);
 
         match self.keymap.feed(key, &context) {
             KeymapOutcome::Command { id, args, values } => {
@@ -800,6 +813,104 @@ impl EditorView {
             || before_scroll != self.active_pane_state().map(scroll_position)
             || before_version != self.editor().version()
             || before_overlay != self.overlay.is_some()
+    }
+
+    /// Fills the host-owned keymap context values from the active pane.
+    ///
+    /// The overlay and the focused widget live only in the client, so they are
+    /// read here rather than in the pane state (ADR 0024 §2, ADR 0032 §6).
+    pub(super) fn apply_key_context(&self, context: &mut KeyContext) {
+        let overlay = self.overlay_kind();
+        context.overlay = overlay;
+        context.surface_id = self.overlay_surface_id();
+        context.remote = self.connection.is_remote();
+        match self.active_pane_state() {
+            Some(pane) => {
+                pane.apply_key_context(context);
+                context.editor_focus = pane.context_editor_focus(overlay);
+            }
+            None => {
+                context.editor_focus = overlay == OverlayKind::None;
+            }
+        }
+    }
+
+    /// `id` of the topmost surface, when the surface has a stable id.
+    ///
+    /// Plugin pickers carry the id the plugin passed to `ui.picker.show`; the
+    /// host-owned surfaces (palette, Ex line, prompt, approval, settings) have
+    /// none (`surfaceId` stays absent for them).
+    pub(super) fn overlay_surface_id(&self) -> Option<String> {
+        match self.overlay.as_ref() {
+            Some(Overlay::Palette(palette)) => match &palette.mode {
+                vy_app::palette::PaletteMode::Custom { id, .. } => Some(id.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The surface kind the keymap context reports.
+    pub(super) fn overlay_kind(&self) -> OverlayKind {
+        match self.overlay.as_ref() {
+            None => OverlayKind::None,
+            Some(Overlay::Palette(palette)) => match palette.mode {
+                vy_app::palette::PaletteMode::Custom { .. } => OverlayKind::Picker,
+                _ => OverlayKind::Palette,
+            },
+            Some(Overlay::Ex(_)) => OverlayKind::Ex,
+            Some(Overlay::Prompt(_)) => OverlayKind::Prompt,
+            Some(Overlay::Approval(_)) => OverlayKind::Approval,
+            Some(Overlay::Settings(_))
+            | Some(Overlay::SettingChoice(_))
+            | Some(Overlay::SettingPrompt(_)) => OverlayKind::Settings,
+        }
+    }
+
+    /// Moves widget focus inside the active pane in depth-first order.
+    ///
+    /// Returns whether the focused pane has a widget tree to walk. `Tab` and
+    /// `Shift-Tab` fall through to the keymap otherwise (ADR 0024 §3).
+    fn step_widget_focus(&mut self, forward: bool) -> bool {
+        let Some(pane) = self.active_pane_state_mut() else {
+            return false;
+        };
+        if pane.widget_tree.is_none() {
+            return false;
+        }
+        pane.step_focus(forward);
+        true
+    }
+
+    /// Focuses one widget after a click.
+    ///
+    /// Clicking a widget also makes its pane the active one, so the keymap
+    /// context and the focus ring agree.
+    pub(super) fn focus_widget(&mut self, pane_id: PaneId, path: &vy_app::focus_path::FocusPath) {
+        if self.active_pane != Some(pane_id) {
+            self.switch_active_pane(Some(pane_id));
+        }
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.set_focus_path(path.clone());
+        }
+    }
+
+    /// The focused widget of the active pane, for `ui.focused` (ADR 0024 §5).
+    ///
+    /// Returns `None` for an editor pane, matching the spec: the editor's
+    /// cursor and selection are read from `editor.*`, not from a widget.
+    pub(super) fn current_ui_focus(&self) -> Option<plugin_host::UiFocus> {
+        let pane = self.active_pane_state()?;
+        if pane.pane_kind() != PaneKind::Ui {
+            return None;
+        }
+        let focus_id = pane.ui_focus()?;
+        Some(plugin_host::UiFocus {
+            focus_id: focus_id.to_string(),
+            role: pane.ui_role()?,
+            pane_id: pane.id,
+            view_id: pane.view_type.clone(),
+        })
     }
 
     /// Scrolls by whole lines or columns. The wheel moves the view, not the cursor.

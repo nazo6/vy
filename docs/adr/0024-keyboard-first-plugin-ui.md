@@ -16,7 +16,7 @@ tags: ["ui", "keymap", "plugin", "focus"]
 - 状態: 採用
 - 日付: 2026-10-27
 - カテゴリー: feature
-- 実装: 未着手（実装計画は本ドキュメント末尾に記載）
+- 実装: 進行中（Phase 1 完了。実装計画は本ドキュメント末尾に記載）
 
 ## 文脈
 
@@ -255,6 +255,8 @@ oil.nvim のようにバッファ自体が UI になる方式は、キーボー�
 - ペインごとの `FocusPath` と、再描画時のフォールバックを実装する（`crates/vy-app/src/ui/`、`view/render.rs`）。
 - `Tab` / `Shift-Tab` のフォーカス移動を、ウィジェット木の DFS 順で実装する。
 - `builtin/keymaps/default.json` のエディタ系バインドに `paneKind == 'editor'` を付ける。
+
+> **実装済み（2026-10-28）**: `KeyContext` に `paneKind`、`viewType`、`uiRole`、`uiFocus`、`uiSelectionCount`、`overlay`、`surfaceId` を追加しました。`FocusPath` と DFS の移動、再描画時のフォールバック、クリックによるフォーカス設定は `crates/vy-app/src/focus_path.rs`、`state.rs`、`ui/widget.rs` にあります。`ui.focused()` も追加済みです。`uiSelectionCount` は一覧とツリーの選択状態が入るまで常に `0` です。
 
 ### Phase 2: `vy.ui.*` の語彙と既定キー
 

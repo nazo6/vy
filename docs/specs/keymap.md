@@ -175,6 +175,23 @@ Vy のモーダル編集で扱うキーと、その実装状況の一覧です�
 [`commands.md`](./commands.md) にまとめました。パレットと同じ実行層を使い、 `:`
 はペインではなくオーバーレイとして開きます。
 
+## 7.1 `when` のコンテキスト
+
+既定キーマップのエディタ系バインドは `paneKind == 'editor'` を含みます。これにより、UI ペインにフォーカスがある間はエディタのキーが一致しません。値の一覧と設定する層は [`ui.md`](./ui.md) §2.1 にあります。
+
+| コンテキスト       | 値                                                                       | 状態     |
+| :----------------- | :----------------------------------------------------------------------- | :------- |
+| `paneKind`         | `editor`、`ui`、`webview`、`terminal`                                    | 実装済み |
+| `viewType`         | ビューの ID。エディタペインでは空文字                                    | 実装済み |
+| `uiRole`           | `list`、`tree`、`table`、`textInput`、`button`。無ければ未設定           | 実装済み |
+| `uiFocus`          | フォーカス中のノードの `id`                                              | 実装済み |
+| `overlay`          | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings` など | 実装済み |
+| `surfaceId`        | 最前面のサーフェスの `id`                                                | 実装済み |
+| `uiSelectionCount` | 選択中の項目数                                                           | 一部     |
+
+- `overlay` は `none` 以外のとき、どのオーバーレイが開いているかを表します。パレットのうちプラグインが `ui.picker.show` で開いたものは `picker`、ホストのコマンド一覧と文書一覧は `palette` です。設定の選択と設定の入力は `settings` にまとめます。
+- `Tab` と `Shift-Tab` は、UI ペインにフォーカス可能なウィジェットがある間はフォーカス移動になります。キーマップへは流れません（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §3）。
+
 ## 8. キーマップ API
 
 既定キーは [`builtin/keymaps/default.json`](../../builtin/keymaps/default.json)

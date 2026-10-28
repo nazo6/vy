@@ -7,7 +7,9 @@ use vy_core::PaneId;
 
 use crate::config::{Config, SettingSource};
 use crate::editor::{Editor, ViewState};
-use crate::widget::WidgetNode;
+use crate::focus_path::{self, FocusPath};
+use crate::keymap::{KeyContext, OverlayKind, PaneKind};
+use crate::widget::{UiRole, WidgetNode};
 
 /// Default rows drawn before measuring the window.
 pub const VISIBLE_LINES: usize = 30;
@@ -70,6 +72,10 @@ pub struct PaneState {
     pub view_type: String,
     /// Root of the custom widget tree if this is a "ui" view.
     pub widget_tree: Option<WidgetNode>,
+    /// Ids from the widget tree root down to the focused widget.
+    ///
+    /// Empty when the pane shows an editor or nothing in its tree has focus.
+    pub focus_path: FocusPath,
 }
 
 impl PaneState {
@@ -88,7 +94,105 @@ impl PaneState {
             settings: BTreeMap::new(),
             view_type: "editor".to_string(),
             widget_tree: None,
+            focus_path: FocusPath::new(),
         }
+    }
+
+    /// What this pane shows, as the keymap sees it.
+    ///
+    /// A pane showing a registered view is a `ui` pane; the view id goes in
+    /// `viewType`. The pane kinds `webview` and `terminal` exist in the keymap
+    /// context but no pane produces them yet.
+    pub fn pane_kind(&self) -> PaneKind {
+        if self.widget_tree.is_some() || self.view_type != "editor" {
+            PaneKind::Ui
+        } else {
+            PaneKind::Editor
+        }
+    }
+
+    /// The id of the view this pane shows, or empty for an editor pane.
+    pub fn context_view_type(&self) -> String {
+        if self.pane_kind() == PaneKind::Editor {
+            String::new()
+        } else {
+            self.view_type.clone()
+        }
+    }
+
+    /// The focusable node current focus resolves to, if any.
+    pub fn focused_widget(&self) -> Option<&WidgetNode> {
+        let tree = self.widget_tree.as_ref()?;
+        focus_path::focused_node(tree, &self.focus_path)
+    }
+
+    pub fn ui_role(&self) -> Option<UiRole> {
+        self.focused_widget().and_then(WidgetNode::focus_role)
+    }
+
+    pub fn ui_focus(&self) -> Option<&str> {
+        self.ui_role()?;
+        self.focus_path.focused()
+    }
+
+    /// Drops focus when the tree no longer contains the focused widget.
+    pub fn normalize_focus(&mut self) {
+        if self.focus_path.is_empty() {
+            return;
+        }
+        self.focus_path = focus_path::normalize(self.widget_tree.as_ref(), &self.focus_path);
+    }
+
+    /// Moves focus to the next or previous focusable widget, wrapping.
+    pub fn step_focus(&mut self, forward: bool) {
+        let Some(tree) = self.widget_tree.as_ref() else {
+            self.focus_path = FocusPath::new();
+            return;
+        };
+        self.focus_path = focus_path::step(tree, &self.focus_path, forward);
+    }
+
+    /// Focuses the widget at `path`, or clears focus when it is not focusable.
+    pub fn set_focus_path(&mut self, path: FocusPath) {
+        self.focus_path = if self
+            .widget_tree
+            .as_ref()
+            .is_some_and(|tree| focus_path::focused_node(tree, &path).is_some())
+        {
+            path
+        } else {
+            FocusPath::new()
+        };
+    }
+
+    /// Fills the pane-owned values of a keymap context.
+    ///
+    /// `uiRole` and `uiFocus` are set only while a focusable widget has focus,
+    /// so `uiRole == 'list'` stays false in an editor pane and in a UI pane
+    /// whose focus is on the tree container.
+    pub fn apply_key_context(&self, context: &mut KeyContext) {
+        context.pane_kind = self.pane_kind();
+        context.view_type = self.context_view_type();
+        context.ui_role = self.ui_role();
+        context.ui_focus = self.ui_focus().map(str::to_string);
+        context.ui_selection_count = if context.ui_role.is_some_and(UiRole::has_selection) {
+            self.ui_selection_count()
+        } else {
+            0
+        };
+    }
+
+    /// Number of selected items in the focused widget.
+    ///
+    /// Lists, trees, and tables keep their selection in the widget itself, so
+    /// this is zero until that state lands.
+    pub fn ui_selection_count(&self) -> usize {
+        0
+    }
+
+    /// Whether the keymap context should say the editor owns focus.
+    pub fn context_editor_focus(&self, overlay: OverlayKind) -> bool {
+        overlay == OverlayKind::None && self.pane_kind() == PaneKind::Editor
     }
 
     /// Resolves a setting for this pane: the window override, then the
@@ -153,5 +257,110 @@ mod tests {
             pane.effective_setting("editor.wrap", &config).1,
             SettingSource::Memory
         );
+    }
+
+    fn panel_tree() -> WidgetNode {
+        WidgetNode::Container {
+            id: Some("panel".to_string()),
+            kind: crate::widget::ContainerKind::Column,
+            gap: None,
+            children: vec![
+                WidgetNode::Button {
+                    id: "run".to_string(),
+                    label: "Run".to_string(),
+                    command: "example.run".to_string(),
+                    variant: None,
+                },
+                WidgetNode::TextInput {
+                    id: Some("query".to_string()),
+                    value: String::new(),
+                    placeholder: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn an_editor_pane_exposes_no_widget_context() {
+        let pane = PaneState::new(1, Some(1));
+        let mut context = KeyContext::default();
+        pane.apply_key_context(&mut context);
+
+        assert_eq!(context.pane_kind, PaneKind::Editor);
+        assert_eq!(context.view_type, "");
+        assert_eq!(context.ui_role, None);
+        assert_eq!(context.ui_focus, None);
+        assert!(pane.context_editor_focus(OverlayKind::None));
+        assert!(!pane.context_editor_focus(OverlayKind::Palette));
+    }
+
+    #[test]
+    fn a_ui_pane_reports_its_view_and_focused_widget() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.view_type = "example.panel".to_string();
+        pane.widget_tree = Some(panel_tree());
+        pane.set_focus_path(FocusPath::from_ids(["panel", "query"]));
+
+        let mut context = KeyContext::default();
+        pane.apply_key_context(&mut context);
+
+        assert_eq!(context.pane_kind, PaneKind::Ui);
+        assert_eq!(context.view_type, "example.panel");
+        assert_eq!(context.ui_role, Some(UiRole::TextInput));
+        assert_eq!(context.ui_focus.as_deref(), Some("query"));
+        assert!(!pane.context_editor_focus(OverlayKind::None));
+
+        // Without widget focus, `uiRole` is unset but the pane is still a UI pane.
+        pane.set_focus_path(FocusPath::new());
+        pane.apply_key_context(&mut context);
+        assert_eq!(context.pane_kind, PaneKind::Ui);
+        assert_eq!(context.ui_role, None);
+        assert_eq!(context.ui_focus, None);
+    }
+
+    #[test]
+    fn focus_steps_through_the_tree_and_recovers_after_a_redraw() {
+        let mut pane = PaneState::new(1, Some(1));
+        pane.widget_tree = Some(panel_tree());
+
+        pane.step_focus(true);
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "run"]));
+        pane.step_focus(true);
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "query"]));
+        pane.step_focus(true);
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "run"]));
+        pane.step_focus(false);
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "query"]));
+
+        // A redraw replaces the tree; the focused widget is gone.
+        pane.widget_tree = Some(WidgetNode::Container {
+            id: Some("panel".to_string()),
+            kind: crate::widget::ContainerKind::Column,
+            gap: None,
+            children: vec![WidgetNode::Button {
+                id: "run".to_string(),
+                label: "Run".to_string(),
+                command: "example.run".to_string(),
+                variant: None,
+            }],
+        });
+        pane.normalize_focus();
+        assert_eq!(pane.focus_path, FocusPath::from_ids(["panel", "run"]));
+
+        // Dropping the tree clears focus.
+        pane.widget_tree = None;
+        pane.normalize_focus();
+        assert_eq!(pane.focus_path, FocusPath::new());
+    }
+
+    #[test]
+    fn negative_wrap_inheritance_is_unchanged_by_focus_state() {
+        let mut config = Config::with_defaults();
+        let mut pane = PaneState::new(1, None);
+        pane.view_type = "example.panel".to_string();
+        pane.widget_tree = Some(panel_tree());
+
+        config.set("editor.wrap", Value::Bool(true));
+        assert!(pane.is_wrap(&config));
     }
 }

@@ -76,7 +76,8 @@ mod tests {
 
     #[test]
     fn ui_namespaces_are_grouped() {
-        assert!(namespaces::ui::METHODS.is_empty());
+        // The `ui` namespace now holds `ui.focused`, so it is no longer empty.
+        assert_eq!(namespaces::ui::METHODS.len(), 1);
         assert_eq!(namespaces::views::METHODS.len(), 4);
         assert_eq!(namespaces::ui_statusline::METHODS.len(), 3);
         assert_eq!(namespaces::ui_picker::METHODS.len(), 1);
@@ -181,7 +182,11 @@ mod tests {
         }
     }
 
-    impl namespaces::ui::UiApi for TestHost {}
+    impl namespaces::ui::UiApi for TestHost {
+        fn focused(&mut self) -> Result<Reply<Option<namespaces::ui::UiFocus>>, CallError> {
+            Ok(Reply::Value(None))
+        }
+    }
 
     impl namespaces::ui_statusline::UiStatuslineApi for TestHost {
         fn create_item(

@@ -337,6 +337,20 @@ pub struct RequestContext<'a> {
     pub statusline: Option<&'a mut Statusline>,
     pub gutter: Option<&'a mut GutterRegistry>,
     pub hover: Option<&'a mut Option<HoverState>>,
+    /// Focused widget of the active pane, for `ui.focused`.
+    pub ui_focus: Option<UiFocus>,
+}
+
+/// The focused widget of the active pane.
+///
+/// Built by the view from the pane's widget tree and focus path, so a plugin
+/// reads focus without another round trip (ADR 0024 §5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiFocus {
+    pub focus_id: String,
+    pub role: crate::widget::UiRole,
+    pub pane_id: u64,
+    pub view_id: String,
 }
 
 /// The effect of one request on the client.
@@ -422,6 +436,7 @@ mod tests {
             statusline: None,
             gutter: None,
             hover: None,
+            ui_focus: None,
         }
     }
 
@@ -611,6 +626,7 @@ vy.commands.registerCommand("user.hello", async () => {
                     statusline: None,
                     gutter: None,
                     hover: None,
+                    ui_focus: None,
                 };
                 let outcome = handle_request(context, request);
                 assert!(outcome.action == HostAction::None);
@@ -775,6 +791,7 @@ vy.commands.registerCommand("user.hello", async () => {
                     statusline: None,
                     gutter: None,
                     hover: None,
+                    ui_focus: None,
                 };
                 let _ = handle_request(context, request);
             }
@@ -862,6 +879,59 @@ vy.commands.registerCommand("user.hello", async () => {
 
         let reply = receiver.recv().expect("reply");
         assert!(matches!(reply, vy_js::HostReply::Ok(value) if value == json!("normal")));
+    }
+
+    #[test]
+    fn answers_ui_focused_with_the_active_widget_or_null() {
+        let mut editor = Editor::new();
+        let mut config = Config::with_defaults();
+        let mut keymap = Keymap::new(std::time::Duration::from_millis(1000));
+        let mut commands = CommandRegistry::new();
+        let workspace = WorkspaceInfo::default();
+        let paths = Paths::under("/tmp/vy-host");
+
+        // An editor pane reports no focused widget.
+        let (request, receiver) = HostRequest::new("ui.focused".to_string(), Value::Null);
+        handle_request(
+            context(
+                &mut editor,
+                &mut config,
+                &mut keymap,
+                &mut commands,
+                &workspace,
+                &paths,
+            ),
+            request,
+        );
+        let reply = receiver.recv().expect("reply");
+        assert!(matches!(reply, vy_js::HostReply::Ok(value) if value.is_null()));
+
+        // A UI pane reports the focused widget.
+        let (request, receiver) = HostRequest::new("ui.focused".to_string(), Value::Null);
+        let mut request_context = context(
+            &mut editor,
+            &mut config,
+            &mut keymap,
+            &mut commands,
+            &workspace,
+            &paths,
+        );
+        request_context.ui_focus = Some(UiFocus {
+            focus_id: "messages".to_string(),
+            role: crate::widget::UiRole::List,
+            pane_id: 7,
+            view_id: "example.chat".to_string(),
+        });
+        handle_request(request_context, request);
+
+        let reply = receiver.recv().expect("reply");
+        let vy_js::HostReply::Ok(value) = reply else {
+            panic!("expected a value");
+        };
+        assert_eq!(value["focusId"], json!("messages"));
+        assert_eq!(value["role"], json!("list"));
+        assert_eq!(value["paneId"], json!(7));
+        assert_eq!(value["viewId"], json!("example.chat"));
     }
 
     #[test]

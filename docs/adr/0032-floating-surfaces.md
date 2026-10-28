@@ -16,7 +16,7 @@ related_adrs: ["0003", "0005", "0006", "0022", "0024", "0029", "0030", "0031"]
 - 状態: 提案
 - 日付: 2026-10-27
 - カテゴリー: architecture
-- 実装: 未着手（実装計画は本ドキュメント末尾に記載）
+- 実装: 進行中（Phase 1 完了。実装計画は本ドキュメント末尾に記載）
 
 ## 文脈
 
@@ -269,6 +269,8 @@ ADR 0024 の未決定事項「プラグインが独自に開くオーバーレ�
 - ペインごとの `FocusPath` と、再描画時のフォールバックを実装する。
 - `Tab` / `Shift-Tab` の DFS 移動を実装する。
 - `builtin/keymaps/default.json` のエディタ系バインドに `paneKind == 'editor'` を付ける。
+
+> **実装済み（2026-10-28）**: ADR 0024 Phase 1 と同じ変更で `paneKind`、`viewType`、`overlay`、`surfaceId` を追加しました。`overlay` の値は 7 variant を `palette`、`ex`、`prompt`、`approval`、`settings` に写し、プラグインの picker を `picker` にしています。`hover`、`menu`、`custom` の値は定義済みですが、まだ作る面がありません。`surfaceId` はプラグインの picker だけが値を持ちます。サーフェスのスタック（Phase 4）は未着手です。
 
 ### Phase 2: `vy.ui.*` の語彙と既定動作（ADR 0024 Phase 2）
 

@@ -563,6 +563,30 @@ export type TextEdit = {
  */
 export type ThemeColor = "default" | "muted" | "subtle" | "accent" | "prompt" | "primary" | "info" | "success" | "warning" | "danger" | "error" | "secondary";
 
+/**
+ *  The focused widget, as `ui.focused` reports it.
+ * 
+ *  Selection and expansion state arrive with the list and tree widgets, so
+ *  they are not reported yet.
+ */
+export type UiFocus = {
+	/**  `id` of the focused widget. */
+	focusId: string,
+	role: UiRole,
+	/**  `id` of the pane the widget lives in. */
+	paneId: number,
+	/**  View id the pane shows. */
+	viewId: string,
+};
+
+/**
+ *  The role of a widget that can take keyboard focus.
+ * 
+ *  The keymap exposes this as `uiRole`, so a binding can be limited to one kind
+ *  of widget ([ADR 0024](../../docs/adr/0024-keyboard-first-plugin-ui.md) §2).
+ */
+export type UiRole = "list" | "tree" | "table" | "textInput" | "button";
+
 /**  A value that points at a document. `file:` is a real file; `vy:` has no backing file. */
 export type Uri = string;
 

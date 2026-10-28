@@ -12,8 +12,100 @@ use serde_json::Value as JsonValue;
 
 use crate::commands::{KeymapArgs, Owner};
 use crate::when::{self, Expr, Value};
+use crate::widget::UiRole;
 
 pub use vy_client_api::keymap::Mode;
+
+/// What a pane shows, as seen by `when` conditions (ADR 0024 §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PaneKind {
+    #[default]
+    Editor,
+    Ui,
+    Webview,
+    Terminal,
+}
+
+impl PaneKind {
+    /// Name used by `when` expressions.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Editor => "editor",
+            Self::Ui => "ui",
+            Self::Webview => "webview",
+            Self::Terminal => "terminal",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "editor" => Some(Self::Editor),
+            "ui" => Some(Self::Ui),
+            "webview" => Some(Self::Webview),
+            "terminal" => Some(Self::Terminal),
+            _ => None,
+        }
+    }
+}
+
+/// The topmost floating surface, as seen by `when` conditions.
+///
+/// The names match the surface kinds in
+/// [ADR 0032](../../../docs/adr/0032-floating-surfaces.md) §6, so one value set
+/// serves both the overlay and the surface model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum OverlayKind {
+    #[default]
+    None,
+    Palette,
+    Picker,
+    Ex,
+    Prompt,
+    Approval,
+    Settings,
+    Hover,
+    Menu,
+    Custom,
+}
+
+impl OverlayKind {
+    /// Name used by `when` expressions.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Palette => "palette",
+            Self::Picker => "picker",
+            Self::Ex => "ex",
+            Self::Prompt => "prompt",
+            Self::Approval => "approval",
+            Self::Settings => "settings",
+            Self::Hover => "hover",
+            Self::Menu => "menu",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "none" => Some(Self::None),
+            "palette" => Some(Self::Palette),
+            "picker" => Some(Self::Picker),
+            "ex" => Some(Self::Ex),
+            "prompt" => Some(Self::Prompt),
+            "approval" => Some(Self::Approval),
+            "settings" => Some(Self::Settings),
+            "hover" => Some(Self::Hover),
+            "menu" => Some(Self::Menu),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+
+    /// Whether the surface locks keyboard focus while it is open.
+    pub fn is_modal(self) -> bool {
+        !matches!(self, Self::None | Self::Hover | Self::Menu | Self::Custom)
+    }
+}
 
 /// One key press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -90,6 +182,10 @@ pub fn parse_sequence(keys: &str) -> Result<Vec<Key>, KeymapError> {
 }
 
 /// State used to evaluate `when` expressions at dispatch time.
+///
+/// The fields below are the host-owned values from ADR 0024 §2 and ADR 0032 §6.
+/// Scripts cannot overwrite them; they add their own names with
+/// `keymap.setContext`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyContext {
     pub mode: Mode,
@@ -98,6 +194,20 @@ pub struct KeyContext {
     pub operator_pending: bool,
     pub text_object_pending: bool,
     pub remote: bool,
+    /// `editor`, `ui`, `webview`, or `terminal`.
+    pub pane_kind: PaneKind,
+    /// View id the focused pane shows. Empty for an editor pane.
+    pub view_type: String,
+    /// Role of the focused widget, when the pane has widget focus.
+    pub ui_role: Option<UiRole>,
+    /// `id` of the focused widget.
+    pub ui_focus: Option<String>,
+    /// Number of selected items in the focused widget.
+    pub ui_selection_count: usize,
+    /// Name of the topmost surface, or `none`.
+    pub overlay: OverlayKind,
+    /// `id` of the topmost surface, when it has one.
+    pub surface_id: Option<String>,
 }
 
 impl Default for KeyContext {
@@ -109,6 +219,13 @@ impl Default for KeyContext {
             operator_pending: false,
             text_object_pending: false,
             remote: false,
+            pane_kind: PaneKind::Editor,
+            view_type: String::new(),
+            ui_role: None,
+            ui_focus: None,
+            ui_selection_count: 0,
+            overlay: OverlayKind::None,
+            surface_id: None,
         }
     }
 }
@@ -127,6 +244,15 @@ impl KeyContext {
             "operatorPending" => Some(Value::Bool(self.operator_pending)),
             "textObjectPending" => Some(Value::Bool(self.text_object_pending)),
             "remote" => Some(Value::Bool(self.remote)),
+            "paneKind" => Some(Value::Text(self.pane_kind.name().to_string())),
+            "viewType" => Some(Value::Text(self.view_type.clone())),
+            "uiRole" => self
+                .ui_role
+                .map(|role| Value::Text(role.name().to_string())),
+            "uiFocus" => self.ui_focus.clone().map(Value::Text),
+            "uiSelectionCount" => Some(Value::Number(self.ui_selection_count as f64)),
+            "overlay" => Some(Value::Text(self.overlay.name().to_string())),
+            "surfaceId" => self.surface_id.clone().map(Value::Text),
             _ => None,
         }
     }
@@ -808,6 +934,106 @@ mod tests {
 
         let (id, _) = command(keymap.feed(Key::Char('z'), &normal()));
         assert_eq!(id, "user.only_with_flag");
+    }
+
+    #[test]
+    fn pane_kind_and_overlay_separate_editor_keys_from_panel_keys() {
+        let mut keymap = Keymap::new(Duration::from_millis(500));
+        keymap
+            .bind(
+                "j",
+                "vy.motion.down",
+                Some("mode != 'insert' && paneKind == 'editor' && overlay == 'none'"),
+                Owner::Builtin,
+            )
+            .expect("bind");
+        keymap
+            .bind("j", "vy.ui.next", Some("uiRole == 'list'"), Owner::Builtin)
+            .expect("bind");
+
+        let editor = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Editor,
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &editor)).0,
+            "vy.motion.down"
+        );
+
+        // In a UI pane with no widget focus, the editor binding no longer applies.
+        let ui = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            view_type: "example.tree".to_string(),
+            overlay: OverlayKind::None,
+            ..KeyContext::default()
+        };
+        assert_eq!(keymap.feed(Key::Char('j'), &ui), KeymapOutcome::Ignored);
+
+        // Inside an overlay the editor keys are shadowed and the list keys apply.
+        let overlay = KeyContext {
+            mode: Mode::Normal,
+            pane_kind: PaneKind::Ui,
+            overlay: OverlayKind::Palette,
+            ui_role: Some(UiRole::List),
+            ui_focus: Some("results".to_string()),
+            ..KeyContext::default()
+        };
+        assert_eq!(
+            command(keymap.feed(Key::Char('j'), &overlay)).0,
+            "vy.ui.next"
+        );
+    }
+
+    #[test]
+    fn unset_ui_context_values_are_absent() {
+        let context = KeyContext::default();
+        // `uiRole` and `uiFocus` only exist while a widget has focus, so a
+        // condition on them is false in an editor pane.
+        assert_eq!(context.value("uiRole"), None);
+        assert_eq!(context.value("uiFocus"), None);
+        assert_eq!(
+            context.value("paneKind"),
+            Some(Value::Text("editor".to_string()))
+        );
+        assert_eq!(
+            context.value("overlay"),
+            Some(Value::Text("none".to_string()))
+        );
+        assert_eq!(context.value("uiSelectionCount"), Some(Value::Number(0.0)));
+    }
+
+    #[test]
+    fn overlay_and_pane_kind_names_round_trip() {
+        for kind in [
+            PaneKind::Editor,
+            PaneKind::Ui,
+            PaneKind::Webview,
+            PaneKind::Terminal,
+        ] {
+            assert_eq!(PaneKind::parse(kind.name()), Some(kind));
+        }
+        for kind in [
+            OverlayKind::None,
+            OverlayKind::Palette,
+            OverlayKind::Picker,
+            OverlayKind::Ex,
+            OverlayKind::Prompt,
+            OverlayKind::Approval,
+            OverlayKind::Settings,
+            OverlayKind::Hover,
+            OverlayKind::Menu,
+            OverlayKind::Custom,
+        ] {
+            assert_eq!(OverlayKind::parse(kind.name()), Some(kind));
+        }
+        assert_eq!(PaneKind::parse("bogus"), None);
+        assert_eq!(OverlayKind::parse("bogus"), None);
+        assert!(OverlayKind::Palette.is_modal());
+        assert!(!OverlayKind::Hover.is_modal());
+        assert!(!OverlayKind::Custom.is_modal());
     }
 }
 

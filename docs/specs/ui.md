@@ -59,19 +59,24 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 
 ### 2.1 コンテキスト
 
-> **実装状況**: この節のコンテキスト変数のうち、実装済みなのは `mode` と `paneId` だけです。`paneKind`、`viewType`、`uiRole`、`uiFocus`、`overlay` は未実装です（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md)）。
+> **実装状況**: `mode`、`paneKind`、`viewType`、`uiRole`、`uiFocus`、`uiSelectionCount`、`overlay`、`surfaceId` は実装済みです（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) Phase 1、[ADR 0032](../adr/0032-floating-surfaces.md) Phase 1）。ペイン内の
+> フォーカス移動（`Tab` / `Shift-Tab`）とクリックによるフォーカス設定も入っています。`uiSelectionCount` は一覧とツリーの選択状態が入るまで `0` です。
 
-キーマップの `when` から参照できる値を増やします。`mode` と `paneId`
-は既存の値です。
+キーマップの `when` から参照できる値です。ホストが設定するので、プラグインは同じ名前を上書きできません。
 
-| コンテキスト   | 値                                 | 設定する層   |
-| :------------- | :--------------------------------- | :----------- |
-| `mode`         | `normal`、`insert`、`select`       | クライアント |
-| `viewType`     | `ui`、`editor`、`list` など        | クライアント |
-| `paneId`       | フォーカス中のペイン               | クライアント |
-| `uiRole`       | `list`、`textInput`、`button` など | UI ホスト    |
-| `uiFocus`      | フォーカス中のウィジェットの `id`  | UI ホスト    |
-| `webviewFocus` | `true` か `false`                  | UI ホスト    |
+| コンテキスト       | 値                                                                                             | 設定する層   |
+| :----------------- | :--------------------------------------------------------------------------------------------- | :----------- |
+| `mode`             | `normal`、`insert`、`select`、`select_line`、`select_block`                                    | クライアント |
+| `paneKind`         | `editor`、`ui`、`webview`、`terminal`                                                          | クライアント |
+| `viewType`         | ペインが開いているビューの ID。エディタペインでは空文字                                        | クライアント |
+| `uiRole`           | `list`、`tree`、`table`、`textInput`、`button`。フォーカスが無ければ未設定                     | UI ホスト    |
+| `uiFocus`          | フォーカス中のノードの `id`。フォーカスが無ければ未設定                                        | UI ホスト    |
+| `uiSelectionCount` | 選択中の項目数                                                                                 | UI ホスト    |
+| `overlay`          | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings`、`hover`、`menu`、`custom` | クライアント |
+| `surfaceId`        | 最前面のサーフェスの `id`。ID を持たないホストの面では未設定                                   | クライアント |
+
+`uiRole` と `uiFocus`
+は、フォーカス可能なウィジェットにフォーカスがあるときだけ設定します。エディタペインでは未設定なので、`uiRole == 'list'` のような条件は自動的に偽になります。
 
 ```typescript
 vy.keymap.bind("normal", "j", "vy.ui.next", { when: "uiRole == 'list'" });
@@ -80,8 +85,7 @@ vy.keymap.bind("normal", "r", "example.chat.retry", {
 });
 ```
 
-`uiRole` と `uiFocus`
-はホストが自動で設定します。プラグインが同じ名前を上書きすることはできません。プラグイン独自の条件は、`keymap.setContext`
+プラグイン独自の条件は、`keymap.setContext`
 で別の名前を足して書きます。
 
 ### 2.2 アクションへの解決
@@ -135,6 +139,17 @@ normal モードで `Esc`
 プラグイン UI のウィジェット木ではありません。入力行、履歴、補完、引数の
 プロンプトは共通の仕組みを使います。文法と実行経路は
 [`commands.md`](./commands.md) にあります。
+
+### 2.4 ペイン内フォーカス
+
+- クライアントはペインごとに `FocusPath`（ルートからフォーカス中のノードまでの `id` の列）を持ちます。ペイン間のフォーカスはコアが持つという [ADR 0003](../adr/0003-editor-state.md) の分担を変えません。
+- フォーカス可能なのは `button` と `id` を持つ `textInput` です。`list`、`tree`、`table` は、そのウィジェットが入った時点で加えます。`id` を持たないノードはフォーカスできません。
+- `Tab` と `Shift-Tab` は、アクティブペイン内のフォーカス可能なノードを深さ優先の順で移動し、端で折り返します。エディタペインにはウィジェットが無いため、キーはそのままキーマップへ流れます。
+- ウィジェットのクリックもフォーカスを設定します。クリックしたペインがアクティブペインになります。
+- 再描画でフォーカス中のノードが消えたときは、最も近い生存する祖先の最初のフォーカス可能ノードへ移り、それも無ければツリー全体の最初のフォーカス可能ノードへ移ります。ツリーが消えたときはフォーカスも消えます。
+- フォーカスはペインごとに保持します。`session.json` への保存はまだ行いません。
+
+`ui.focused()` は、フォーカス中のウィジェットを `{ focusId, role, paneId, viewId }` で返します。エディタペインでは `null` です。プラグインはフォーカスや選択を問い合わせる往復を減らせます（[ADR 0024](../adr/0024-keyboard-first-plugin-ui.md) §5）。
 
 ## 3. ウィジェット木
 

@@ -68,6 +68,7 @@ import type {
   StatuslineCreateParams,
   StatuslineDisposeParams,
   StatuslineUpdateParams,
+  UiFocus,
   ViewCloseParams,
   ViewOpenParams,
   ViewToggleParams,
@@ -248,6 +249,8 @@ export interface UiApi {
   readonly hover: UiHoverApi;
   readonly picker: UiPickerApi;
   readonly statusline: UiStatuslineApi;
+  /** Returns the focused widget, or `null` in an editor pane. */
+  focused(): Promise<UiFocus | null>;
 }
 
 /** Registers and looks up pane views. */

@@ -468,6 +468,7 @@ impl EditorView {
             }
         };
 
+        let ui_focus = self.current_ui_focus();
         let editor = {
             let id = self.active_document_id();
             match id.and_then(|id| self.documents.get_mut(&id)) {
@@ -489,6 +490,7 @@ impl EditorView {
             statusline: Some(&mut self.statusline),
             gutter: Some(&mut self.gutter),
             hover: Some(&mut self.hover),
+            ui_focus,
         };
         let outcome = plugin_host::handle_request(context, request);
 
@@ -549,6 +551,8 @@ impl EditorView {
                 for pane in self.panes.values_mut() {
                     if pane.view_type == view_id {
                         pane.widget_tree = Some(tree.clone());
+                        // The focused widget may not exist in the new tree.
+                        pane.normalize_focus();
                     }
                 }
                 self.view_widget_trees.insert(view_id, tree);

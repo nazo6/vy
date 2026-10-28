@@ -523,7 +523,13 @@ impl EditorView {
                 .p_3()
                 .bg(theme.background.surface);
             if let Some(tree) = &pane.widget_tree {
-                area = area.child(ui::widget::render_widget_node(&theme, tree, cx));
+                area = area.child(ui::widget::render_widget_node(
+                    &theme,
+                    tree,
+                    pane.id,
+                    &pane.focus_path,
+                    cx,
+                ));
             } else {
                 area = area.child(
                     div()
