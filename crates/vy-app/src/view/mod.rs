@@ -197,6 +197,10 @@ pub struct EditorView {
     pub focus_handle: FocusHandle,
     pub overlay_focus_handle: FocusHandle,
     pub palette_scroll_handle: VirtualListScrollHandle,
+    /// Scroll state of the widget area of each UI pane, keyed by pane id. It
+    /// lives here rather than in `PaneState` so the state model stays free of
+    /// GPUI types.
+    pub(super) ui_pane_scroll: HashMap<PaneId, ui::widget::PaneScroll>,
     pub focus_stack: FocusStack,
     status: SharedString,
     frame_log: bool,
@@ -330,6 +334,7 @@ impl EditorView {
             focus_handle: cx.focus_handle(),
             overlay_focus_handle: cx.focus_handle(),
             palette_scroll_handle: VirtualListScrollHandle::new(),
+            ui_pane_scroll: HashMap::new(),
             focus_stack: FocusStack::new(),
             status: "starting vy-server".into(),
             frame_log: std::env::var_os("VY_FRAME_LOG").is_some(),
@@ -880,6 +885,15 @@ impl EditorView {
 
         self.ensure_cursor_visible();
 
+        // Widget focus and list cursors live outside the editor, so a command
+        // that only moves them has to request the frame itself. The same
+        // comparison asks the pane to reveal the new focus, which is a no-op
+        // when it is already in view.
+        let ui_changed = before_ui != self.active_pane_ui_snapshot();
+        if ui_changed {
+            self.request_ui_reveal();
+        }
+
         // Do not repaint for keys that change nothing, such as a motion at a boundary.
         // Scrolling commands (`zz`, `zt`, `zb`, `zh`, `zl`) move the view without
         // touching the cursor, so the scroll offsets have to be compared as well.
@@ -887,7 +901,21 @@ impl EditorView {
             || before_scroll != self.active_pane_state().map(scroll_position)
             || before_version != self.editor().version()
             || before_overlay != self.overlay.is_some()
-            || before_ui != self.active_pane_ui_snapshot()
+            || ui_changed
+    }
+
+    /// Asks the active pane to scroll its focused widget into view.
+    ///
+    /// The flag is read while the widget is drawn: only then is its position
+    /// known. Setting it on every focus move keeps wheel scrolling intact,
+    /// because a redraw alone never moves the viewport.
+    fn request_ui_reveal(&self) {
+        let Some(pane_id) = self.active_pane else {
+            return;
+        };
+        if let Some(scroll) = self.ui_pane_scroll.get(&pane_id) {
+            scroll.reveal.set(true);
+        }
     }
 
     /// The widget focus and list state of the active pane, for change detection.

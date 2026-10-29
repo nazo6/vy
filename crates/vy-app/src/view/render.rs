@@ -1,10 +1,12 @@
 //! GPUI Render implementation and layout rendering for `EditorView`.
 
+use std::collections::HashSet;
 use std::time::Instant;
 
 use gpui::{
-    Context, CursorStyle, DefiniteLength, Div, ElementInputHandler, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Render, Styled, Window, canvas, div, px,
+    AnyElement, Context, CursorStyle, DefiniteLength, Div, ElementInputHandler, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    canvas, div, px,
 };
 
 use vy_app::editor::VisualRow;
@@ -90,6 +92,24 @@ impl EditorView {
                     self.update_node_viewports(second, width, height * (1.0 - ratio));
                 }
             },
+        }
+    }
+
+    /// Drops the scroll state of panes that are gone and makes one for every
+    /// UI pane.
+    ///
+    /// The handle owns the pane's scroll offset, so it has to outlive a frame.
+    pub(super) fn sync_pane_scroll_handles(&mut self) {
+        let panes: HashSet<PaneId> = self
+            .panes
+            .iter()
+            .filter(|(_, pane)| pane.view_type == "ui" || pane.widget_tree.is_some())
+            .map(|(pane_id, _)| *pane_id)
+            .collect();
+        self.ui_pane_scroll
+            .retain(|pane_id, _| panes.contains(pane_id));
+        for pane_id in panes {
+            self.ui_pane_scroll.entry(pane_id).or_default();
         }
     }
 
@@ -209,10 +229,13 @@ impl Render for EditorView {
         self.update_pane_viewports(width, height);
         self.clamp_scroll();
         self.sync_modal_focus(window, cx);
+        // One scroll handle per UI pane, so a focus move can reveal the focused
+        // widget and a redraw keeps the offset.
+        self.sync_pane_scroll_handles();
 
         let theme = cx.theme().clone();
 
-        let content = match self.layout.clone() {
+        let content: AnyElement = match self.layout.clone() {
             Some(layout) => self.render_node(&layout, width, height, cx, window),
             None => {
                 let view_entity = cx.entity();
@@ -246,6 +269,7 @@ impl Render for EditorView {
                         .left_0()
                         .size_full(),
                     )
+                    .into_any_element()
             }
         };
 
@@ -268,7 +292,10 @@ impl Render for EditorView {
             .child(
                 div()
                     .relative()
+                    .flex()
+                    .flex_col()
                     .flex_1()
+                    .min_h(px(0.0))
                     .overflow_hidden()
                     .child(content)
                     .children(
@@ -356,7 +383,7 @@ impl EditorView {
         total_h: f32,
         cx: &mut Context<Self>,
         window: &mut Window,
-    ) -> Div {
+    ) -> AnyElement {
         match node {
             LayoutNode::Leaf { pane_id } => self.render_pane(*pane_id, cx, window),
             LayoutNode::Split {
@@ -391,6 +418,8 @@ impl EditorView {
                     SplitDirection::Horizontal => div().h_full(),
                     SplitDirection::Vertical => div().w_full(),
                 }
+                .flex()
+                .flex_col()
                 .flex_basis(DefiniteLength::Fraction(*ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
@@ -400,6 +429,8 @@ impl EditorView {
                     SplitDirection::Horizontal => div().h_full(),
                     SplitDirection::Vertical => div().w_full(),
                 }
+                .flex()
+                .flex_col()
                 .flex_basis(DefiniteLength::Fraction(1.0 - *ratio))
                 .flex_shrink_0()
                 .overflow_hidden()
@@ -466,6 +497,7 @@ impl EditorView {
                     .child(first_wrapper)
                     .child(divider)
                     .child(second_wrapper)
+                    .into_any_element()
             }
         }
     }
@@ -505,7 +537,12 @@ impl EditorView {
         )
     }
 
-    fn render_pane(&self, pane_id: PaneId, cx: &mut Context<Self>, _window: &mut Window) -> Div {
+    fn render_pane(
+        &self,
+        pane_id: PaneId,
+        cx: &mut Context<Self>,
+        _window: &mut Window,
+    ) -> AnyElement {
         let theme = cx.theme().clone();
         let pane = self.panes.get(&pane_id);
         let document = pane
@@ -516,12 +553,22 @@ impl EditorView {
         if let Some(pane) = pane
             && (pane.view_type == "ui" || pane.widget_tree.is_some())
         {
+            // The area is the scroll viewport: a panel is taller than the pane
+            // for any layout, not only for lists, so the whole tree scrolls.
+            let scroll = self.ui_pane_scroll.get(&pane.id);
             let mut area = div()
+                .id(gpui::SharedString::from(format!("vy-ui-pane-{}", pane.id)))
                 .relative()
+                .flex()
+                .flex_col()
                 .flex_1()
-                .overflow_hidden()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
                 .p_3()
                 .bg(theme.background.surface);
+            if let Some(scroll) = scroll {
+                area = area.track_scroll(&scroll.handle);
+            }
             if let Some(tree) = &pane.widget_tree {
                 area = area.child(ui::widget::render_widget_node(
                     &theme,
@@ -529,6 +576,7 @@ impl EditorView {
                     pane.id,
                     &pane.focus_path,
                     &pane.list_states,
+                    scroll,
                     cx,
                 ));
             } else {
@@ -572,7 +620,7 @@ impl EditorView {
             } else {
                 gpui::rgba(0x00000000)
             };
-            return area.border_1().border_color(border);
+            return area.border_1().border_color(border).into_any_element();
         }
 
         let view_entity = cx.entity();
@@ -711,6 +759,7 @@ impl EditorView {
             .border_1()
             .border_color(border)
             .child(area)
+            .into_any_element()
     }
 
     fn render_titlebar(&self, theme: &Theme, window: &mut Window) -> impl IntoElement {

@@ -1718,9 +1718,18 @@ impl EditorView {
             return false;
         }
 
-        let page = self
-            .active_pane_state()
-            .map_or(1, |pane| pane.viewport_rows);
+        // A list page is its own viewport, not the pane's text rows: a widget
+        // row is taller than a line of text, so `Ctrl-d` would overshoot.
+        let page = self.ui_pane_scroll.get(&pane_id).and_then(|scroll| {
+            let rows = (f32::from(scroll.handle.bounds().size.height)
+                / crate::ui::widget::ROW_HEIGHT)
+                .floor();
+            (rows >= 1.0).then_some(rows as usize)
+        });
+        let page = page.unwrap_or_else(|| {
+            self.active_pane_state()
+                .map_or(1, |pane| pane.viewport_rows)
+        });
         let outcome = {
             let Some(pane) = self.panes.get_mut(&pane_id) else {
                 return false;

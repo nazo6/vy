@@ -211,6 +211,15 @@ pub fn rows(node: &WidgetNode, state: &ListState) -> Vec<Row> {
     }
 }
 
+/// Position of the cursor among the rows the widget shows.
+///
+/// A scroll container addresses its children by this index, so the view uses it
+/// to reveal the cursor row. A cursor left on a hidden tree row has no position.
+pub fn cursor_row_index(node: &WidgetNode, state: &ListState) -> Option<usize> {
+    let cursor = state.cursor()?;
+    rows(node, state).iter().position(|row| row.id == cursor)
+}
+
 /// Every id the widget can address, including hidden tree rows.
 pub fn all_ids(node: &WidgetNode) -> Vec<String> {
     match node {
@@ -449,6 +458,28 @@ mod tests {
                 .map(str::to_string)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn the_cursor_row_follows_the_visible_rows() {
+        let node = tree();
+        let mut state = ListState::new();
+
+        // A collapsed tree hides the children of "src".
+        state.select_single("src");
+        assert_eq!(cursor_row_index(&node, &state), Some(0));
+        state.select_single("readme");
+        assert_eq!(cursor_row_index(&node, &state), Some(1));
+
+        // Expanding moves the rows below it down.
+        state.toggle_expanded("src");
+        assert_eq!(cursor_row_index(&node, &state), Some(3));
+        state.select_single("lib");
+        assert_eq!(cursor_row_index(&node, &state), Some(2));
+
+        // A cursor on a row the widget no longer shows has no position.
+        state.select_single("gone");
+        assert_eq!(cursor_row_index(&node, &state), None);
     }
 
     #[test]
