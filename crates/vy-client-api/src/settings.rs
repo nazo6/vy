@@ -170,6 +170,10 @@ fn theme() -> Value {
     Value::from("dark")
 }
 
+fn empty_color() -> Value {
+    Value::from("")
+}
+
 /// Every setting the client defines, with its default and description.
 pub const SETTINGS: &[SettingDecl] = &[
     SettingDecl {
@@ -206,6 +210,41 @@ pub const SETTINGS: &[SettingDecl] = &[
         default: theme,
         scope: SettingScope::Global,
         kind: SettingKind::Choice(&["dark", "light"]),
+    },
+    SettingDecl {
+        key: "ui.activePaneBorder",
+        doc: "Border color of the active pane as #rrggbb. Empty follows the theme.",
+        default: empty_color,
+        scope: SettingScope::Global,
+        kind: SettingKind::Text,
+    },
+    SettingDecl {
+        key: "ui.inactivePaneBorder",
+        doc: "Border color of inactive panes as #rrggbb. Empty follows the theme.",
+        default: empty_color,
+        scope: SettingScope::Global,
+        kind: SettingKind::Text,
+    },
+    SettingDecl {
+        key: "ui.focusBorder",
+        doc: "Focus ring color as #rrggbb. Empty follows the theme.",
+        default: empty_color,
+        scope: SettingScope::Global,
+        kind: SettingKind::Text,
+    },
+    SettingDecl {
+        key: "ui.selectionBackground",
+        doc: "Background of the focused row as #rrggbb. Empty follows the theme.",
+        default: empty_color,
+        scope: SettingScope::Global,
+        kind: SettingKind::Text,
+    },
+    SettingDecl {
+        key: "ui.selectionForeground",
+        doc: "Text color of the focused row as #rrggbb. Empty follows the theme.",
+        default: empty_color,
+        scope: SettingScope::Global,
+        kind: SettingKind::Text,
     },
     SettingDecl {
         key: "editor.transactionIdleMs",

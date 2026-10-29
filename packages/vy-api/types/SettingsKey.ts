@@ -13,6 +13,16 @@ export interface SettingsMap {
   "ui.lineNumbers": "absolute" | "relative" | "off";
   /** Color theme: dark or light. */
   "ui.theme": "dark" | "light";
+  /** Border color of the active pane as #rrggbb. Empty follows the theme. */
+  "ui.activePaneBorder": string;
+  /** Border color of inactive panes as #rrggbb. Empty follows the theme. */
+  "ui.inactivePaneBorder": string;
+  /** Focus ring color as #rrggbb. Empty follows the theme. */
+  "ui.focusBorder": string;
+  /** Background of the focused row as #rrggbb. Empty follows the theme. */
+  "ui.selectionBackground": string;
+  /** Text color of the focused row as #rrggbb. Empty follows the theme. */
+  "ui.selectionForeground": string;
   /** Idle time in milliseconds before an undo transaction is closed. */
   "editor.transactionIdleMs": number;
   /** Time in milliseconds allowed between keys of one sequence. */

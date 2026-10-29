@@ -506,11 +506,7 @@ impl EditorView {
             self.keymap.set_sequence_timeout(timeout);
             self.config_arc = std::sync::Arc::new(self.config.clone());
 
-            let theme = if self.config.theme() == "light" {
-                Theme::light()
-            } else {
-                Theme::dark()
-            };
+            let theme = Theme::from_config(&self.config);
             self.update_theme(theme, cx);
         }
 

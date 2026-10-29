@@ -421,9 +421,20 @@ Settings パレットは同じコマンドを作ります。
 | `ui.lineHeight`            | global   | number                                   | `20`                               |
 | `ui.lineNumbers`           | global   | choice (`absolute` / `relative` / `off`) | `absolute`                         |
 | `ui.theme`                 | global   | choice (`dark` / `light`)                | `dark`                             |
+| `ui.activePaneBorder`      | global   | text (color)                             | 空（テーマの値）                   |
+| `ui.inactivePaneBorder`    | global   | text (color)                             | 空（テーマの値）                   |
+| `ui.focusBorder`           | global   | text (color)                             | 空（テーマの値）                   |
+| `ui.selectionBackground`   | global   | text (color)                             | 空（テーマの値）                   |
+| `ui.selectionForeground`   | global   | text (color)                             | 空（テーマの値）                   |
 | `editor.transactionIdleMs` | global   | number                                   | `500`                              |
 | `editor.sequenceTimeoutMs` | global   | number                                   | `1000`                             |
 | `editor.wrap`              | window   | bool                                     | `false`                            |
+
+色の設定は `#rgb`、`#rgba`、`#rrggbb`、`#rrggbbaa`、または
+`transparent` を受け付けます。空文字や解釈できない値は、選んだ `ui.theme`
+の既定色に戻ります。`ui.activePaneBorder` はアクティブなペインの境界、
+`ui.focusBorder` はリストや入力欄のフォーカス枠、`ui.selectionBackground` と
+`ui.selectionForeground` はリストのカーソル行の色です。
 
 設定は次の順で解決します。下の層ほど優先します。
 

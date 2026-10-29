@@ -29,11 +29,7 @@ fn main() {
     };
 
     let (initial_config, _) = Config::load(&Paths::from_env(), startup.local_workspace.as_deref());
-    let initial_theme = if initial_config.theme() == "light" {
-        Theme::light()
-    } else {
-        Theme::dark()
-    };
+    let initial_theme = Theme::from_config(&initial_config);
 
     application().run(move |cx: &mut App| {
         gpui_base::init(cx);

@@ -116,6 +116,8 @@ fn render_node(
                 .px_2()
                 .py_0p5()
                 .rounded_sm()
+                .border_1()
+                .border_color(gpui::rgba(0x00000000))
                 .cursor_pointer()
                 .child(label.clone());
 
@@ -138,7 +140,7 @@ fn render_node(
             }
 
             if focused {
-                button = button.border_1().border_color(theme.border.focused);
+                button = button.border_color(theme.border.focused);
             }
 
             let focus_path = path.clone();
@@ -206,13 +208,17 @@ fn render_node(
             let state = context.list_states.get(id);
             let has_focus = focused;
 
-            let mut list = div().flex().flex_col().w_full();
-            if has_focus {
-                list = list
-                    .border_1()
-                    .border_color(theme.border.focused)
-                    .rounded_sm();
-            }
+            let mut list = div()
+                .flex()
+                .flex_col()
+                .w_full()
+                .border_1()
+                .border_color(if has_focus {
+                    theme.border.focused
+                } else {
+                    gpui::rgba(0x00000000)
+                })
+                .rounded_sm();
 
             if rows.is_empty() {
                 list = list

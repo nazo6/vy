@@ -235,11 +235,7 @@ impl EditorView {
         let paths = Paths::from_env();
         let workspace = startup.local_workspace.clone();
         let (config, warnings) = Config::load(&paths, workspace.as_deref());
-        let theme = if config.theme() == "light" {
-            Theme::light()
-        } else {
-            Theme::dark()
-        };
+        let theme = Theme::from_config(&config);
         cx.set_global(theme.clone());
         let config_arc = std::sync::Arc::new(config.clone());
         let theme_arc = std::sync::Arc::new(theme);
@@ -575,11 +571,7 @@ impl EditorView {
                         this.reload_plugin(&plugin_id);
                     }
                     if config_changed {
-                        let theme = if this.config.theme() == "light" {
-                            Theme::light()
-                        } else {
-                            Theme::dark()
-                        };
+                        let theme = Theme::from_config(&this.config);
                         this.update_theme(theme, cx);
                         cx.notify();
                     }
@@ -614,11 +606,7 @@ impl EditorView {
         self.keymap.set_sequence_timeout(timeout);
         self.config_arc = std::sync::Arc::new(self.config.clone());
 
-        let theme = if self.config.theme() == "light" {
-            Theme::light()
-        } else {
-            Theme::dark()
-        };
+        let theme = Theme::from_config(&self.config);
         self.update_theme(theme, cx);
     }
 

@@ -1,6 +1,8 @@
 //! Semantic design tokens and theme configuration for `vy-app`.
 
 use gpui::{App, Context, Global, Rgba, rgb};
+use serde_json::Value;
+use vy_app::config::Config;
 
 pub use vy_app::color::ThemeColor;
 
@@ -207,10 +209,90 @@ impl Theme {
         }
     }
 
+    /// Builds the theme selected by the configuration and applies color overrides.
+    ///
+    /// `ui.theme` picks the built-in `dark` or `light` base. The accent colors
+    /// below can then be replaced from settings so a user can tune the active
+    /// pane and focus indicators without a custom theme file.
+    pub fn from_config(config: &Config) -> Self {
+        let mut theme = if config.theme() == "light" {
+            Self::light()
+        } else {
+            Self::dark()
+        };
+
+        if let Some(color) = config_color(config, "ui.activePaneBorder") {
+            theme.background.split_active = color;
+        }
+        if let Some(color) = config_color(config, "ui.inactivePaneBorder") {
+            theme.background.split_inactive = color;
+        }
+        if let Some(color) = config_color(config, "ui.focusBorder") {
+            theme.border.focused = color;
+        }
+        if let Some(color) = config_color(config, "ui.selectionBackground") {
+            theme.list.active_background = color;
+        }
+        if let Some(color) = config_color(config, "ui.selectionForeground") {
+            theme.list.active_foreground = color;
+        }
+
+        theme
+    }
+
     /// Access the global theme from an `App` reference.
     pub fn global(cx: &App) -> &Self {
         cx.global::<Self>()
     }
+}
+
+/// Reads a color from settings. Unset or unparsable values keep the theme default.
+fn config_color(config: &Config, key: &str) -> Option<Rgba> {
+    config
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(parse_hex_color)
+}
+
+/// Parses `#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa`. The leading `#` is optional.
+///
+/// `transparent` is accepted as an explicit fully transparent color, which lets
+/// a setting hide an indicator without falling back to the theme default.
+pub fn parse_hex_color(value: &str) -> Option<Rgba> {
+    let text = value.trim();
+    if text.eq_ignore_ascii_case("transparent") {
+        return Some(gpui::rgba(0x00000000));
+    }
+
+    let text = text.strip_prefix('#').unwrap_or(text);
+    if !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    let expand = |digit: char| -> Option<u32> { digit.to_digit(16).map(|value| value * 0x11) };
+
+    let rgba = match text.len() {
+        3 => {
+            let mut digits = text.chars();
+            let r = expand(digits.next()?)?;
+            let g = expand(digits.next()?)?;
+            let b = expand(digits.next()?)?;
+            (r << 24) | (g << 16) | (b << 8) | 0xff
+        }
+        4 => {
+            let mut digits = text.chars();
+            let r = expand(digits.next()?)?;
+            let g = expand(digits.next()?)?;
+            let b = expand(digits.next()?)?;
+            let a = expand(digits.next()?)?;
+            (r << 24) | (g << 16) | (b << 8) | a
+        }
+        6 => (u32::from_str_radix(text, 16).ok()? << 8) | 0xff,
+        8 => u32::from_str_radix(text, 16).ok()?,
+        _ => return None,
+    };
+
+    Some(gpui::rgba(rgba))
 }
 
 /// Helper trait to access the current theme from an application context.
@@ -244,5 +326,56 @@ mod tests {
         let light = Theme::light();
         assert_eq!(light.background.app, rgb(0xffffff));
         assert_eq!(light.editor.line_highlight, rgb(0xf0f0f0));
+    }
+
+    #[test]
+    fn parses_color_notation() {
+        assert_eq!(parse_hex_color("#abc"), Some(rgb(0xaabbcc)));
+        assert_eq!(parse_hex_color("abc"), Some(rgb(0xaabbcc)));
+        assert_eq!(parse_hex_color("#112233"), Some(rgb(0x112233)));
+        assert_eq!(parse_hex_color("#11223380"), Some(gpui::rgba(0x11223380)));
+        assert_eq!(parse_hex_color("transparent"), Some(gpui::rgba(0x00000000)));
+        assert_eq!(parse_hex_color(""), None);
+        assert_eq!(parse_hex_color("#12"), None);
+        assert_eq!(parse_hex_color("nope"), None);
+    }
+
+    #[test]
+    fn settings_override_accent_colors() {
+        let mut config = Config::with_defaults();
+        assert_eq!(Theme::from_config(&config), Theme::dark());
+
+        config.set("ui.theme", Value::from("light"));
+        let light = Theme::from_config(&config);
+        assert_eq!(light.background.split_active, rgb(0x007acc));
+
+        config.set("ui.activePaneBorder", Value::from("#ff0000"));
+        config.set("ui.inactivePaneBorder", Value::from("#00ff00"));
+        config.set("ui.focusBorder", Value::from("#0000ff"));
+        config.set("ui.selectionBackground", Value::from("#123456"));
+        config.set("ui.selectionForeground", Value::from("#abcdef"));
+
+        let theme = Theme::from_config(&config);
+        assert_eq!(theme.background.split_active, rgb(0xff0000));
+        assert_eq!(theme.background.split_inactive, rgb(0x00ff00));
+        assert_eq!(theme.border.focused, rgb(0x0000ff));
+        assert_eq!(theme.list.active_background, rgb(0x123456));
+        assert_eq!(theme.list.active_foreground, rgb(0xabcdef));
+        // Unrelated tokens still come from the base theme.
+        assert_eq!(theme.background.app, rgb(0xffffff));
+    }
+
+    #[test]
+    fn blank_or_invalid_overrides_keep_theme_defaults() {
+        let mut config = Config::with_defaults();
+        config.set("ui.activePaneBorder", Value::from(""));
+        config.set("ui.focusBorder", Value::from("not-a-color"));
+
+        let theme = Theme::from_config(&config);
+        assert_eq!(
+            theme.background.split_active,
+            Theme::dark().background.split_active
+        );
+        assert_eq!(theme.border.focused, Theme::dark().border.focused);
     }
 }
