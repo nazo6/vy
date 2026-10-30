@@ -2,8 +2,8 @@
 title: "プラグイン UI"
 type: "spec"
 status: "active"
-updated_at: 2026-10-25
-related_adrs: ["0001", "0005", "0006"]
+updated_at: 2026-10-30
+related_adrs: ["0001", "0005", "0006", "0034"]
 tags: ["ui", "widgets", "gpui", "views"]
 ---
 
@@ -67,13 +67,24 @@ Phase 1 のエディタでは、クライアントが `EntityInputHandler`
 | コンテキスト       | 値                                                                                             | 設定する層   |
 | :----------------- | :--------------------------------------------------------------------------------------------- | :----------- |
 | `mode`             | `normal`、`insert`、`select`、`select_line`、`select_block`                                    | クライアント |
-| `paneKind`         | `editor`、`ui`、`webview`、`terminal`                                                          | クライアント |
+| `paneKind`         | `editor`、`ui`、`webview`、`terminal`、`overlay`                                               | クライアント |
 | `viewType`         | ペインが開いているビューの ID。エディタペインでは空文字                                        | クライアント |
 | `uiRole`           | `list`、`tree`、`table`、`textInput`、`button`。フォーカスが無ければ未設定                     | UI ホスト    |
 | `uiFocus`          | フォーカス中のノードの `id`。フォーカスが無ければ未設定                                        | UI ホスト    |
 | `uiSelectionCount` | 選択中の項目数                                                                                 | UI ホスト    |
 | `overlay`          | `none`、`palette`、`picker`、`ex`、`prompt`、`approval`、`settings`、`hover`、`menu`、`custom` | クライアント |
 | `surfaceId`        | 最前面のサーフェスの `id`。ID を持たないホストの面では未設定                                   | クライアント |
+
+モーダルなサーフェスが開いている間は、サーフェスが入力を専有します。ホストは背面ペインの `paneKind` と `uiRole` を公開せず、`paneKind` を `overlay`、`uiRole` をサーフェス自身の役割として設定します。
+
+`when` では次の意味述語も使えます（[ADR 0034](../adr/0034-keymap-context-and-blocks.md) §2）。
+
+| 述語                                       | 意味                                        |
+| :----------------------------------------- | :------------------------------------------ |
+| `editorFocus`                              | `overlay == 'none' && paneKind == 'editor'` |
+| `modal`                                    | モーダルなサーフェスが開いている            |
+| `hasSelection`                             | 一覧・ツリー・表にフォーカスがある          |
+| `normalMode` / `insertMode` / `selectMode` | 現在のモード                                |
 
 `uiRole` と `uiFocus`
 は、フォーカス可能なウィジェットにフォーカスがあるときだけ設定します。エディタペインでは未設定なので、`uiRole == 'list'` のような条件は自動的に偽になります。

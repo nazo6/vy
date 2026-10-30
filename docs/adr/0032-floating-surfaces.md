@@ -2,7 +2,7 @@
 id: "0032"
 title: "浮遊 UI をサーフェスとフローティングペインの 2 層に分ける"
 type: "adr"
-status: "proposed"
+status: "accepted"
 category: "architecture"
 date: 2026-10-27
 tags: ["ui", "overlay", "floating", "picker", "keymap", "focus"]
@@ -13,10 +13,10 @@ related_adrs: ["0003", "0005", "0006", "0022", "0024", "0029", "0030", "0031"]
 
 # ADR 0032: 浮遊 UI をサーフェスとフローティングペインの 2 層に分ける
 
-- 状態: 提案
+- 状態: 採用 (accepted)
 - 日付: 2026-10-27
 - カテゴリー: architecture
-- 実装: 進行中（Phase 1 完了。実装計画は本ドキュメント末尾に記載）
+- 実装: 進行中（Phase 1–3 の一部完了。Phase 4–7 は未着手。実装計画は本ドキュメント末尾に記載）
 
 ## 文脈
 
@@ -284,6 +284,12 @@ ADR 0024 の未決定事項「プラグインが独自に開くオーバーレ�
 - `handle_*_key` を「アクションを適用する関数」に分解し、キーからコマンド ID を引く形にする。
 - `builtin/keymaps/default.json` に `overlay` 条件付きの既定キーを追加する。`:` の無条件の横取りと、Ex の `Ctrl-u` の予約を解消する。
 - `crates/vy-app/src/ui/palette.rs` の `OverlayLabels` をキーマップから生成する。
+
+> **実装済み（2026-10-30、パレット・Ex・引数プロンプト・承認・設定）**: Phase 2 の語彙と既定キーは
+> [ADR 0024](./0024-keyboard-first-plugin-ui.md) Phase 2 で導入しました。Phase 3 のキー移行も
+> ADR 0024 Phase 3 と同じ変更で入っており、印字キー以外は `overlay` と `uiRole` で解決します。
+> **未実装**: picker の 2 状態（insert / normal）、`ui.picker.update` と `ui.picker.close`、
+> `requestId` による古い結果の破棄。
 
 ### Phase 4: サーフェスのスタックとジオメトリ
 

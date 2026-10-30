@@ -2,7 +2,7 @@
 id: "0030"
 title: "純粋ロジックの状態モデル整理計画"
 type: "adr"
-status: "proposed"
+status: "accepted"
 category: "maintenance"
 date: 2026-10-25
 tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
@@ -10,13 +10,10 @@ tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 
 # ADR 0030: 純粋ロジックの状態モデル整理計画
 
-- **状態**: 提案中 (proposed)
+- **状態**: 採用 (accepted)。Phase 0–C 完了、Phase D–F は未着手
 - **日付**: 2026-10-25
 - **カテゴリー**: maintenance
-
-- **日付**: 2026-10-25
 - **関連タスク**: 品質改善（保守性 P2）、`command-surfaces` / `pane/resize` の後始末
-- **状態**: open（Phase 0–C 完了、Phase D–F は未着手）
 - **進捗**: Phase 0–C は実施済みです（[worklog](../worklogs/2026-10-26-logic-state-refactor.md)）。残りは Phase D–F です。
 - **目的**: `vy-app` の GPUI
   非依存ロジックに散在する「暗黙のフラグ集合」と「視覚行計算の重複実装」を、明示的な状態型と単一実装へ置き換える。挙動は変えず、今後の機能追加（マウス操作、`tabstop`

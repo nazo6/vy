@@ -2,7 +2,7 @@
 id: "0031"
 title: "実行時・基盤・セキュリティの負債整理計画"
 type: "adr"
-status: "proposed"
+status: "accepted"
 category: "maintenance"
 date: 2026-10-25
 related_adrs: ["0030"]
@@ -11,10 +11,11 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 # ADR 0031: 実行時・基盤・セキュリティの負債整理計画
 
-- **状態**: 提案中 (proposed)
+- **状態**: 採用 (accepted)。Phase 0 と Phase 5 の一部（ホイールのルーティング）が完了、残りは未着手
 - **日付**: 2026-10-25
 - **カテゴリー**: maintenance
 - **関連タスク**: 品質改善、Phase 4 の仕上げ、Phase 5 以降の前提整備
+- **進捗**: Phase 0 は実施済みです（[worklog](../worklogs/2026-10-runtime-safety-infrastructure.md)）。Phase 5 のホイールのルーティングは先行して実装済みです（[worklog](../worklogs/2026-10-30-mouse-pane-and-cursor.md)）。残りは Phase 1–4 と Phase 5–6 の未完了項目です。
 - **目的**: 純粋ロジックの整理（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)）とは独立に、実行時の安全性・データ保護・開発基盤に残っている負債を洗い出し、優先度付きで解消する。
 
 ## 1. 背景と範囲
@@ -206,7 +207,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 - [ ] 所有 PID に基づく `kill` / `write_stdin` の許可を実装する。
 - [ ] `editor.tabStop` を設定として追加し、描画・モーション・ホイール・IME の固定値を置き換える。
-- [ ] ホイールをポインタ下のペインに届け、オーバーレイ表示中は背後をスクロールしない。
+- [x] ホイールをポインタ下のペインに届け、オーバーレイ表示中は背後をスクロールしない（2026-10-30）。
 - [ ] `is_wrap` の clone、`Editor::line` の確保、文字幅キャッシュの上限を整理する。
 - [ ] テスト: `process:exec:<cmd>` 承認下の stdin / kill、`tabstop` の反映、ホイールの対象ペイン。
 

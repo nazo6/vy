@@ -2,7 +2,7 @@
 id: "0034"
 title: "キーマップコンテキストの直交化とブロック構造への再構成"
 type: "adr"
-status: "accepted"
+status: "implemented"
 category: "maintenance"
 date: 2026-10-28
 tags: ["keymap", "refactor", "context", "when"]
@@ -13,10 +13,13 @@ related_adrs: ["0024", "0029", "0031", "0032"]
 
 # ADR 0034: キーマップコンテキストの直交化とブロック構造への再構成
 
-- 状態: 承認（実装完了）
+- 状態: 実装完了 (implemented)
 - 日付: 2026-10-28
 - カテゴリー: maintenance
-- 実装: 完了
+- 実装: 完了（実装記録は
+  [`../worklogs/2026-10-28-keymap-context-and-blocks.md`](../worklogs/2026-10-28-keymap-context-and-blocks.md)、
+  仕様は [`../specs/keymap.md`](../specs/keymap.md) §7.1 と
+  [`../specs/ui.md`](../specs/ui.md) §2.1 に反映済み）
 
 ## 文脈
 

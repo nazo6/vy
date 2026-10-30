@@ -2,7 +2,7 @@
 id: "0033"
 title: "設定ディレクトリはすべての OS で ~/.config/vy に統一する"
 type: "adr"
-status: "accepted"
+status: "implemented"
 category: "architecture"
 date: 2026-10-28
 tags: ["layout", "filesystem", "config-paths", "macos"]
@@ -13,7 +13,7 @@ related_adrs: ["0010", "0020"]
 
 # ADR 0033: 設定ディレクトリはすべての OS で `~/.config/vy` に統一する
 
-- 状態: 採用
+- 状態: 実装完了 (implemented)
 - 日付: 2026-10-28
 - カテゴリー: architecture
 - 実装: `crates/vy-app/src/paths.rs` の `config_base()`。仕様は
