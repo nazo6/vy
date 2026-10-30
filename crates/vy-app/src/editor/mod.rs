@@ -217,6 +217,105 @@ impl Editor {
         }
     }
 
+    /// Starts or updates a Visual selection with an inclusive `head`.
+    ///
+    /// Used by the mouse. The selection is characterwise (`Mode::Select`), and
+    /// an anchor equal to the head still selects the character under it, as
+    /// `v` does.
+    pub fn set_visual_selection(&mut self, anchor: Position, head: Position) {
+        self.set_mode(Mode::Select);
+        self.anchor = self.clamp(anchor);
+        self.head = self.clamp(head);
+        self.preferred_character = None;
+        self.preferred_display_col = None;
+    }
+
+    /// Extends the current selection to `position`, starting a Visual one when
+    /// the editor is not already selecting.
+    pub fn extend_selection_to(&mut self, position: Position) {
+        let head = self.clamp(position);
+        if matches!(
+            self.mode,
+            Mode::Select | Mode::SelectLine | Mode::SelectBlock
+        ) {
+            self.head = head;
+            self.preferred_character = None;
+            self.preferred_display_col = None;
+        } else {
+            let anchor = self.current();
+            self.set_visual_selection(anchor, head);
+        }
+    }
+
+    /// Selects the word under `position`.
+    ///
+    /// Word, punctuation, and whitespace runs are separate classes, matching
+    /// the word motions. A run stops at a line break, so a double click never
+    /// selects across lines.
+    pub fn select_word_at(&mut self, position: Position) {
+        match self.word_bounds_at(position) {
+            Some((start, end)) => {
+                let head = self.previous_char(end).unwrap_or(start);
+                self.set_visual_selection(start, head);
+            }
+            None => self.set_visual_selection(position, position),
+        }
+    }
+
+    /// Selects the whole line at `position` linewise.
+    pub fn select_line_at(&mut self, position: Position) {
+        let line = position.line.min(self.last_line());
+        self.set_mode(Mode::SelectLine);
+        self.anchor = Position::new(line, 0);
+        self.head = Position::new(line, 0);
+        self.preferred_character = None;
+        self.preferred_display_col = None;
+    }
+
+    /// Half-open character range of the word at `position`.
+    fn word_bounds_at(&self, position: Position) -> Option<(Position, Position)> {
+        let length = self.text.len_chars();
+        if length == 0 {
+            return None;
+        }
+
+        let mut index = self
+            .text
+            .position_to_char(self.clamp(position))
+            .ok()?
+            .min(length - 1);
+        if is_line_break(self.text.char_at_index(index)?) {
+            if index == 0 {
+                return None;
+            }
+            index -= 1;
+            if is_line_break(self.text.char_at_index(index)?) {
+                return None;
+            }
+        }
+
+        let class = self.class_at(index)?;
+        let mut start = index;
+        while start > 0 {
+            if is_line_break(self.text.char_at_index(start - 1)?)
+                || self.class_at(start - 1) != Some(class)
+            {
+                break;
+            }
+            start -= 1;
+        }
+
+        let mut end = index + 1;
+        while end < length {
+            if is_line_break(self.text.char_at_index(end)?) || self.class_at(end) != Some(class) {
+                break;
+            }
+            end += 1;
+        }
+
+        Some((self.position_of(start), self.position_of(end)))
+    }
+
     fn selection_state(&self) -> Selection {
         Selection {
             anchor: self.anchor,
@@ -894,6 +993,11 @@ impl Editor {
         };
         self.insert_at_with_cursor(at, &content, cursor)
     }
+}
+
+/// Whether a character ends a line, so mouse word selection stops there.
+fn is_line_break(character: char) -> bool {
+    matches!(character, '\n' | '\r')
 }
 
 impl Default for Editor {

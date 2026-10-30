@@ -653,6 +653,70 @@ fn move_cursor_to_reaches_the_line_end_in_insert_mode() {
 }
 
 #[test]
+fn select_word_at_uses_the_word_classes() {
+    let mut editor = Editor::with_text("hello, world", 0);
+
+    editor.select_word_at(at(0, 1));
+    assert_eq!(editor.mode(), Mode::Select);
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 5)));
+
+    editor.select_word_at(at(0, 5));
+    assert_eq!(editor.selection(), Range::new(at(0, 5), at(0, 6)));
+
+    editor.select_word_at(at(0, 9));
+    assert_eq!(editor.selection(), Range::new(at(0, 7), at(0, 12)));
+}
+
+#[test]
+fn select_word_at_takes_a_whitespace_run() {
+    let mut editor = Editor::with_text("a  b", 0);
+
+    editor.select_word_at(at(0, 1));
+
+    assert_eq!(editor.selection(), Range::new(at(0, 1), at(0, 3)));
+}
+
+#[test]
+fn select_word_at_stops_at_the_line_break() {
+    let mut editor = Editor::with_text("one\ntwo", 0);
+
+    // Clicking the line break selects the last word of the line.
+    editor.select_word_at(at(0, 3));
+
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 3)));
+}
+
+#[test]
+fn select_line_at_selects_the_whole_line() {
+    let mut editor = Editor::with_text("one\ntwo\nthree", 0);
+
+    editor.select_line_at(at(1, 2));
+
+    assert_eq!(editor.mode(), Mode::SelectLine);
+    assert_eq!(editor.selection(), Range::new(at(1, 0), at(2, 0)));
+}
+
+#[test]
+fn extend_selection_to_starts_a_visual_selection_from_the_cursor() {
+    let mut editor = Editor::with_text("hello", 0);
+
+    editor.extend_selection_to(at(0, 3));
+
+    assert_eq!(editor.mode(), Mode::Select);
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 4)));
+}
+
+#[test]
+fn extend_selection_to_keeps_an_existing_anchor() {
+    let mut editor = Editor::with_text("hello", 0);
+    editor.set_visual_selection(at(0, 2), at(0, 2));
+
+    editor.extend_selection_to(at(0, 0));
+
+    assert_eq!(editor.selection(), Range::new(at(0, 0), at(0, 3)));
+}
+
+#[test]
 fn a_restored_view_state_derives_its_range_from_the_current_text() {
     let mut editor = Editor::with_text("abcdef\nsecond", 0);
     press(&mut editor, "v");

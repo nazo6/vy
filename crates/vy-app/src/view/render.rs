@@ -14,7 +14,7 @@ use vy_app::overlay::Overlay;
 use vy_app::text_layout::{clamp_scroll_top, scroll_to_show, scroll_to_show_horizontal};
 use vy_core::{LayoutNode, PaneId, SplitDirection};
 
-use super::{EditorView, Pending};
+use super::{EditorView, Pending, TextDragState};
 use crate::theme::{ActiveTheme, Theme};
 use crate::ui;
 
@@ -22,6 +22,8 @@ use crate::ui;
 const STATUSLINE_HEIGHT: f32 = 24.0;
 /// Width of the bar that marks the insertion point.
 const CARET_WIDTH: f32 = 2.0;
+/// Pointer travel before a press in an editor becomes a selection drag.
+const TEXT_DRAG_THRESHOLD: f64 = 3.0;
 
 impl EditorView {
     /// Height of one text row from the settings.
@@ -287,6 +289,15 @@ impl Render for EditorView {
             }
         };
 
+        // A modal surface owns the pointer as well as the keyboard. This
+        // invisible layer sits in front of the panes and behind the overlay
+        // panel, so clicks and the wheel never reach a view underneath. The
+        // overlay's own list still scrolls because it is painted later.
+        let modal_scrim = self
+            .overlay
+            .is_some()
+            .then(|| div().absolute().top_0().left_0().size_full().occlude());
+
         let element = div()
             .id("vy-editor")
             .track_focus(&self.focus_handle)
@@ -311,6 +322,7 @@ impl Render for EditorView {
                     .min_h(px(0.0))
                     .overflow_hidden()
                     .child(content)
+                    .children(modal_scrim)
                     .children(
                         self.overlay
                             .as_ref()
@@ -335,7 +347,7 @@ impl EditorView {
     fn on_mouse_move(
         &mut self,
         event: &gpui::MouseMoveEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(ref mut drag) = self.resizing_split {
@@ -362,7 +374,57 @@ impl EditorView {
                 }
                 cx.notify();
             }
+            return;
         }
+
+        self.update_text_drag(event, window, cx);
+    }
+
+    /// Extends an active text selection while the left button is held.
+    fn update_text_drag(
+        &mut self,
+        event: &gpui::MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.text_drag = None;
+            return;
+        }
+
+        let Some(drag) = self.text_drag.as_mut() else {
+            return;
+        };
+        if !drag.dragging {
+            if (event.position - drag.start_mouse).magnitude() <= TEXT_DRAG_THRESHOLD {
+                return;
+            }
+            drag.dragging = true;
+        }
+        let pane_id = drag.pane_id;
+        let anchor = drag.anchor;
+
+        if self.active_pane != Some(pane_id) {
+            return;
+        }
+        let Some(bounds) = self
+            .pane_bounds
+            .get(&pane_id)
+            .and_then(|bounds| bounds.get())
+        else {
+            return;
+        };
+        let Some(position) =
+            self.position_for_pane_point(pane_id, bounds, event.position, window, cx)
+        else {
+            return;
+        };
+
+        self.activate_active_view();
+        self.editor_mut().set_visual_selection(anchor, position);
+        self.store_active_view();
+        self.check_and_emit_editor_events();
+        cx.notify();
     }
 
     fn on_mouse_up(
@@ -371,6 +433,7 @@ impl EditorView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.text_drag = None;
         self.finish_split_resize(cx);
     }
 
@@ -389,6 +452,7 @@ impl EditorView {
         if self.overlay.is_some() {
             return;
         }
+        self.text_drag = None;
 
         let is_editor = self
             .panes
@@ -416,7 +480,21 @@ impl EditorView {
 
         if let Some(position) = position {
             self.activate_active_view();
-            self.editor_mut().move_cursor_to(position);
+            if event.modifiers.shift {
+                self.editor_mut().extend_selection_to(position);
+            } else if event.click_count >= 3 {
+                self.editor_mut().select_line_at(position);
+            } else if event.click_count == 2 {
+                self.editor_mut().select_word_at(position);
+            } else {
+                self.editor_mut().move_cursor_to(position);
+                self.text_drag = Some(TextDragState {
+                    pane_id,
+                    anchor: position,
+                    start_mouse: event.position,
+                    dragging: false,
+                });
+            }
             self.store_active_view();
             self.ensure_cursor_visible();
         }

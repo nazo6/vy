@@ -38,7 +38,7 @@ use vy_app::statusline::Statusline;
 use vy_app::text_layout::scroll_lines;
 use vy_app::workspace::{document_uri, workspace_info_for};
 use vy_client_api::widget::UiRole;
-use vy_core::{LayoutNode, PaneId};
+use vy_core::{LayoutNode, PaneId, Position};
 use vy_js::RemoteEnv;
 
 /// The kind of request we are waiting for a response to.
@@ -145,6 +145,18 @@ pub(super) struct SplitDragState {
 /// handler reads them back.
 pub(super) type PaneBounds = Rc<Cell<Option<Bounds<Pixels>>>>;
 
+/// Active text selection drag in an editor pane.
+#[derive(Debug, Clone)]
+pub(super) struct TextDragState {
+    pub(super) pane_id: PaneId,
+    /// Where the press landed. The selection grows from this character.
+    pub(super) anchor: Position,
+    pub(super) start_mouse: Point<Pixels>,
+    /// Set once the pointer moved past the drag threshold. A press that never
+    /// moves stays a plain cursor move instead of selecting one character.
+    pub(super) dragging: bool,
+}
+
 pub struct EditorView {
     client: Option<Client>,
     /// Bumped for every connection attempt. Old reader tasks ignore messages.
@@ -241,6 +253,8 @@ pub struct EditorView {
     pub(crate) config_arc: std::sync::Arc<Config>,
     pub(crate) theme_arc: std::sync::Arc<Theme>,
     pub(super) resizing_split: Option<SplitDragState>,
+    /// Text selection begun by a mouse press in an editor pane.
+    pub(super) text_drag: Option<TextDragState>,
 }
 
 impl EditorView {
@@ -366,6 +380,7 @@ impl EditorView {
             config_arc,
             theme_arc,
             resizing_split: None,
+            text_drag: None,
         };
 
         if let Some(warning) = warnings.last() {
