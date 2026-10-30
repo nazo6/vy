@@ -619,6 +619,40 @@ fn derives_the_normal_cursor_from_the_earlier_endpoint() {
 }
 
 #[test]
+fn move_cursor_to_collapses_the_selection() {
+    let mut editor = Editor::with_text("one\ntwo", 0);
+    editor.set_selections(&[Selection {
+        anchor: at(0, 0),
+        head: at(1, 2),
+    }]);
+
+    editor.move_cursor_to(at(1, 1));
+
+    assert_eq!(editor.cursor(), at(1, 1));
+    assert_eq!(editor.selection(), Range::new(at(1, 1), at(1, 2)));
+}
+
+#[test]
+fn move_cursor_to_stays_on_a_character_in_normal_mode() {
+    let mut editor = Editor::with_text("abc", 0);
+
+    editor.move_cursor_to(at(0, 3));
+
+    assert_eq!(editor.cursor(), at(0, 2));
+    assert_eq!(editor.selection(), Range::new(at(0, 2), at(0, 3)));
+}
+
+#[test]
+fn move_cursor_to_reaches_the_line_end_in_insert_mode() {
+    let mut editor = Editor::with_text("abc", 0);
+    editor.handle_key(Key::Char('i'));
+
+    editor.move_cursor_to(at(0, 3));
+
+    assert_eq!(editor.cursor(), at(0, 3));
+}
+
+#[test]
 fn a_restored_view_state_derives_its_range_from_the_current_text() {
     let mut editor = Editor::with_text("abcdef\nsecond", 0);
     press(&mut editor, "v");

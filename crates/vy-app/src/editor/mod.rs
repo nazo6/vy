@@ -189,6 +189,34 @@ impl Editor {
         self.preferred_display_col = None;
     }
 
+    /// Moves the cursor to `position` and collapses the selection.
+    ///
+    /// Normal mode keeps one character selected, as every other motion does,
+    /// and stays before the line break. Insert and the select modes may put the
+    /// caret on the end of the line.
+    pub fn move_cursor_to(&mut self, position: Position) {
+        let mut position = self.clamp(position);
+        if self.mode == Mode::Normal {
+            let length = self
+                .text
+                .line_len_utf16(position.line as usize)
+                .unwrap_or_default();
+            if length > 0 && position.character >= length {
+                position.character = length - 1;
+            }
+        }
+        self.last_edit = None;
+        self.preferred_character = None;
+        self.preferred_display_col = None;
+        match self.mode {
+            Mode::Normal => self.select_one_char(position),
+            _ => {
+                self.anchor = position;
+                self.head = position;
+            }
+        }
+    }
+
     fn selection_state(&self) -> Selection {
         Selection {
             anchor: self.anchor,

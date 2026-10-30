@@ -17,8 +17,8 @@ mod render;
 mod rpc;
 
 use gpui::{
-    Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollWheelEvent, SharedString,
-    Window, px,
+    Bounds, Context, FocusHandle, KeyDownEvent, Modifiers, Pixels, Point, ScrollWheelEvent,
+    SharedString, Window, px,
 };
 use gpui_base::VirtualListScrollHandle;
 use vy_app::commands::{CommandRegistry, Invocation};
@@ -138,6 +138,13 @@ pub(super) struct SplitDragState {
     pub(super) current_ratio: f32,
 }
 
+/// Bounds of a pane from the last painted frame, shared with its mouse handler.
+///
+/// The window point of a click is not pane-local, and the canvas bounds are
+/// only known while painting, so the renderer writes them here and the click
+/// handler reads them back.
+pub(super) type PaneBounds = Rc<Cell<Option<Bounds<Pixels>>>>;
+
 pub struct EditorView {
     client: Option<Client>,
     /// Bumped for every connection attempt. Old reader tasks ignore messages.
@@ -201,6 +208,8 @@ pub struct EditorView {
     /// lives here rather than in `PaneState` so the state model stays free of
     /// GPUI types.
     pub(super) ui_pane_scroll: HashMap<PaneId, ui::widget::PaneScroll>,
+    /// Last painted bounds of each pane, keyed by pane id, for hit testing.
+    pub(super) pane_bounds: HashMap<PaneId, PaneBounds>,
     pub focus_stack: FocusStack,
     status: SharedString,
     frame_log: bool,
@@ -333,6 +342,7 @@ impl EditorView {
             running_command: None,
             focus_handle: cx.focus_handle(),
             overlay_focus_handle: cx.focus_handle(),
+            pane_bounds: HashMap::new(),
             palette_scroll_handle: VirtualListScrollHandle::new(),
             ui_pane_scroll: HashMap::new(),
             focus_stack: FocusStack::new(),
@@ -1030,10 +1040,18 @@ impl EditorView {
     /// Focuses one widget after a click.
     ///
     /// Clicking a widget also makes its pane the active one, so the keymap
-    /// context and the focus ring agree.
+    /// context and the focus ring agree. A modal overlay owns focus while it is
+    /// open, so clicks behind it do nothing.
     pub(super) fn focus_widget(&mut self, pane_id: PaneId, path: &vy_app::focus_path::FocusPath) {
+        if self.overlay.is_some() {
+            return;
+        }
         if self.active_pane != Some(pane_id) {
             self.switch_active_pane(Some(pane_id));
+            self.request::<vy_proto::PaneFocus>(
+                vy_proto::PaneFocusParams { pane_id },
+                Pending::Focus,
+            );
         }
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.set_focus_path(path.clone());
@@ -1078,13 +1096,23 @@ impl EditorView {
         })
     }
 
-    /// Scrolls by whole lines or columns. The wheel moves the view, not the cursor.
-    fn on_scroll_wheel(
+    /// Scrolls the pane under the pointer by whole lines or columns.
+    ///
+    /// The wheel moves the view, not the cursor, and does not move focus: a
+    /// panel in another pane can be read without leaving the editor. A modal
+    /// overlay owns input while it is open, so the panes behind it ignore the
+    /// wheel.
+    fn on_pane_scroll(
         &mut self,
+        pane_id: PaneId,
         event: &ScrollWheelEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.overlay.is_some() {
+            return;
+        }
+
         let line_height = self.line_height();
         let pixel_delta = event.delta.pixel_delta(px(line_height));
         let delta_y = f32::from(pixel_delta.y);
@@ -1093,10 +1121,7 @@ impl EditorView {
             return;
         }
 
-        let Some(active_pane_id) = self.active_pane else {
-            return;
-        };
-        let Some(pane) = self.panes.get(&active_pane_id) else {
+        let Some(pane) = self.panes.get(&pane_id) else {
             return;
         };
         let is_wrap = pane.is_wrap(&self.config);
@@ -1123,7 +1148,7 @@ impl EditorView {
             }
             let next = vy_app::text_layout::scroll_cols(scroll_left, -cols);
             if next != scroll_left {
-                if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
                     pane.scroll_left = next;
                 }
                 changed = true;
@@ -1139,7 +1164,7 @@ impl EditorView {
             if !is_wrap {
                 let next = scroll_lines(scroll_top, -lines, viewport_rows, line_count);
                 if next != scroll_top {
-                    if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.scroll_top = next;
                     }
                     changed = true;
@@ -1156,7 +1181,7 @@ impl EditorView {
                 let target = index.step(row, rows_delta as i64);
 
                 if target.line as usize != scroll_top || target.chunk != scroll_sub_line {
-                    if let Some(pane) = self.panes.get_mut(&active_pane_id) {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.scroll_top = target.line as usize;
                         pane.scroll_sub_line = target.chunk;
                     }

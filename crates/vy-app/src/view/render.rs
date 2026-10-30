@@ -113,6 +113,19 @@ impl EditorView {
         }
     }
 
+    /// Keeps the per-pane bounds cells in step with the panes that exist.
+    ///
+    /// A handler reads the bounds the canvas wrote during the last paint, so a
+    /// cell has to outlive the frame that created it.
+    pub(super) fn sync_pane_bounds(&mut self) {
+        self.pane_bounds
+            .retain(|pane_id, _| self.panes.contains_key(pane_id));
+        let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane_id in pane_ids {
+            self.pane_bounds.entry(pane_id).or_default();
+        }
+    }
+
     /// Moves the active viewport just enough to show the cursor.
     pub(super) fn ensure_cursor_visible(&mut self) {
         let Some(pane) = self.active_pane_state() else {
@@ -232,6 +245,7 @@ impl Render for EditorView {
         // One scroll handle per UI pane, so a focus move can reveal the focused
         // widget and a redraw keeps the offset.
         self.sync_pane_scroll_handles();
+        self.sync_pane_bounds();
 
         let theme = cx.theme().clone();
 
@@ -277,7 +291,6 @@ impl Render for EditorView {
             .id("vy-editor")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .flex()
@@ -359,6 +372,69 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) {
         self.finish_split_resize(cx);
+    }
+
+    /// Handles a left click inside a pane.
+    ///
+    /// The click moves focus to the pane. In an editor pane it also puts the
+    /// cursor on the clicked character, using the bounds the canvas recorded
+    /// while painting.
+    fn on_pane_mouse_down(
+        &mut self,
+        pane_id: PaneId,
+        event: &gpui::MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.overlay.is_some() {
+            return;
+        }
+
+        let is_editor = self
+            .panes
+            .get(&pane_id)
+            .is_some_and(|pane| pane.pane_kind() == vy_app::keymap::PaneKind::Editor);
+        let position = if is_editor {
+            self.pane_bounds
+                .get(&pane_id)
+                .and_then(|bounds| bounds.get())
+                .and_then(|bounds| {
+                    self.position_for_pane_point(pane_id, bounds, event.position, window, cx)
+                })
+        } else {
+            None
+        };
+
+        let pane_changed = self.active_pane != Some(pane_id);
+        if pane_changed {
+            self.switch_active_pane(Some(pane_id));
+            self.request::<vy_proto::PaneFocus>(
+                vy_proto::PaneFocusParams { pane_id },
+                Pending::Focus,
+            );
+        }
+
+        if let Some(position) = position {
+            self.activate_active_view();
+            self.editor_mut().move_cursor_to(position);
+            self.store_active_view();
+            self.ensure_cursor_visible();
+        }
+
+        if pane_changed || position.is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Scrolls one editor pane with the wheel, without moving focus.
+    fn on_editor_pane_scroll(
+        &mut self,
+        pane_id: PaneId,
+        event: &gpui::ScrollWheelEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.on_pane_scroll(pane_id, event, window, cx);
     }
 
     fn finish_split_resize(&mut self, cx: &mut Context<Self>) {
@@ -451,6 +527,7 @@ impl EditorView {
                         .items_center()
                         .justify_center()
                         .cursor(CursorStyle::ResizeLeftRight)
+                        .occlude()
                         .child(div().h_full().w(px(1.0)).bg(theme.titlebar.border))
                         .on_mouse_down(
                             MouseButton::Left,
@@ -475,6 +552,7 @@ impl EditorView {
                         .items_center()
                         .justify_center()
                         .cursor(CursorStyle::ResizeUpDown)
+                        .occlude()
                         .child(div().w_full().h(px(1.0)).bg(theme.titlebar.border))
                         .on_mouse_down(
                             MouseButton::Left,
@@ -620,13 +698,28 @@ impl EditorView {
             } else {
                 gpui::rgba(0x00000000)
             };
+            // A click anywhere in the panel activates its pane. Widgets also
+            // set their own focus; that handler runs first and this one only
+            // moves the pane when it is still inactive.
+            let click_pane_id = pane.id;
+            area = area.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
+                    view.on_pane_mouse_down(click_pane_id, event, window, cx);
+                }),
+            );
             return area.border_1().border_color(border).into_any_element();
         }
 
         let view_entity = cx.entity();
         let view_entity_paint = view_entity.clone();
+        let bounds_cell = self.pane_bounds.get(&pane_id).cloned();
+        let bounds_cell_paint = bounds_cell.clone();
         let editor_canvas = canvas(
             move |bounds, _window, cx| {
+                if let Some(cell) = &bounds_cell_paint {
+                    cell.set(Some(bounds));
+                }
                 let view = view_entity.read(cx);
                 let pane = view.panes.get(&pane_id);
                 let document = pane
@@ -671,6 +764,17 @@ impl EditorView {
             .relative()
             .flex_1()
             .overflow_hidden()
+            .on_scroll_wheel(cx.listener(
+                move |view, event: &gpui::ScrollWheelEvent, window, cx| {
+                    view.on_editor_pane_scroll(pane_id, event, window, cx);
+                },
+            ))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
+                    view.on_pane_mouse_down(pane_id, event, window, cx);
+                }),
+            )
             .child(editor_canvas);
 
         if active {

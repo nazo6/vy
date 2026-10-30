@@ -14,6 +14,7 @@ ADR に書かれていた実装記録（検証した範囲、移行の各段階�
 
 ## 作業ログ一覧
 
+- [`2026-10-30-mouse-pane-and-cursor.md`](./2026-10-30-mouse-pane-and-cursor.md): マウスによるペイン移動・カーソル移動とホイールのルーティング
 - [`2026-10-28-keymap-context-and-blocks.md`](./2026-10-28-keymap-context-and-blocks.md): キーマップコンテキストの直交化とブロック構造への移行ログ (ADR 0034)
 - [`2026-10-initial-phases.md`](./2026-10-initial-phases.md): Phase 1〜5 実装進捗ログ
 - [`2026-10-editor-ui-improvements.md`](./2026-10-editor-ui-improvements.md): UI・エディタ品質改善ログ

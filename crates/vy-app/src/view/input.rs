@@ -94,6 +94,85 @@ impl EditorView {
         text
     }
 
+    /// Converts a window point inside `bounds` to a text position in a pane.
+    ///
+    /// Used by the mouse handler to move the cursor to the clicked character.
+    /// The mapping uses shaped text, so tabs and wide characters land where they
+    /// are drawn. Normal mode stays on a character and never moves past the line
+    /// break, matching `VisualIndex::position_at`.
+    pub(super) fn position_for_pane_point(
+        &self,
+        pane_id: vy_core::PaneId,
+        bounds: Bounds<Pixels>,
+        point: gpui::Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<vy_core::Position> {
+        let pane = self.panes.get(&pane_id)?;
+        let document = pane.document_id.and_then(|id| self.documents.get(&id))?;
+        let mode = pane.view.mode();
+        let lh = self.line_height();
+        let gutter_w = self.gutter_width(document.editor.line_count());
+        let font_family = self.config.font_family();
+        let font_size = px(self.config.font_size());
+        let text_color = cx.theme().editor.text;
+
+        let rel_y = (f32::from(point.y) - f32::from(bounds.top())).max(0.0);
+        let visual_row = (rel_y / lh).floor() as usize;
+
+        if !pane.is_wrap(&self.config) {
+            let last_line = document.editor.line_count().saturating_sub(1);
+            let line_idx = (pane.scroll_top + visual_row).min(last_line);
+            let line = document.editor.line(line_idx).unwrap_or_default();
+            let scroll_left_px = pane.scroll_left as f32 * self.char_width;
+            let rel_x = (f32::from(point.x) - f32::from(bounds.left()) - gutter_w + scroll_left_px)
+                .max(0.0);
+
+            let char_offset =
+                shape_index_for_x(&line, rel_x, font_family, font_size, text_color, window);
+            let length = line.encode_utf16().count() as u32;
+            let character = match mode {
+                Mode::Normal => char_offset.min(length.saturating_sub(1)),
+                _ => char_offset.min(length),
+            };
+            return Some(vy_core::Position::new(line_idx as u32, character));
+        }
+
+        let cols = pane.viewport_cols.max(1);
+        let index = document.editor.visual_index_with(Some(cols));
+        let scroll_row = VisualRow {
+            line: pane.scroll_top as u32,
+            chunk: pane.scroll_sub_line,
+        };
+        let row = index.step(scroll_row, visual_row as i64);
+        let chunks = index.chunks(row.line);
+        let chunk = &chunks.chunks[row.chunk.min(chunks.chunks.len().saturating_sub(1))];
+        let line = document.editor.line(row.line as usize).unwrap_or_default();
+        let chunk_text = line.get(chunk.byte_range.clone()).unwrap_or("");
+        let rel_x = (f32::from(point.x) - f32::from(bounds.left()) - gutter_w).max(0.0);
+
+        let char_in_chunk = shape_index_for_x(
+            chunk_text,
+            rel_x,
+            font_family,
+            font_size,
+            text_color,
+            window,
+        );
+        let chunk_len = chunk
+            .utf16_range
+            .end
+            .saturating_sub(chunk.utf16_range.start) as u32;
+        let character = match mode {
+            Mode::Normal => char_in_chunk.min(chunk_len.saturating_sub(1)),
+            _ => char_in_chunk.min(chunk_len),
+        };
+        Some(vy_core::Position::new(
+            row.line,
+            chunk.utf16_range.start as u32 + character,
+        ))
+    }
+
     pub(super) fn commit_text(&mut self, text: &str) {
         self.activate_active_view();
         let action = self.editor_mut().insert_commit(text);
@@ -562,4 +641,38 @@ impl EntityInputHandler for EditorView {
             Some(document.editor.utf16_offset(pos))
         }
     }
+}
+
+/// Maps a horizontal offset inside `text` to a UTF-16 code unit offset.
+///
+/// The text is shaped so tabs and wide characters follow the painted glyph
+/// positions instead of a fixed character width.
+fn shape_index_for_x(
+    text: &str,
+    x: f32,
+    font_family: String,
+    font_size: Pixels,
+    text_color: gpui::Rgba,
+    window: &mut Window,
+) -> u32 {
+    if text.is_empty() {
+        return 0;
+    }
+
+    let run = TextRun {
+        len: text.len(),
+        font: gpui::font(font_family),
+        color: text_color.into(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let shaped = window.text_system().shape_line(
+        SharedString::from(text.to_string()),
+        font_size,
+        &[run],
+        None,
+    );
+    let byte = shaped.index_for_x(px(x)).unwrap_or(0).min(text.len());
+    byte_to_utf16(text, byte)
 }
