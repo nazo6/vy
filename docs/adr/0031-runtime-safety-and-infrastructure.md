@@ -15,7 +15,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 - **日付**: 2026-10-25
 - **カテゴリー**: maintenance
 - **関連タスク**: 品質改善、Phase 4 の仕上げ、Phase 5 以降の前提整備
-- **進捗**: Phase 0 は実施済みです（[worklog](../worklogs/2026-10-runtime-safety-infrastructure.md)）。Phase 5 のホイールのルーティングは先行して実装済みです（[worklog](../worklogs/2026-10-30-mouse-pane-and-cursor.md)）。残りは Phase 1–4 と Phase 5–6 の未完了項目です。
+- **進捗**: Phase 0 と Phase 3 は実施済みです（Phase 0 [worklog](../worklogs/2026-10-runtime-safety-infrastructure.md)、Phase 3 [worklog](../worklogs/2026-11-07-ci-and-codegen.md)）。Phase 5 のホイールのルーティングは先行して実装済みです（[worklog](../worklogs/2026-10-30-mouse-pane-and-cursor.md)）。残りは Phase 1–2, 4 と Phase 5–6 の未完了項目です。
 - **目的**: 純粋ロジックの整理（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)）とは独立に、実行時の安全性・データ保護・開発基盤に残っている負債を洗い出し、優先度付きで解消する。
 
 ## 1. 背景と範囲
@@ -185,10 +185,22 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 ### Phase 3: 開発基盤（CI と codegen）
 
-- [ ] CI ワークフローを追加する（`fmt` / `clippy` / `test --workspace` / `check:types` / `codegen --check` / `generate:api` 後の差分）。
-- [ ] `vy-api-codegen --check` の比較対象に `packages/vy-api/shim.d.ts` と `crates/vy-js/src/generated/shim.js` を加える。
-- [ ] codegen チェックを `cargo test` から呼べる統合テストにする。
-- [ ] [`../development.md`](../development.md) の CI 記述を実態に合わせる。
+- [x] CI ワークフローを追加する（`fmt` / `clippy` / `test --workspace` / `check:types` / `codegen --check` / `generate:api` 後の差分）。
+- [x] `vy-api-codegen --check` の比較対象に `packages/vy-api/shim.d.ts` と `crates/vy-js/src/generated/shim.js` を加える。
+- [x] codegen チェックを `cargo test` から呼べる統合テストにする。
+- [x] [`../development.md`](../development.md) の CI 記述を実態に合わせる。
+
+確認結果（2026-11-07）:
+
+- `.github/workflows/ci.yml` を新設し、Linux GPUI 依存ライブラリのインストール、
+  `cargo fmt`、`pnpm format:check`、`cargo clippy`、`pnpm check:types`、
+  `cargo run -p vy-api-codegen -- --check`、`pnpm generate:api` 後の clean diff 検証、
+  および `cargo test --workspace` を自動実行するようにした。
+- `vy-api-codegen` に `check_shims` を追加し、`packages/vy-api/shim.d.ts` と
+  `crates/vy-js/src/generated/shim.js` の存在および整合性を検証対象に含めた。
+- `crates/vy-api-codegen/tests/codegen.rs` を新設し、`cargo test` の実行時に
+  生成物の差分チェック（`check_client`）を自動的に実行できるようにした。
+- `docs/development.md` の検証セクションを更新し、CI と codegen テストの実態を反映した。
 
 完了条件: 生成忘れと整形漏れがローカルとリモートの両方で検出される。
 

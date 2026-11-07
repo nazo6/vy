@@ -93,8 +93,13 @@ Rust 以外のファイルの整形は §8 に従います。
   の型検査を含みます。
 - プロトコル境界とプラグイン境界の型を変えたら、`pnpm generate:api` を実行し、
   `packages/vy-api` と `crates/vy-js/src/generated/shim.js` をコミットします。
-  CI では `pnpm generate:api` の後に `git diff --exit-code packages crates/vy-js/src/generated`
-  で差分がないことを確かめます。出力先は `codegen::Output::packages()` が決め、
+  `cargo test -p vy-api-codegen`（`tests/codegen.rs`）および `cargo run -p vy-api-codegen -- --check`
+  により、生成物が最新であること（`shim.d.ts` や `shim.js` を含む）が自動検証されます。
+  GitHub Actions CI（`.github/workflows/ci.yml`）では `cargo fmt`、`pnpm format:check`、
+  `cargo clippy`、`pnpm check:types`、`cargo run -p vy-api-codegen -- --check`、
+  `cargo test --workspace`、および `pnpm generate:api` 後の
+  `git diff --exit-code packages crates/vy-js/src/generated` を自動実行します。
+  出力先は `codegen::Output::packages()` が決め、
   型は `packages/vy-api/types`、wire の名前空間宣言は `packages/vy-api/api-base.d.ts`
   に置きます。`index.d.ts` は `types/`、`api-base.d.ts`、`shim.d.ts` を合成し、
   ambient な `vy` と `Vy.CommandMap` を宣言します（[ADR 0019](./adr/0019-global-vy-api.md)）。
@@ -113,7 +118,7 @@ Rust 以外のファイルの整形は §8 に従います。
   `crates/vy-js/src/shim.ts` から `tsc` で `packages/vy-api/shim.d.ts` に生成します。
   `shim.js` は評価時に `globalThis.vy` を代入するモジュールで、ユーザー向けの
   仮想モジュールではありません。
-  生成はテストではなく `pnpm generate:api`（`vy-api-codegen` と `tsc`）で行います。
+  生成は手動ではなく `pnpm generate:api`（`vy-api-codegen` と `tsc`、`scripts/generate-shim.mjs`）で行います。
 - 入力の重さを見るときは `VY_FRAME_LOG=1` で起動します。フレームの間隔と、要素の
   組み立て時間が標準エラーに出ます。
 - `init.ts` の不具合は `~/.cache/vy/logs/init.log`（`VY_CACHE_HOME`
