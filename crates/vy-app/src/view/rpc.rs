@@ -11,10 +11,10 @@ use vy_app::state::{DocumentState, PaneState};
 use vy_proto::{
     BufferDidChange, BufferResync, BufferSnapshot, BufferUndo, DidChangeParams, DocumentIdParams,
     DocumentSave, DocumentSavedResult, EditorOpen, EditorOpenParams, HistoryResult, Initialize,
-    InitializeParams, Initialized, LayoutDidChange, LayoutDidChangeNotification, LayoutGet,
-    LayoutGetResult, PROTOCOL_VERSION, PaneOpen, PaneOpenParams, PaneOpenResult, RpcMessage,
-    RpcMethod, RpcNotification, RpcResult, SnapshotResult, SyncDocument, SyncRequest,
-    SyncRequestParams, SyncRequestResult, decode_notification, decode_reply, decode_value,
+    Initialized, LayoutDidChange, LayoutDidChangeNotification, LayoutGet, LayoutGetResult,
+    PaneOpen, PaneOpenParams, PaneOpenResult, RpcMessage, RpcMethod, RpcNotification, RpcResult,
+    SnapshotResult, SyncDocument, SyncRequest, SyncRequestParams, SyncRequestResult,
+    decode_notification, decode_reply, decode_value,
 };
 
 use super::{EditorView, Pending};
@@ -23,24 +23,24 @@ impl EditorView {
     /// Starts the first connection and the reconnect loop.
     pub(super) fn connect(&mut self, cx: &mut Context<Self>) {
         self.connection_generation += 1;
+        self.session_state
+            .start_connecting(self.connection_generation);
         match Client::connect(self.connection.clone()) {
             Ok(mut client) => {
-                let id = client.request::<Initialize>(InitializeParams {
-                    protocol_version: PROTOCOL_VERSION,
-                    client_version: env!("CARGO_PKG_VERSION").into(),
-                    client_capabilities: vec!["session-restore".to_string()],
-                    workspace: Some(self.workspace_uri.clone()),
-                    resume_session: None,
-                });
+                let id = client.request::<Initialize>(vy_app::session::build_initialize_params(
+                    Some(self.workspace_uri.clone()),
+                ));
                 self.pending.clear();
                 self.pending.insert(id, Pending::Initialize);
                 self.client = Some(client);
                 self.reconnecting = false;
+                self.session_state.mark_restoring();
                 self.status = "connected; restoring the session".into();
                 self.start_receiving(cx);
             }
             Err(error) => {
                 self.client = None;
+                self.session_state.mark_disconnected();
                 self.status = format!(
                     "could not start vy-server for {}: {error}",
                     self.connection_name
@@ -99,6 +99,7 @@ impl EditorView {
 
     fn handle_disconnect(&mut self, cx: &mut Context<Self>) {
         self.client = None;
+        self.session_state.mark_disconnected();
         for (_, pending) in self.pending.drain() {
             if let Pending::HostCall { request, .. } = pending {
                 request.respond_error("RemoteDisconnected", "the connection to the core closed");
@@ -149,25 +150,25 @@ impl EditorView {
 
     /// One reconnect attempt. Returns whether it succeeded.
     fn try_reconnect(&mut self, cx: &mut Context<Self>) -> bool {
+        self.connection_generation += 1;
+        self.session_state
+            .start_connecting(self.connection_generation);
         match Client::connect(self.connection.clone()) {
             Ok(mut client) => {
-                self.connection_generation += 1;
-                let id = client.request::<Initialize>(InitializeParams {
-                    protocol_version: PROTOCOL_VERSION,
-                    client_version: env!("CARGO_PKG_VERSION").into(),
-                    client_capabilities: vec!["session-restore".to_string()],
-                    workspace: Some(self.workspace_uri.clone()),
-                    resume_session: None,
-                });
+                let id = client.request::<Initialize>(vy_app::session::build_initialize_params(
+                    Some(self.workspace_uri.clone()),
+                ));
                 self.pending.clear();
                 self.pending.insert(id, Pending::Initialize);
                 self.client = Some(client);
                 self.reconnecting = false;
+                self.session_state.mark_restoring();
                 self.status = "reconnected; restoring the session".into();
                 self.start_receiving(cx);
                 true
             }
             Err(error) => {
+                self.session_state.mark_disconnected();
                 self.status = format!("reconnect failed: {error}").into();
                 false
             }
@@ -565,11 +566,12 @@ impl EditorView {
     /// is the point where `init.ts` can run. Later reconnects keep the
     /// registrations from the first evaluation.
     fn ensure_init_evaluated(&mut self) {
+        self.session_state.mark_ready();
         if self.init_evaluated {
             return;
         }
         self.init_evaluated = true;
-        self.evaluate_init();
+        self.evaluate_init(None);
     }
 
     fn opened(&mut self, opened: PaneOpenResult) {

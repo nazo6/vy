@@ -1,6 +1,6 @@
 //! Command execution and palette/ex handling for `EditorView`.
 
-use gpui::ScrollStrategy;
+use gpui::{Context, ScrollStrategy};
 use vy_app::commands::{
     ArgKind, BuiltinCommand, CommandDescriptor, CommandSource, DocumentCommand, ExAddress, ExRange,
     Invocation, InvocationSource, KeymapArgs, LineRange, Owner, PaletteVisibility, PaneCommand,
@@ -1449,15 +1449,30 @@ impl EditorView {
         self.drain_command_queue();
     }
 
+    /// Drains commands without a GPUI context.
     pub(super) fn drain_command_queue(&mut self) {
         while self.running_command.is_none() {
             let Some(invocation) = self.command_queue.pop_front() else {
                 break;
             };
-            if self.execute_invocation(invocation) {
+            if self.execute_invocation_headless(invocation) {
                 break;
             }
         }
+    }
+
+    /// Drains commands with a GPUI context so UI actions (e.g. reconnect) and
+    /// plugin pumps start immediately.
+    pub(super) fn drain_command_queue_with_cx(&mut self, cx: &mut Context<Self>) {
+        while self.running_command.is_none() {
+            let Some(invocation) = self.command_queue.pop_front() else {
+                break;
+            };
+            if self.execute_invocation_with_cx(invocation, cx) {
+                break;
+            }
+        }
+        self.start_pending_plugins(cx);
     }
 
     /// Runs a registered script command on the runtime that owns it.
@@ -1483,7 +1498,34 @@ impl EditorView {
     }
 
     /// Runs one command. Returns true when it continues on the script thread.
-    pub(super) fn execute_invocation(&mut self, invocation: Invocation) -> bool {
+    pub(super) fn execute_invocation(
+        &mut self,
+        invocation: Invocation,
+        cx: Option<&mut Context<Self>>,
+    ) -> bool {
+        match cx {
+            Some(cx) => self.execute_invocation_with_cx(invocation, cx),
+            None => self.execute_invocation_headless(invocation),
+        }
+    }
+
+    fn execute_invocation_headless(&mut self, invocation: Invocation) -> bool {
+        self.execute_invocation_inner(invocation, None)
+    }
+
+    fn execute_invocation_with_cx(
+        &mut self,
+        invocation: Invocation,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.execute_invocation_inner(invocation, Some(cx))
+    }
+
+    fn execute_invocation_inner(
+        &mut self,
+        invocation: Invocation,
+        cx: Option<&mut Context<Self>>,
+    ) -> bool {
         let id = invocation.id.clone();
         self.activate_plugins_for_command(&id);
 
@@ -1503,7 +1545,7 @@ impl EditorView {
         }
 
         if let Some(command) = UiCommand::parse(&id) {
-            self.run_ui_command(command, &invocation);
+            self.run_ui_command(command, &invocation, cx);
             return false;
         }
         if let Some(command) = UiActionCommand::parse(&id) {
@@ -1555,14 +1597,21 @@ impl EditorView {
         false
     }
 
-    pub(super) fn run_ui_command(&mut self, command: UiCommand, invocation: &Invocation) {
+    pub(super) fn run_ui_command(
+        &mut self,
+        command: UiCommand,
+        invocation: &Invocation,
+        cx: Option<&mut Context<Self>>,
+    ) {
         match command {
             UiCommand::CommandPalette => self.open_palette(),
             UiCommand::ExCommandLine => self.open_ex(),
             UiCommand::OpenSettings => self.open_settings(),
             UiCommand::ReconnectServer => {
-                self.reconnect_requested = true;
                 self.status = "reconnecting".into();
+                if let Some(cx) = cx {
+                    self.reconnect_now(cx);
+                }
             }
             UiCommand::ScriptEval => {
                 let Some(code) = invocation.args.string("code") else {
@@ -2041,7 +2090,7 @@ impl EditorView {
                 }
             },
         };
-        self.execute_invocation(invocation);
+        self.execute_invocation(invocation, None);
     }
 
     pub(super) fn open_view_pane(&mut self, view_id: &str, direction: &str) {

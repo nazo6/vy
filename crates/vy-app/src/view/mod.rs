@@ -32,6 +32,7 @@ use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
 use vy_app::rpc::Client;
+use vy_app::session::{RuntimeSlot, SessionState};
 use vy_app::slots::{GutterRegistry, HoverState};
 use vy_app::state::{DocumentState, PaneState};
 use vy_app::statusline::Statusline;
@@ -66,11 +67,16 @@ pub(super) enum Pending {
     },
 }
 
-/// One plugin runtime and the generation used to stop its old pumps.
+/// One plugin runtime and the lifecycle slot used to stop its old pumps.
 pub(super) struct PluginRuntime {
     pub(super) host: PluginHost,
-    pub(super) generation: u64,
-    pub(super) started: bool,
+    pub(super) slot: RuntimeSlot,
+}
+
+impl PluginRuntime {
+    pub(super) fn generation(&self) -> u64 {
+        self.slot.generation().unwrap_or(0)
+    }
 }
 
 /// How the open overlay handles a key before the editor sees it.
@@ -163,12 +169,11 @@ pub(super) struct TextDragState {
 
 pub struct EditorView {
     client: Option<Client>,
+    pub(crate) session_state: SessionState,
     /// Bumped for every connection attempt. Old reader tasks ignore messages.
     connection_generation: u64,
     /// Whether a reconnect loop is already running.
     reconnecting: bool,
-    /// Set by `vy.reconnect_server`; the connection watcher performs it.
-    reconnect_requested: bool,
     pending: HashMap<u64, Pending>,
     config: Config,
     /// Set when runtime settings changed; the next render refreshes caches.
@@ -326,9 +331,9 @@ impl EditorView {
 
         let mut view = Self {
             client: None,
+            session_state: SessionState::disconnected(),
             connection_generation: 0,
             reconnecting: false,
-            reconnect_requested: false,
             pending: HashMap::new(),
             config,
             settings_dirty: false,
@@ -397,7 +402,6 @@ impl EditorView {
         view.connect(cx);
         view.start_config_watch(cx);
         view.start_script(cx);
-        view.start_plugin_supervisor(cx);
         view.start_cursor_blink(cx);
         view
     }
@@ -625,10 +629,6 @@ impl EditorView {
                     .await;
 
                 let updated = this.update(cx, |this, cx| {
-                    if this.reconnect_requested {
-                        this.reconnect_requested = false;
-                        this.reconnect_now(cx);
-                    }
                     let config_changed = this.reload_config_if_changed();
                     // Editing `init.ts` starts a fresh runtime, so registrations
                     // from the previous evaluation cannot pile up.
@@ -642,7 +642,7 @@ impl EditorView {
                         .map(|(id, _)| id.clone())
                         .collect();
                     for plugin_id in reload_plugins {
-                        this.reload_plugin(&plugin_id);
+                        this.reload_plugin(&plugin_id, cx);
                     }
                     if config_changed {
                         let theme = Theme::from_config(&this.config);
@@ -794,6 +794,7 @@ impl EditorView {
                         // and the `vy.ui.*` defaults decide what a key does
                         // (ADR 0024 §8, ADR 0032 §6).
                         self.apply_overlay_key(key);
+                        self.drain_command_queue_with_cx(cx);
                     }
                 }
             }
@@ -832,6 +833,7 @@ impl EditorView {
         }
 
         if self.apply_key(key) {
+            self.drain_command_queue_with_cx(cx);
             if self.quit_requested {
                 window.remove_window();
                 return;
