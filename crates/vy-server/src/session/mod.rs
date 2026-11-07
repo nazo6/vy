@@ -1,3 +1,4 @@
+mod atomic;
 mod buffer;
 mod fs;
 mod history;
@@ -46,6 +47,8 @@ pub struct Session {
     documents: HashMap<u64, Buffer>,
     /// Documents already open, keyed by URI. A second pane reuses the buffer.
     documents_by_uri: HashMap<String, DocumentId>,
+    /// Last known on-disk metadata for open documents to detect external modifications.
+    file_metadata: HashMap<DocumentId, atomic::FileMetadata>,
     panes: HashMap<PaneId, Pane>,
     layout: Layout,
     processes: process::ProcessTable,
@@ -127,6 +130,7 @@ impl Session {
             workspace: None,
             documents: HashMap::new(),
             documents_by_uri: HashMap::new(),
+            file_metadata: HashMap::new(),
             panes: HashMap::new(),
             layout: Layout::new(1),
             processes: HashMap::new(),

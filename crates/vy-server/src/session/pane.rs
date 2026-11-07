@@ -54,9 +54,15 @@ impl Session {
 
         let document_id = self.next_document_id;
         self.next_document_id += 1;
+        let file_path = uri.file_path();
         let buffer = Buffer::new(document_id, uri, text);
         let version = buffer.version();
         let line_count = buffer.line_count();
+        if let Some(path) = file_path
+            && let Some(meta) = super::atomic::FileMetadata::from_path(&path)
+        {
+            self.file_metadata.insert(document_id, meta);
+        }
         self.documents.insert(document_id, buffer);
         self.documents_by_uri.insert(key, document_id);
         Ok((document_id, version, line_count, true))
@@ -215,6 +221,7 @@ impl Session {
             if !still_used {
                 self.documents.remove(&document_id);
                 self.documents_by_uri.retain(|_, id| *id != document_id);
+                self.file_metadata.remove(&document_id);
             }
         }
         self.persist_session();

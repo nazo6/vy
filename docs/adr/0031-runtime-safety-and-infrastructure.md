@@ -15,7 +15,7 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 - **日付**: 2026-10-25
 - **カテゴリー**: maintenance
 - **関連タスク**: 品質改善、Phase 4 の仕上げ、Phase 5 以降の前提整備
-- **進捗**: Phase 0 と Phase 3 は実施済みです（Phase 0 [worklog](../worklogs/2026-10-runtime-safety-infrastructure.md)、Phase 3 [worklog](../worklogs/2026-11-07-ci-and-codegen.md)）。Phase 5 のホイールのルーティングは先行して実装済みです（[worklog](../worklogs/2026-10-30-mouse-pane-and-cursor.md)）。残りは Phase 1–2, 4 と Phase 5–6 の未完了項目です。
+- **進捗**: Phase 0–3 は実施済みです（[Phase 1 worklog](../worklogs/2026-11-07-runtime-safety-phase1.md)、[Phase 2 worklog](../worklogs/2026-11-07-runtime-safety-phase2.md)、[Phase 3 worklog](../worklogs/2026-11-07-ci-and-codegen.md)）。Phase 5 のホイールのルーティングは先行して実装済みです（[worklog](../worklogs/2026-10-30-mouse-pane-and-cursor.md)）。残りは Phase 4 と Phase 5–6 の未完了項目です。
 - **目的**: 純粋ロジックの整理（[`0030-logic-state-refactor.md`](./0030-logic-state-refactor.md)）とは独立に、実行時の安全性・データ保護・開発基盤に残っている負債を洗い出し、優先度付きで解消する。
 
 ## 1. 背景と範囲
@@ -163,23 +163,46 @@ tags: ["security", "data-integrity", "capabilities", "ci", "performance"]
 
 ### Phase 1: データ保護と終了フロー
 
-- [ ] 原子的な保存ヘルパー（temp → `sync_all` → `rename`、パーミッション継承、失敗時の後始末）を作る。
-- [ ] `document.save` と `fs.write_file` をこのヘルパーに置き換える。
-- [ ] 保存前の mtime / size 比較と、`:w!` による強制保存を実装する。
-- [ ] `EditorView::request_quit` を追加し、タイトルバーの×と `window.on_window_should_close` の両方から呼ぶ。
-- [ ] 未保存時の確認モーダル（保存 / 破棄 / キャンセル）を実装する。
-- [ ] `:qa` / `:qa!` / `:wq` / `:wqa` を追加し、最後のペインの `:q` を終了にフォールバックさせる。
-- [ ] テスト: 保存の成功・失敗・強制保存、未保存状態での終了要求、最後のペインの `:q`。
+- [x] 原子的な保存ヘルパー（temp → `sync_all` → `rename`、パーミッション継承、失敗時の後始末）を作る。
+- [x] `document.save` と `fs.write_file` をこのヘルパーに置き換える。
+- [x] 保存前の mtime / size 比較と、`:w!` による強制保存を実装する。
+- [x] `EditorView::request_quit` を追加し、タイトルバーの×と `window.on_window_should_close` の両方から呼ぶ。
+- [x] 未保存時の確認モーダル（保存 / 破棄 / キャンセル）を実装する。
+- [x] `:qa` / `:qa!` / `:wq` / `:wqa` を追加し、最後のペインの `:q` を終了にフォールバックさせる。
+- [x] テスト: 保存の成功・失敗・強制保存、未保存状態での終了要求、最後のペインの `:q`。
+
+確認結果（2026-11-07）:
+
+- `vy-server/src/session/atomic.rs` に原子的保存ヘルパー `atomic_write` を新設し、
+  `save_document`、`fs_write_file`、`persist_session` を置換した。
+- `DocumentSaveParams` に `force: bool` を追加し、外部変更（mtime / size 不一致）
+  の検知と `:w!` による強制保存を実装した。
+- `EditorView::request_quit` を追加し、タイトルバーの閉じるボタンと
+  `window.on_window_should_close` の両方で未保存文書の有無を判定。
+  未保存があれば確認モーダル（`ConfirmQuit`）を表示してウィンドウ終了を中断する。
+- 終了系コマンド（`:wq` / `:qa` / `:qa!` / `:wqa` / `:wqall`）を登録し、
+  最後のペインでの `:q` / `:q!` のウィンドウ終了フォールバックを実装した。
 
 完了条件: どの経路でウィンドウを閉じても、未保存の本文が無断で消えない。
 `:wq` / `:qa` / `:qa!` / `:wqa` で終了でき、最後のペインの `:q` も終了になる。
 
 ### Phase 2: サンドボックスの境界
 
-- [ ] ケイパビリティ照合の前処理としてパス正規化（`..` の畳み込み）を入れる。
-- [ ] 実行直前の `canonicalize` と許可ルート配下の判定をサーバー側に追加する。
-- [ ] glob は宣言の展開に限定し、実パスの判定には使わない。
-- [ ] テスト: `..`、パーセントエンコード、シンボリックリンク、ルート外、書き込み系 API。
+- [x] ケイパビリティ照合の前処理としてパス正規化（`..` の畳み込み）を入れる。
+- [x] 実行直前の `canonicalize` と許可ルート配下の判定をサーバー側に追加する。
+- [x] glob は宣言の展開に限定し、実パスの判定には使わない。
+- [x] テスト: `..`、パーセントエンコード、シンボリックリンク、ルート外、書き込み系 API。
+
+確認結果（2026-11-07）:
+
+- `vy-capabilities` に字句的パス正規化 `normalize_path` および `normalize_path_str` を新設し、
+  `Capability::covers`、`check_capability`（`vy-app`）、`CoreHost::check`（`vy-server`）
+  の前処理で `..` や `.` を畳み込むようにした。
+- `vy-server/src/session/fs.rs` に `canonicalize_with_ancestors` および `resolve_fs_path` を導入し、
+  全 `fs_*` 操作（read、write、stat、read_dir、create_dir、remove、rename、copy、exists）
+  で実体パスの正規化およびワークスペース許可ルートへの実体パス収容（シンボリックリンク解決含む）を強制。
+- ワークスペース外へ脱出する `..`、`%2e%2e`、シンボリックリンク経由の読み書き・存在確認を
+  `ErrorCode::CapabilityDenied` で確実に拒否することを単体・結合テストで検証した。
 
 完了条件: `${workspace}/**` を承認したプラグインが workspace 外へ到達できないことをテストで示せる。
 

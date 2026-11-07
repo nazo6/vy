@@ -53,7 +53,30 @@ impl CoreHost<'_> {
     }
 
     fn path(&self, uri: &str) -> Result<PathBuf, CallError> {
-        uri_to_path(uri).map_err(|(code, message)| CallError::new(code, message))
+        let path = uri_to_path(uri).map_err(|(code, message)| CallError::new(code, message))?;
+        let normalized = vy_capabilities::normalize_path(&path);
+        if let Some(ref ws) = self.roots.workspace {
+            let canonical_ws = std::fs::canonicalize(ws).map_err(|e| {
+                CallError::new(ErrorCode::Internal, format!("{}: {e}", ws.display()))
+            })?;
+            let canonical_target =
+                super::fs::canonicalize_with_ancestors(&normalized).map_err(|e| {
+                    CallError::new(
+                        ErrorCode::NotFound,
+                        format!("{}: {e}", normalized.display()),
+                    )
+                })?;
+            if !canonical_target.starts_with(&canonical_ws) {
+                return Err(CallError::new(
+                    ErrorCode::CapabilityDenied,
+                    format!(
+                        "access denied: path outside workspace ({})",
+                        normalized.display()
+                    ),
+                ));
+            }
+        }
+        Ok(normalized)
     }
 
     fn check(&self, kind: &str, target: &str) -> Result<(), CallError> {
@@ -63,8 +86,12 @@ impl CoreHost<'_> {
             Uri::parse(target)
                 .ok()
                 .and_then(|uri| uri.file_path())
-                .map(|path| path.display().to_string())
+                .map(|path| vy_capabilities::normalize_path(&path).display().to_string())
                 .unwrap_or_else(|| target.to_string())
+        } else if kind.starts_with("fs:") {
+            vy_capabilities::normalize_path(std::path::Path::new(target))
+                .display()
+                .to_string()
         } else {
             target.to_string()
         };

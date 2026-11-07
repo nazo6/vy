@@ -101,7 +101,13 @@ impl Capability {
             return true;
         };
         let value = requested.expanded_target(roots).unwrap_or_default();
-        glob_match(&pattern, &value)
+        if self.kind.starts_with("fs:") {
+            let norm_pattern = normalize_path_str(&pattern);
+            let norm_value = normalize_path_str(&value);
+            glob_match(&norm_pattern, &norm_value)
+        } else {
+            glob_match(&pattern, &value)
+        }
     }
 }
 
@@ -279,6 +285,59 @@ pub fn expand(target: &str, roots: &Roots) -> String {
         .replace("${home}", &home.display().to_string())
 }
 
+/// Lexically normalizes a path by resolving `.` and `..` segments without accessing the filesystem.
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    let is_absolute = path.is_absolute();
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => {
+                components.push(prefix.as_os_str().to_os_string());
+            }
+            std::path::Component::RootDir => {
+                components.clear();
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                components.pop();
+            }
+            std::path::Component::Normal(c) => {
+                components.push(c.to_os_string());
+            }
+        }
+    }
+    let mut result = PathBuf::new();
+    if is_absolute {
+        result.push(std::path::Component::RootDir.as_os_str());
+    }
+    for c in components {
+        result.push(c);
+    }
+    result
+}
+
+/// Normalizes a path string, preserving a trailing `/**` or `/*` if present.
+pub fn normalize_path_str(path_str: &str) -> String {
+    let (base, glob_suffix) = if let Some(stripped) = path_str.strip_suffix("/**") {
+        (stripped, "/**")
+    } else if let Some(stripped) = path_str.strip_suffix("/*") {
+        (stripped, "/*")
+    } else {
+        (path_str, "")
+    };
+
+    let normalized = normalize_path(Path::new(base));
+    let mut result = normalized.display().to_string();
+    if !glob_suffix.is_empty() {
+        if result == "/" {
+            result.push_str(&glob_suffix[1..]);
+        } else {
+            result.push_str(glob_suffix);
+        }
+    }
+    result
+}
+
 /// Matches a glob where `**` crosses path separators, `*` and `?` do not.
 pub fn glob_match(pattern: &str, value: &str) -> bool {
     // `a/**` also matches `a`, so a directory capability covers the directory
@@ -426,12 +485,47 @@ mod tests {
 
         assert!(declared.covers(&inside, &roots));
         assert!(!declared.covers(&outside, &roots));
+        // Path traversal with `..` is collapsed and rejected.
+        let traversal = Capability::parse("fs:read:${workspace}/../etc/passwd").expect("parse");
+        assert!(!declared.covers(&traversal, &roots));
+        let traversal_sub =
+            Capability::parse("fs:read:${workspace}/src/../../etc/passwd").expect("parse");
+        assert!(!declared.covers(&traversal_sub, &roots));
+        // Valid traversal within the workspace stays allowed.
+        let valid_sub = Capability::parse("fs:read:${workspace}/src/../src/lib.rs").expect("parse");
+        assert!(declared.covers(&valid_sub, &roots));
+
         // A declaration without a target covers every target of its kind.
         assert!(
             Capability::parse("fs:read")
                 .expect("parse")
                 .covers(&outside, &roots)
         );
+    }
+
+    #[test]
+    fn normalizes_paths_lexically() {
+        assert_eq!(
+            normalize_path(Path::new("/a/b/../c")),
+            PathBuf::from("/a/c")
+        );
+        assert_eq!(
+            normalize_path(Path::new("/a/b/../../c")),
+            PathBuf::from("/c")
+        );
+        assert_eq!(
+            normalize_path(Path::new("/a/b/../../../c")),
+            PathBuf::from("/c")
+        );
+        assert_eq!(
+            normalize_path(Path::new("/work/project/.")),
+            PathBuf::from("/work/project")
+        );
+        assert_eq!(
+            normalize_path_str("/work/project/sub/../**"),
+            "/work/project/**"
+        );
+        assert_eq!(normalize_path_str("/work/project/.."), "/work");
     }
 
     #[test]

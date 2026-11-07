@@ -15,6 +15,8 @@ ADR に書かれていた実装記録（検証した範囲、移行の各段階�
 ## 作業ログ一覧
 
 - [`2026-11-07-ci-and-codegen.md`](./2026-11-07-ci-and-codegen.md): GitHub Actions CI ワークフローと codegen 差分検証の整備 (ADR 0031 Phase 3)
+- [`2026-11-07-runtime-safety-phase2.md`](./2026-11-07-runtime-safety-phase2.md): サンドボックス境界の強制 (ADR 0031 Phase 2)
+- [`2026-11-07-runtime-safety-phase1.md`](./2026-11-07-runtime-safety-phase1.md): データ保護と終了フローの実装 (ADR 0031 Phase 1)
 - [`2026-10-30-mouse-pane-and-cursor.md`](./2026-10-30-mouse-pane-and-cursor.md): マウスによるペイン移動・カーソル移動とホイールのルーティング
 - [`2026-10-28-keymap-context-and-blocks.md`](./2026-10-28-keymap-context-and-blocks.md): キーマップコンテキストの直交化とブロック構造への移行ログ (ADR 0034)
 - [`2026-10-initial-phases.md`](./2026-10-initial-phases.md): Phase 1〜5 実装進捗ログ

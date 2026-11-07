@@ -312,7 +312,7 @@ impl Render for EditorView {
             .font_family(self.config.font_family())
             .text_size(px(self.config.font_size()))
             .line_height(px(self.line_height()))
-            .child(self.render_titlebar(&theme, window))
+            .child(self.render_titlebar(&theme, window, cx))
             .child(
                 div()
                     .relative()
@@ -944,7 +944,12 @@ impl EditorView {
             .into_any_element()
     }
 
-    fn render_titlebar(&self, theme: &Theme, window: &mut Window) -> impl IntoElement {
+    fn render_titlebar(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (title, is_dirty) = if let Some(doc) = self.active_document() {
             let name = doc.uri.strip_prefix("file://").unwrap_or(&doc.uri);
             let display_name = if name == "vy:empty" || name == "vy:untitled" {
@@ -960,6 +965,7 @@ impl EditorView {
             ("vy".to_string(), false)
         };
 
+        let entity = cx.entity().clone();
         ui::titlebar::render_titlebar(
             theme,
             title,
@@ -971,6 +977,15 @@ impl EditorView {
                 window.titlebar_double_click();
                 #[cfg(not(target_os = "macos"))]
                 window.zoom_window();
+            },
+            move |window, cx| {
+                entity.update(cx, |view, cx| {
+                    if view.request_quit() {
+                        window.remove_window();
+                    } else {
+                        cx.notify();
+                    }
+                });
             },
         )
     }

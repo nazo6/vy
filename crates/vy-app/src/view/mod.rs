@@ -27,7 +27,7 @@ use vy_app::connection::{ConnectionSpec, Startup};
 use vy_app::editor::{Editor, Key, Mode, ViewState, VisualRow};
 use vy_app::ex::ExHistory;
 use vy_app::keymap::{KeyContext, Keymap, KeymapOutcome, OverlayKind, PaneKind};
-use vy_app::overlay::{ApprovalState, Overlay};
+use vy_app::overlay::{ApprovalState, ConfirmQuitState, Overlay};
 use vy_app::paths::Paths;
 use vy_app::plugin::PluginManager;
 use vy_app::plugin_host::{self, PluginHost};
@@ -56,6 +56,10 @@ pub(super) enum Pending {
     Resize,
     EditorOpen,
     Save,
+    WriteQuit {
+        force: bool,
+    },
+    SaveQuitAll,
     HostCall {
         request: vy_js::HostRequest,
         runtime: Option<String>,
@@ -255,6 +259,8 @@ pub struct EditorView {
     pub(super) resizing_split: Option<SplitDragState>,
     /// Text selection begun by a mouse press in an editor pane.
     pub(super) text_drag: Option<TextDragState>,
+    pub(super) quit_requested: bool,
+    pub(super) pending_quit_saves: usize,
 }
 
 impl EditorView {
@@ -381,6 +387,8 @@ impl EditorView {
             theme_arc,
             resizing_split: None,
             text_drag: None,
+            quit_requested: false,
+            pending_quit_saves: 0,
         };
 
         if let Some(warning) = warnings.last() {
@@ -409,6 +417,42 @@ impl EditorView {
     fn active_pane_state_mut(&mut self) -> Option<&mut PaneState> {
         let id = self.active_pane?;
         self.panes.get_mut(&id)
+    }
+
+    pub fn has_unsaved_documents(&self) -> bool {
+        self.documents.values().any(|doc| doc.is_dirty())
+    }
+
+    pub fn is_last_pane(&self) -> bool {
+        match self.layout.as_ref() {
+            Some(LayoutNode::Leaf { .. }) => true,
+            None => true,
+            Some(LayoutNode::Split { .. }) => false,
+        }
+    }
+
+    /// Requests to quit the window.
+    ///
+    /// If there are unsaved documents, opens a confirmation dialog and returns `false`.
+    /// If all documents are saved, returns `true` to permit window close.
+    pub fn request_quit(&mut self) -> bool {
+        let unsaved: Vec<(u64, String)> = self
+            .documents
+            .values()
+            .filter(|doc| doc.is_dirty())
+            .map(|doc| (doc.id, doc.uri.clone()))
+            .collect();
+
+        if unsaved.is_empty() {
+            return true;
+        }
+
+        self.overlay = Some(Overlay::ConfirmQuit(ConfirmQuitState::new(unsaved)));
+        false
+    }
+
+    pub fn quit(&mut self) {
+        self.quit_requested = true;
     }
 
     fn active_document_id(&self) -> Option<u64> {
@@ -753,6 +797,10 @@ impl EditorView {
                     }
                 }
             }
+            if self.quit_requested {
+                window.remove_window();
+                return;
+            }
             self.sync_modal_focus(window, cx);
             if target != OverlayTarget::Text {
                 cx.stop_propagation();
@@ -784,6 +832,10 @@ impl EditorView {
         }
 
         if self.apply_key(key) {
+            if self.quit_requested {
+                window.remove_window();
+                return;
+            }
             self.sync_modal_focus(window, cx);
             cx.notify();
         }
@@ -990,7 +1042,7 @@ impl EditorView {
             Some(Overlay::Ex(_)) | Some(Overlay::Prompt(_)) | Some(Overlay::SettingPrompt(_)) => {
                 Some(UiRole::TextInput)
             }
-            Some(Overlay::Approval(_)) => Some(UiRole::Button),
+            Some(Overlay::Approval(_)) | Some(Overlay::ConfirmQuit(_)) => Some(UiRole::Button),
             Some(Overlay::Settings(_)) | Some(Overlay::SettingChoice(_)) => Some(UiRole::List),
             None => None,
         }
@@ -1021,7 +1073,7 @@ impl EditorView {
             },
             Some(Overlay::Ex(_)) => OverlayKind::Ex,
             Some(Overlay::Prompt(_)) => OverlayKind::Prompt,
-            Some(Overlay::Approval(_)) => OverlayKind::Approval,
+            Some(Overlay::Approval(_)) | Some(Overlay::ConfirmQuit(_)) => OverlayKind::Approval,
             Some(Overlay::Settings(_))
             | Some(Overlay::SettingChoice(_))
             | Some(Overlay::SettingPrompt(_)) => OverlayKind::Settings,

@@ -59,9 +59,21 @@ fn main() {
             )
             .expect("could not open the window");
 
+        let handle = window;
         window
             .update(cx, |view, window, cx| {
                 view.focus_handle.focus(window, cx);
+                window.on_window_should_close(cx, move |_window, cx| {
+                    handle
+                        .update(cx, |view, _window, cx| {
+                            let allow = view.request_quit();
+                            if !allow {
+                                cx.notify();
+                            }
+                            allow
+                        })
+                        .unwrap_or(true)
+                });
             })
             .ok();
 

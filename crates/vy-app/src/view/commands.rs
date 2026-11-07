@@ -16,8 +16,8 @@ use vy_app::overlay::{
 };
 use vy_app::palette::{
     PaletteMode, PaletteState, PickerItem, RECENT_GROUP, approval_picker_items,
-    filtered_picker_indices, move_palette_selection, palette_row_index, push_recent_command,
-    shows_palette_headings,
+    confirm_quit_picker_items, filtered_picker_indices, move_palette_selection, palette_row_index,
+    push_recent_command, shows_palette_headings,
 };
 use vy_app::state::DocumentState;
 use vy_app::text_layout::{
@@ -27,7 +27,7 @@ use vy_app::ui_action::{self, UiActionArgs, UiActionOutcome};
 use vy_app::workspace::{uri_from_argument_remote, uri_from_argument_with_base};
 use vy_client_api::settings::{self, SettingKind, SettingScope};
 use vy_proto::{
-    DocumentIdParams, DocumentSave, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
+    DocumentSave, DocumentSaveParams, EditorOpen, EditorOpenParams, PaneClose, PaneCloseParams,
     PaneFocus, PaneFocusParams, PaneOpen, PaneOpenParams, PanePlacement, PaneResize,
     PaneResizeParams,
 };
@@ -210,7 +210,28 @@ impl EditorView {
                     self.status = "there is no active document".into();
                     return;
                 };
-                self.request::<DocumentSave>(DocumentIdParams { document_id }, Pending::Save);
+                self.request::<DocumentSave>(
+                    DocumentSaveParams {
+                        document_id,
+                        force: invocation.bang,
+                    },
+                    Pending::Save,
+                );
+            }
+            DocumentCommand::WriteQuit => {
+                let Some(document_id) = self.active_document_id() else {
+                    self.status = "there is no active document".into();
+                    return;
+                };
+                self.request::<DocumentSave>(
+                    DocumentSaveParams {
+                        document_id,
+                        force: invocation.bang,
+                    },
+                    Pending::WriteQuit {
+                        force: invocation.bang,
+                    },
+                );
             }
             DocumentCommand::Switch => {
                 if let Some(raw) = invocation
@@ -392,6 +413,14 @@ impl EditorView {
         let Some(pane_id) = self.active_pane else {
             return;
         };
+        if self.is_last_pane() {
+            if !force && self.has_unsaved_documents() {
+                self.status = "No write since last change (add ! to override)".into();
+                return;
+            }
+            self.quit_requested = true;
+            return;
+        }
         self.request::<PaneClose>(PaneCloseParams { pane_id, force }, Pending::Close);
     }
 
@@ -428,6 +457,7 @@ impl EditorView {
                 &approval.plugin_name,
                 &approval.missing,
             ),
+            Some(Overlay::ConfirmQuit(quit)) => confirm_quit_picker_items(&quit.unsaved),
             Some(Overlay::Settings(_)) => self.setting_items(),
             Some(Overlay::SettingChoice(choice)) => setting_choice_items(choice),
             _ => Vec::new(),
@@ -931,6 +961,7 @@ impl EditorView {
             Some(Overlay::Ex(_)) => self.handle_ex_key(key),
             Some(Overlay::Prompt(_)) => self.handle_prompt_key(key),
             Some(Overlay::Approval(_)) => self.handle_approval_key(key),
+            Some(Overlay::ConfirmQuit(_)) => self.handle_confirm_quit_key(key),
             Some(Overlay::Settings(_)) => self.handle_settings_key(key),
             Some(Overlay::SettingChoice(_)) => self.handle_setting_choice_key(key),
             Some(Overlay::SettingPrompt(_)) => self.handle_setting_prompt_key(key),
@@ -1063,6 +1094,41 @@ impl EditorView {
                 } else {
                     // The user selected an info row; keep the dialog open.
                     self.overlay = Some(Overlay::Approval(approval));
+                }
+            }
+            Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
+            Key::Down | Key::Ctrl('n') => self.move_overlay_selection(1),
+            Key::Backspace => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.pop_char();
+                }
+            }
+            Key::Char(character) => {
+                if let Some(overlay) = self.overlay.as_mut() {
+                    overlay.push_char(character);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_confirm_quit_key(&mut self, key: Key) {
+        match key {
+            Key::Esc => {
+                self.overlay = None;
+            }
+            Key::Enter => {
+                let Some(id) = self.overlay_selected_id() else {
+                    return;
+                };
+                if id == "save" {
+                    self.overlay = None;
+                    self.save_and_quit_all(false);
+                } else if id == "discard" {
+                    self.overlay = None;
+                    self.quit();
+                } else if id == "cancel" {
+                    self.overlay = None;
                 }
             }
             Key::Up | Key::Ctrl('p') => self.move_overlay_selection(-1),
@@ -1531,6 +1597,38 @@ impl EditorView {
                     self.toggle_view_pane(view_id, direction);
                 }
             }
+            UiCommand::QuitAll => {
+                if !invocation.bang && self.has_unsaved_documents() {
+                    self.status = "No write since last change (add ! to override)".into();
+                    return;
+                }
+                self.quit_requested = true;
+            }
+            UiCommand::WriteQuitAll => {
+                self.save_and_quit_all(invocation.bang);
+            }
+        }
+    }
+
+    pub(super) fn save_and_quit_all(&mut self, force: bool) {
+        let dirty_ids: Vec<u64> = self
+            .documents
+            .values()
+            .filter(|doc| doc.is_dirty())
+            .map(|doc| doc.id)
+            .collect();
+
+        if dirty_ids.is_empty() {
+            self.quit_requested = true;
+            return;
+        }
+
+        self.pending_quit_saves = dirty_ids.len();
+        for document_id in dirty_ids {
+            self.request::<DocumentSave>(
+                DocumentSaveParams { document_id, force },
+                Pending::SaveQuitAll,
+            );
         }
     }
 

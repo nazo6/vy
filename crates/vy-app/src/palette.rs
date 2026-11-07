@@ -92,6 +92,35 @@ pub fn approval_picker_items(
     items
 }
 
+/// Generates picker items for the unsaved changes confirmation dialog before quit.
+pub fn confirm_quit_picker_items(unsaved: &[(u64, String)]) -> Vec<PickerItem> {
+    let mut items = vec![
+        PickerItem::new("save", "Save and Quit")
+            .with_description(format!(
+                "Save {} unsaved document(s) and quit",
+                unsaved.len()
+            ))
+            .with_group("Action"),
+        PickerItem::new("discard", "Discard and Quit")
+            .with_description("Discard all unsaved changes and quit")
+            .with_group("Action"),
+        PickerItem::new("cancel", "Cancel")
+            .with_description("Cancel and return to editor")
+            .with_group("Action"),
+    ];
+
+    for (_, uri) in unsaved {
+        let name = uri.strip_prefix("file://").unwrap_or(uri);
+        items.push(
+            PickerItem::new(format!("doc:{uri}"), name.to_string())
+                .with_description("Unsaved changes")
+                .with_group("Unsaved"),
+        );
+    }
+
+    items
+}
+
 /// State of an active command palette modal.
 #[derive(Debug, Default)]
 pub struct PaletteState {
@@ -429,5 +458,20 @@ mod tests {
         assert_eq!(move_palette_selection(2, 1, 3), 0);
         assert_eq!(move_palette_selection(1, 1, 3), 2);
         assert_eq!(move_palette_selection(0, 1, 0), 0);
+    }
+
+    #[test]
+    fn confirm_quit_picker_items_generates_actions_and_unsaved_list() {
+        let unsaved = vec![
+            (1, "file:///home/user/doc1.txt".to_string()),
+            (2, "file:///home/user/doc2.rs".to_string()),
+        ];
+        let items = confirm_quit_picker_items(&unsaved);
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0].id, "save");
+        assert_eq!(items[1].id, "discard");
+        assert_eq!(items[2].id, "cancel");
+        assert_eq!(items[3].id, "doc:file:///home/user/doc1.txt");
+        assert_eq!(items[4].id, "doc:file:///home/user/doc2.rs");
     }
 }

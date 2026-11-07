@@ -31,6 +31,8 @@ pub enum Overlay {
     SettingChoice(SettingChoiceState),
     /// Text or number input for one setting.
     SettingPrompt(SettingPromptState),
+    /// Unsaved changes confirmation dialog before quit.
+    ConfirmQuit(ConfirmQuitState),
 }
 
 impl Overlay {
@@ -44,6 +46,7 @@ impl Overlay {
             Self::Settings(settings) => &settings.input,
             Self::SettingChoice(choice) => &choice.input,
             Self::SettingPrompt(prompt) => &prompt.input,
+            Self::ConfirmQuit(quit) => &quit.input,
         }
     }
 
@@ -56,6 +59,7 @@ impl Overlay {
             Self::Settings(settings) => &mut settings.input,
             Self::SettingChoice(choice) => &mut choice.input,
             Self::SettingPrompt(prompt) => &mut prompt.input,
+            Self::ConfirmQuit(quit) => &mut quit.input,
         }
     }
 
@@ -107,6 +111,7 @@ impl Overlay {
             Self::Palette(palette) => Some(palette.selected),
             Self::Prompt(prompt) => Some(prompt.selected),
             Self::Approval(approval) => Some(approval.selected),
+            Self::ConfirmQuit(quit) => Some(quit.selected),
             Self::Settings(settings) => Some(settings.selected),
             Self::SettingChoice(choice) => Some(choice.selected),
             Self::Ex(_) | Self::SettingPrompt(_) => None,
@@ -118,6 +123,7 @@ impl Overlay {
             Self::Palette(palette) => Some(&mut palette.selected),
             Self::Prompt(prompt) => Some(&mut prompt.selected),
             Self::Approval(approval) => Some(&mut approval.selected),
+            Self::ConfirmQuit(quit) => Some(&mut quit.selected),
             Self::Settings(settings) => Some(&mut settings.selected),
             Self::SettingChoice(choice) => Some(&mut choice.selected),
             Self::Ex(_) | Self::SettingPrompt(_) => None,
@@ -137,6 +143,7 @@ impl Overlay {
             Self::Palette(palette) => palette.prefix(),
             Self::Prompt(prompt) => prompt.prefix(),
             Self::Approval(approval) => format!("Approve {}? > ", approval.plugin_name),
+            Self::ConfirmQuit(_) => "Save changes before quitting? > ".to_string(),
             Self::Settings(_) => "settings > ".to_string(),
             Self::SettingChoice(choice) => format!("{} > ", choice.key),
             Self::SettingPrompt(prompt) => format!("{} > ", prompt.key),
@@ -156,6 +163,10 @@ impl Overlay {
             Self::Approval(approval) => {
                 approval.input.push_char(character);
                 approval.selected = 0;
+            }
+            Self::ConfirmQuit(quit) => {
+                quit.input.push_char(character);
+                quit.selected = 0;
             }
             Self::Settings(settings) => {
                 settings.input.push_char(character);
@@ -191,6 +202,10 @@ impl Overlay {
                 choice.selected = 0;
             }
             Self::SettingPrompt(prompt) => prompt.input.push_str(text),
+            Self::ConfirmQuit(quit) => {
+                quit.input.push_str(text);
+                quit.selected = 0;
+            }
         }
     }
 
@@ -216,6 +231,10 @@ impl Overlay {
                 choice.selected = 0;
             }
             Self::SettingPrompt(prompt) => prompt.input.pop_char(),
+            Self::ConfirmQuit(quit) => {
+                quit.input.pop_char();
+                quit.selected = 0;
+            }
         }
     }
 
@@ -252,6 +271,10 @@ impl Overlay {
                 choice.selected = 0;
             }
             Self::SettingPrompt(prompt) => prompt.input.clear(),
+            Self::ConfirmQuit(quit) => {
+                quit.input.clear();
+                quit.selected = 0;
+            }
         }
     }
 }
@@ -542,6 +565,24 @@ impl SettingPromptState {
             key: key.into(),
             input: TextInput::default(),
             back,
+        }
+    }
+}
+
+/// Unsaved changes confirmation dialog before quit.
+#[derive(Debug)]
+pub struct ConfirmQuitState {
+    pub unsaved: Vec<(u64, String)>,
+    pub input: TextInput,
+    pub selected: usize,
+}
+
+impl ConfirmQuitState {
+    pub fn new(unsaved: Vec<(u64, String)>) -> Self {
+        Self {
+            unsaved,
+            input: TextInput::default(),
+            selected: 0,
         }
     }
 }

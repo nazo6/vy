@@ -1,16 +1,17 @@
 use vy_core::Uri;
 use vy_proto::{
     BufferResync, BufferSnapshot, DidChangeParams, DocumentIdParams, DocumentSave,
-    DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage, SnapshotResult, SyncRequest,
-    SyncRequestParams, SyncRequestResult, SyncedDocument,
+    DocumentSaveParams, DocumentSavedResult, ErrorCode, ResyncNotification, RpcMessage,
+    SnapshotResult, SyncRequest, SyncRequestParams, SyncRequestResult, SyncedDocument,
 };
 
-use super::{Outcome, Session, notification, ok_response};
+use super::{Outcome, Session, atomic, notification, ok_response};
 
 impl Session {
-    /// Writes a document back to its file.
-    pub(super) fn save_document(&mut self, id: u64, params: DocumentIdParams) -> Outcome {
+    /// Writes a document back to its file atomically.
+    pub(super) fn save_document(&mut self, id: u64, params: DocumentSaveParams) -> Outcome {
         let document_id = params.document_id;
+        let force = params.force;
 
         let Some(buffer) = self.documents.get(&document_id) else {
             return Outcome::one(RpcMessage::err(
@@ -26,14 +27,33 @@ impl Session {
                 format!("cannot save a non-file document: {}", buffer.uri()),
             ));
         };
+
+        // Check for external modification if not forcing.
+        if !force
+            && let Some(last_known) = self.file_metadata.get(&document_id)
+            && let Some(current_meta) = atomic::FileMetadata::from_path(&path)
+            && current_meta != *last_known
+        {
+            return Outcome::one(RpcMessage::err(
+                id,
+                ErrorCode::InvalidRequest,
+                "File modified externally (use ! to override)",
+            ));
+        }
+
         let text = buffer.text();
 
-        if let Err(error) = std::fs::write(&path, text) {
+        if let Err(error) = atomic::atomic_write(&path, text.as_bytes()) {
             return Outcome::one(RpcMessage::err(
                 id,
                 ErrorCode::Internal,
                 format!("{}: {error}", path.display()),
             ));
+        }
+
+        // Update last known metadata after successful save.
+        if let Some(new_meta) = atomic::FileMetadata::from_path(&path) {
+            self.file_metadata.insert(document_id, new_meta);
         }
 
         let Some(buffer) = self.documents.get_mut(&document_id) else {

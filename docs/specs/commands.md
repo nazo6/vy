@@ -309,22 +309,24 @@ address      := number | "." | "$" | "'<" | "'>" | "+" [number] | "-" [number]
 | `:setglobal`       | `vy.setting.ex_set_global`                          | 実装済み | メモリ層の既定値を変える                               |
 | `:settings`        | `vy.ui.open_settings`                               | 実装済み | Settings パレットを開く                                |
 | `:ts`              | `vy.script.eval`                                    | 実装済み | TypeScript を評価（hidden）                            |
-| `:wq`              | `vy.document.write_quit`                            | 未実装   | 保存と終了を1コマンドにする                            |
+| `:wq`              | `vy.document.write_quit`                            | 実装済み | 保存と終了を1コマンドにする                            |
+| `:qa` / `:qall`    | `vy.app.quit_all`                                   | 実装済み | すべてのペインを閉じてウィンドウを終了                 |
+| `:wqa` / `:wqall`  | `vy.app.write_quit_all`                             | 実装済み | 未保存文書をすべて保存して終了                         |
 | `:bn` / `:bp`      | `vy.document.next` / `previous`                     | 未実装   | 文書一覧ができてから                                   |
 | `:noh`             | `vy.search.clear_highlight`                         | 未実装   | 検索のハイライトを消す                                 |
 
 `:wrap` は `:set wrap` に統合したため、Ex 名としては存在しません。
 `vy.view.toggle_wrap` はキーマップ用の糖衣として残しています。
 
-`:qa` / `:qa!` / `:wqa` はまだ Ex 名として登録していません。`:wq` と併せて、
-終了フローを実装するときに追加します。
+`:qa` / `:qa!` / `:wq` / `:wqa` / `:wqall` は Ex 名として登録済みです。
+未保存の変更がある文書が存在する場合、`!` なしの `:qa` や `:wq` はエラー（`No write since last change (add ! to override)`）
+を表示して中断します。`!` 付き（`:qa!` / `:wq!`）なら強制的に終了します。
 
 `!` 付きの強制終了（`:q!`）は実装済みです。未保存の変更がある文書を表示する
-最後のペインでも、`!` を付ければ未保存の確認をせずに閉じられます。ただし、
-ウィンドウに残る最後の 1 枚は `!` の有無にかかわらず閉じられません（終了は
-`:qa` 系で扱う予定です）。シェル実行（`:!`）と `:terminal` は初期版では
-扱いません。`:!` は `process:exec` の承認が必要になるため、Ex の権限経路が
-固まってから追加します。
+最後のペインでも、`!` を付ければ未保存の確認をせずに閉じられます。
+最後のペインで `:q` / `:q!` を閉じた場合は、ウィンドウ終了フローにフォールバックします。
+シェル実行（`:!`）と `:terminal` は初期版では扱いません。`:!` は `process:exec` の承認が必要になるため、
+Ex の権限経路が固まってから追加します。
 
 ### 5.5 補完と履歴
 
