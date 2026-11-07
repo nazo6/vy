@@ -133,6 +133,11 @@ fn overlay_labels(overlay: &Overlay, filtered_count: usize, hints: &[String]) ->
             empty: "no matching options",
             hint,
         },
+        Overlay::ConfirmQuit(quit) => OverlayLabels {
+            count: format!("{} unsaved document(s)", quit.unsaved.len()),
+            empty: "no matching options",
+            hint,
+        },
         Overlay::Settings(_) => OverlayLabels {
             count: format!("{filtered_count} settings"),
             empty: "no matching settings",

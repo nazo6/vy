@@ -86,7 +86,7 @@ define_methods! {
     /// Opens a document in an existing pane.
     EditorOpen => ("editor/open", EditorOpenParams, PaneOpenResult),
     /// Writes a document back to its file.
-    DocumentSave => ("document/save", DocumentIdParams, DocumentSavedResult),
+    DocumentSave => ("document/save", DocumentSaveParams, DocumentSavedResult),
     /// Returns the full text of a document.
     BufferSnapshot => ("buffer/snapshot", DocumentIdParams, SnapshotResult),
     /// Rebuilds documents after a reconnect.

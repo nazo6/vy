@@ -3,7 +3,10 @@
 
 /** Arguments of each command built into the client. */
 export interface BuiltinCommandMap {
+  "vy.app.quit_all": unknown;
+  "vy.app.write_quit_all": unknown;
   "vy.document.save": unknown;
+  "vy.document.write_quit": unknown;
   "vy.edit.delete": unknown;
   "vy.edit.last_visual": unknown;
   "vy.edit.paste_after": unknown;

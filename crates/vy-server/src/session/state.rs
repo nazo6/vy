@@ -126,7 +126,7 @@ impl Session {
             tracing::warn!(path = %parent.display(), %error, "could not create the state directory");
             return;
         }
-        if let Err(error) = std::fs::write(path, text) {
+        if let Err(error) = super::atomic::atomic_write(path, text.as_bytes()) {
             tracing::warn!(path = %path.display(), %error, "could not write the layout");
         }
     }

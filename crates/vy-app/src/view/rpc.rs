@@ -76,6 +76,9 @@ impl EditorView {
                         return;
                     }
                     this.handle(message);
+                    if this.quit_requested {
+                        cx.quit();
+                    }
                     cx.notify();
                 });
                 if updated.is_err() {
@@ -204,8 +207,12 @@ impl EditorView {
                     // settings from `init.ts` still have to apply.
                     self.ensure_init_evaluated();
                 }
-                Pending::Close => {
+                Pending::Close | Pending::WriteQuit { .. } => {
                     self.status = message.into();
+                }
+                Pending::SaveQuitAll => {
+                    self.status = message.into();
+                    self.pending_quit_saves = 0;
                 }
                 _ => {
                     self.status = format!("{code}: {message}").into();
@@ -259,6 +266,28 @@ impl EditorView {
                 Pending::Save => match decode_reply::<DocumentSave>(&value) {
                     Some(saved) => self.saved(saved),
                     None => self.status = "saved -".into(),
+                },
+                Pending::WriteQuit { force } => match decode_reply::<DocumentSave>(&value) {
+                    Some(saved) => {
+                        self.saved(saved);
+                        self.close_active_pane(force);
+                    }
+                    None => self.status = "saved -".into(),
+                },
+                Pending::SaveQuitAll => match decode_reply::<DocumentSave>(&value) {
+                    Some(saved) => {
+                        self.saved(saved);
+                        if self.pending_quit_saves > 0 {
+                            self.pending_quit_saves -= 1;
+                        }
+                        if self.pending_quit_saves == 0 {
+                            self.quit_requested = true;
+                        }
+                    }
+                    None => {
+                        self.status = "saved -".into();
+                        self.pending_quit_saves = 0;
+                    }
                 },
             },
         }

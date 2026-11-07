@@ -1238,6 +1238,11 @@ mod tests {
         assert_eq!(resolve("edit"), Ok("vy.editor.open"));
         assert_eq!(resolve("w"), Ok("vy.document.save"));
         assert_eq!(resolve("write"), Ok("vy.document.save"));
+        assert_eq!(resolve("wq"), Ok("vy.document.write_quit"));
+        assert_eq!(resolve("qa"), Ok("vy.app.quit_all"));
+        assert_eq!(resolve("qall"), Ok("vy.app.quit_all"));
+        assert_eq!(resolve("wqa"), Ok("vy.app.write_quit_all"));
+        assert_eq!(resolve("wqall"), Ok("vy.app.write_quit_all"));
         assert_eq!(resolve("b"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve("buffer"), Ok("vy.editor.switch_document"));
         assert_eq!(resolve("ts"), Ok("vy.script.eval"));
@@ -1390,6 +1395,10 @@ mod tests {
         assert_eq!(view.args.args()[1].kind, ArgKind::Choice);
 
         assert!(find("vy.pane.close").bang);
+        assert!(find("vy.document.save").bang);
+        assert!(find("vy.document.write_quit").bang);
+        assert!(find("vy.app.quit_all").bang);
+        assert!(find("vy.app.write_quit_all").bang);
     }
 
     #[test]

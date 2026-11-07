@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    Bounds, Decorations, MouseButton, PathBuilder, Pixels, Point, Rgba, SharedString, Window,
+    App, Bounds, Decorations, MouseButton, PathBuilder, Pixels, Point, Rgba, SharedString, Window,
     canvas, div, point, prelude::*, px,
 };
 
@@ -39,6 +39,7 @@ pub fn render_titlebar(
     window: &mut Window,
     press: Rc<Cell<Option<Point<Pixels>>>>,
     on_double_click: impl Fn(&mut Window) + 'static,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let title: SharedString = title.into();
     let dirty_indicator = if is_dirty { " ●" } else { "" };
@@ -126,7 +127,7 @@ pub fn render_titlebar(
 
     let titlebar = titlebar.child(title);
     if shows_window_buttons {
-        titlebar.child(render_window_buttons(theme))
+        titlebar.child(render_window_buttons(theme, on_close))
     } else {
         titlebar
     }
@@ -139,7 +140,10 @@ enum WindowButtonIcon {
     Close,
 }
 
-fn render_window_buttons(theme: &Theme) -> impl IntoElement {
+fn render_window_buttons(
+    theme: &Theme,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     let foreground = theme.titlebar.foreground;
     let hover_background = theme.background.surface;
 
@@ -153,21 +157,21 @@ fn render_window_buttons(theme: &Theme) -> impl IntoElement {
             foreground,
             hover_background,
             WindowButtonIcon::Minimize,
-            |window| window.minimize_window(),
+            |window, _cx| window.minimize_window(),
         ))
         .child(window_button(
             "vy-titlebar-maximize",
             foreground,
             hover_background,
             WindowButtonIcon::Maximize,
-            |window| window.zoom_window(),
+            |window, _cx| window.zoom_window(),
         ))
         .child(window_button(
             "vy-titlebar-close",
             foreground,
             hover_background,
             WindowButtonIcon::Close,
-            |window| window.remove_window(),
+            on_close,
         ))
 }
 
@@ -176,7 +180,7 @@ fn window_button(
     foreground: Rgba,
     hover_background: Rgba,
     icon: WindowButtonIcon,
-    on_press: impl Fn(&mut Window) + 'static,
+    on_press: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     div()
         .id(id)
@@ -189,7 +193,7 @@ fn window_button(
         .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
             // Keep the titlebar from starting a window move instead.
             cx.stop_propagation();
-            on_press(window);
+            on_press(window, cx);
         })
         .on_click(|_event, _window, cx| cx.stop_propagation())
         .child(window_icon(icon, foreground))

@@ -27,6 +27,26 @@ export interface CommandMetadata {
 /** Every command built into the client. */
 export const COMMAND_METADATA: CommandMetadata[] = [
   {
+    id: "vy.app.quit_all",
+    title: "Quit All",
+    category: "app",
+    palette: "listed",
+    exNames: ["qa", "qall"],
+    args: [],
+    range: "none",
+    bang: true,
+  },
+  {
+    id: "vy.app.write_quit_all",
+    title: "Write and Quit All",
+    category: "app",
+    palette: "listed",
+    exNames: ["wqa", "wqall"],
+    args: [],
+    range: "none",
+    bang: true,
+  },
+  {
     id: "vy.document.save",
     title: "Document Save",
     category: "file",
@@ -34,7 +54,17 @@ export const COMMAND_METADATA: CommandMetadata[] = [
     exNames: ["w", "write"],
     args: [],
     range: "none",
-    bang: false,
+    bang: true,
+  },
+  {
+    id: "vy.document.write_quit",
+    title: "Save and Close",
+    category: "file",
+    palette: "listed",
+    exNames: ["wq"],
+    args: [],
+    range: "none",
+    bang: true,
   },
   {
     id: "vy.edit.delete",

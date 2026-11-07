@@ -347,6 +347,7 @@ define_command_enum! {
     pub enum DocumentCommand {
         Open => ("vy.editor.open", "Editor Open"),
         Save => ("vy.document.save", "Document Save"),
+        WriteQuit => ("vy.document.write_quit", "Save and Close"),
         Switch => ("vy.editor.switch_document", "Switch Document"),
     }
 }
@@ -356,7 +357,8 @@ impl DocumentCommand {
         match self {
             Self::Open => CommandMeta::listed(CommandCategory::File, &["e", "edit"])
                 .with_args(ArgSpec::Positionals(PATH_ARGS)),
-            Self::Save => CommandMeta::listed(CommandCategory::File, &["w", "write"]),
+            Self::Save => CommandMeta::listed(CommandCategory::File, &["w", "write"]).with_bang(),
+            Self::WriteQuit => CommandMeta::listed(CommandCategory::File, &["wq"]).with_bang(),
             Self::Switch => CommandMeta::listed(CommandCategory::File, &["b", "buffer"])
                 .with_args(ArgSpec::Positionals(DOCUMENT_ARGS)),
         }
@@ -375,6 +377,8 @@ define_command_enum! {
         ViewOpen => ("vy.view.open", "Open View"),
         ViewClose => ("vy.view.close", "Close View"),
         ViewToggle => ("vy.view.toggle", "Toggle View"),
+        QuitAll => ("vy.app.quit_all", "Quit All"),
+        WriteQuitAll => ("vy.app.write_quit_all", "Write and Quit All"),
     }
 }
 
@@ -393,6 +397,10 @@ impl UiCommand {
                 .with_args(ArgSpec::Positionals(VIEW_ID_ARGS)),
             Self::ViewToggle => CommandMeta::listed(CommandCategory::View, &["view-toggle"])
                 .with_args(ArgSpec::Positionals(VIEW_ID_ARGS)),
+            Self::QuitAll => CommandMeta::listed(CommandCategory::App, &["qa", "qall"]).with_bang(),
+            Self::WriteQuitAll => {
+                CommandMeta::listed(CommandCategory::App, &["wqa", "wqall"]).with_bang()
+            }
         }
     }
 }

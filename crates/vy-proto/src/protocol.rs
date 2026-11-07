@@ -142,6 +142,15 @@ pub struct DocumentIdParams {
     pub document_id: u64,
 }
 
+/// Parameters for `document/save`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentSaveParams {
+    #[serde(alias = "buffer_id")]
+    pub document_id: u64,
+    #[serde(default)]
+    pub force: bool,
+}
+
 /// Result of `document/save` acknowledging the saved document ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentSavedResult {
