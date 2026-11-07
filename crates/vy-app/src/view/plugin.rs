@@ -1,4 +1,4 @@
-//! Script and plugin host integration for .
+//! Script and plugin host integration for `EditorView`.
 
 use std::time::Duration;
 
@@ -6,6 +6,7 @@ use gpui::Context;
 use vy_app::commands::{Invocation, Owner};
 use vy_app::plugin::DiscoveredPlugin;
 use vy_app::plugin_host::{self, DocumentInfo, HostAction, InitLoad, PluginHost, RequestContext};
+use vy_app::session::RuntimeSlot;
 use vy_core::Uri;
 use vy_js::{HostRequest, ScriptEvent};
 
@@ -13,19 +14,50 @@ use super::{EditorView, Pending, PluginRuntime};
 use crate::theme::Theme;
 
 impl EditorView {
-    pub(super) fn start_script(&mut self, cx: &mut Context<Self>) {
-        let Some(plugin) = self.plugin.as_ref() else {
-            return;
+    /// Starts event and host request pumps for either the main init script
+    /// (`plugin_id == None`) or a plugin runtime (`plugin_id == Some(...)`).
+    pub(super) fn start_host_pumps(&mut self, plugin_id: Option<String>, cx: &mut Context<Self>) {
+        let (events, requests, generation) = match &plugin_id {
+            None => {
+                let Some(plugin) = self.plugin.as_ref() else {
+                    return;
+                };
+                (plugin.events(), plugin.requests(), self.script_generation)
+            }
+            Some(id) => {
+                let Some(runtime) = self.plugin_runtimes.get_mut(id) else {
+                    return;
+                };
+                let generation = match runtime.slot {
+                    RuntimeSlot::Running { generation } => generation,
+                    RuntimeSlot::Spawning => {
+                        let generation = self.next_plugin_generation;
+                        runtime.slot.mark_running(generation);
+                        generation
+                    }
+                    RuntimeSlot::Stopped => return,
+                };
+                (runtime.host.events(), runtime.host.requests(), generation)
+            }
         };
-        let events = plugin.events();
-        let requests = plugin.requests();
-        let generation = self.script_generation;
 
+        let id = plugin_id.clone();
         cx.spawn(async move |this, cx| {
             while let Ok(event) = events.recv().await {
+                let id = id.clone();
                 let updated = this.update(cx, |this, cx| {
-                    if this.script_generation == generation {
-                        this.handle_script_event(event);
+                    let active = match &id {
+                        None => this.script_generation == generation,
+                        Some(pid) => this
+                            .plugin_runtimes
+                            .get(pid)
+                            .is_some_and(|runtime| runtime.generation() == generation),
+                    };
+                    if active {
+                        match &id {
+                            None => this.handle_script_event(event),
+                            Some(pid) => this.handle_plugin_script_event(pid, event),
+                        }
                         cx.notify();
                     }
                 });
@@ -36,11 +68,23 @@ impl EditorView {
         })
         .detach();
 
+        let id = plugin_id;
         cx.spawn(async move |this, cx| {
             while let Ok(request) = requests.recv().await {
+                let id = id.clone();
                 let updated = this.update(cx, |this, cx| {
-                    if this.script_generation == generation {
-                        this.handle_host_request(cx, request);
+                    let active = match &id {
+                        None => this.script_generation == generation,
+                        Some(pid) => this
+                            .plugin_runtimes
+                            .get(pid)
+                            .is_some_and(|runtime| runtime.generation() == generation),
+                    };
+                    if active {
+                        match &id {
+                            None => this.handle_host_request(cx, request),
+                            Some(pid) => this.handle_plugin_host_request(cx, pid, request),
+                        }
                         cx.notify();
                     }
                 });
@@ -52,87 +96,27 @@ impl EditorView {
         .detach();
     }
 
-    /// Polls for plugin runtimes that were created outside a GPUI task and
-    /// starts their event and request pumps.
-    pub(super) fn start_plugin_supervisor(&self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(16))
-                    .await;
-                let updated = this.update(cx, |this, cx| this.start_pending_plugins(cx));
-                if updated.is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
+    /// Starts pumps for the main `init.ts` script host.
+    pub(super) fn start_script(&mut self, cx: &mut Context<Self>) {
+        self.start_host_pumps(None, cx);
     }
 
-    fn start_pending_plugins(&mut self, cx: &mut Context<Self>) {
+    /// Starts pumps for one external plugin runtime.
+    pub(super) fn start_plugin_script(&mut self, plugin_id: &str, cx: &mut Context<Self>) {
+        self.start_host_pumps(Some(plugin_id.to_string()), cx);
+    }
+
+    /// Starts any plugin runtimes that are currently in `Spawning` state.
+    pub(super) fn start_pending_plugins(&mut self, cx: &mut Context<Self>) {
         let pending: Vec<String> = self
             .plugin_runtimes
             .iter()
-            .filter(|(_, runtime)| !runtime.started)
+            .filter(|(_, runtime)| matches!(runtime.slot, RuntimeSlot::Spawning))
             .map(|(id, _)| id.clone())
             .collect();
         for plugin_id in pending {
-            if let Some(runtime) = self.plugin_runtimes.get_mut(&plugin_id) {
-                runtime.started = true;
-            }
             self.start_plugin_script(&plugin_id, cx);
         }
-    }
-
-    fn start_plugin_script(&mut self, plugin_id: &str, cx: &mut Context<Self>) {
-        let Some(runtime) = self.plugin_runtimes.get(plugin_id) else {
-            return;
-        };
-        let events = runtime.host.events();
-        let requests = runtime.host.requests();
-        let generation = runtime.generation;
-
-        let id = plugin_id.to_string();
-        cx.spawn(async move |this, cx| {
-            while let Ok(event) = events.recv().await {
-                let id = id.clone();
-                let updated = this.update(cx, |this, cx| {
-                    let active = this
-                        .plugin_runtimes
-                        .get(&id)
-                        .is_some_and(|runtime| runtime.generation == generation);
-                    if active {
-                        this.handle_plugin_script_event(&id, event);
-                        cx.notify();
-                    }
-                });
-                if updated.is_err() {
-                    return;
-                }
-            }
-        })
-        .detach();
-
-        let id = plugin_id.to_string();
-        cx.spawn(async move |this, cx| {
-            while let Ok(request) = requests.recv().await {
-                let id = id.clone();
-                let updated = this.update(cx, |this, cx| {
-                    let active = this
-                        .plugin_runtimes
-                        .get(&id)
-                        .is_some_and(|runtime| runtime.generation == generation);
-                    if active {
-                        this.handle_plugin_host_request(cx, &id, request);
-                        cx.notify();
-                    }
-                });
-                if updated.is_err() {
-                    return;
-                }
-            }
-        })
-        .detach();
     }
 
     /// Starts a fresh runtime and evaluates `init.ts`. Registrations from the
@@ -156,11 +140,11 @@ impl EditorView {
         self.plugin = Some(PluginHost::spawn(env, self.paths.init_ts()));
         self.script_generation += 1;
         self.start_script(cx);
-        self.evaluate_init();
+        self.evaluate_init(Some(cx));
     }
 
     /// Replaces one plugin runtime after its source changed.
-    pub(super) fn reload_plugin(&mut self, plugin_id: &str) {
+    pub(super) fn reload_plugin(&mut self, plugin_id: &str, cx: &mut Context<Self>) {
         let Some(plugin) = self
             .plugin_manager
             .state(plugin_id)
@@ -175,10 +159,11 @@ impl EditorView {
         self.plugin_manager.mark_active(plugin_id);
         self.register_contributed_commands();
         self.evaluate_discovered_plugin(&plugin);
+        self.start_plugin_script(plugin_id, cx);
     }
 
     /// Hands `init.ts` to the script thread. Missing files are not an error.
-    pub(super) fn evaluate_init(&mut self) {
+    pub(super) fn evaluate_init(&mut self, cx: Option<&mut Context<Self>>) {
         let Some(plugin) = self.plugin.as_mut() else {
             return;
         };
@@ -194,12 +179,12 @@ impl EditorView {
                 self.status = message.into();
             }
         }
-        self.init_plugins();
+        self.init_plugins(cx);
     }
 
     /// Initializes trusted plugins: pre-registers contributed commands and activates
     /// plugins triggered by `onStartup` or `onWorkspaceContains`.
-    pub(super) fn init_plugins(&mut self) {
+    pub(super) fn init_plugins(&mut self, cx: Option<&mut Context<Self>>) {
         self.register_contributed_commands();
 
         // 1. Activate onStartup plugins
@@ -214,6 +199,10 @@ impl EditorView {
             for plugin in ws_plugins {
                 self.evaluate_discovered_plugin(&plugin);
             }
+        }
+
+        if let Some(cx) = cx {
+            self.start_pending_plugins(cx);
         }
     }
 
@@ -253,10 +242,17 @@ impl EditorView {
     }
 
     /// Checks if opening `language_id` triggers any lazy-loaded plugin and activates them.
-    pub(super) fn activate_plugins_for_language(&mut self, language_id: &str) {
+    pub(super) fn activate_plugins_for_language(
+        &mut self,
+        language_id: &str,
+        cx: Option<&mut Context<Self>>,
+    ) {
         let to_activate = self.plugin_manager.plugins_for_language(language_id);
         for plugin in to_activate {
             self.evaluate_discovered_plugin(&plugin);
+        }
+        if let Some(cx) = cx {
+            self.start_pending_plugins(cx);
         }
     }
 
@@ -345,13 +341,11 @@ impl EditorView {
         }
 
         self.next_plugin_generation += 1;
-        let generation = self.next_plugin_generation;
         self.plugin_runtimes.insert(
             plugin_id,
             PluginRuntime {
                 host,
-                generation,
-                started: false,
+                slot: RuntimeSlot::Spawning,
             },
         );
     }
@@ -381,6 +375,9 @@ impl EditorView {
                 }
             }
             ScriptEvent::Stopped => {
+                if let Some(runtime) = self.plugin_runtimes.get_mut(plugin_id) {
+                    runtime.slot.mark_stopped();
+                }
                 self.status = format!("plugin {plugin_id} stopped").into();
             }
         }
@@ -534,7 +531,7 @@ impl EditorView {
                 let invocation = args
                     .map(|a| Invocation::script(command.id(), a))
                     .unwrap_or_else(|| Invocation::palette(command.id()));
-                self.run_ui_command(command, &invocation);
+                self.run_ui_command(command, &invocation, Some(cx));
             }
             HostAction::Setting { command, args } => {
                 let invocation = args

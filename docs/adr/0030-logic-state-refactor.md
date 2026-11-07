@@ -10,11 +10,11 @@ tags: ["refactoring", "state-machine", "editor", "keymap", "text-layout"]
 
 # ADR 0030: 純粋ロジックの状態モデル整理計画
 
-- **状態**: 採用 (accepted)。Phase 0–C 完了、Phase D–F は未着手
+- **状態**: 採用 (accepted)。Phase 0–D 完了、Phase E–F は未着手
 - **日付**: 2026-10-25
 - **カテゴリー**: maintenance
 - **関連タスク**: 品質改善（保守性 P2）、`command-surfaces` / `pane/resize` の後始末
-- **進捗**: Phase 0–C は実施済みです（[worklog](../worklogs/2026-10-26-logic-state-refactor.md)）。残りは Phase D–F です。
+- **進捗**: Phase 0–D は実施済みです（[Phase 0–C worklog](../worklogs/2026-10-26-logic-state-refactor.md)、[Phase D worklog](../worklogs/2026-11-07-logic-state-refactor-phase-d.md)）。残りは Phase E–F です。
 - **目的**: `vy-app` の GPUI
   非依存ロジックに散在する「暗黙のフラグ集合」と「視覚行計算の重複実装」を、明示的な状態型と単一実装へ置き換える。挙動は変えず、今後の機能追加（マウス操作、`tabstop`
   設定、折り返し改善、LSP 座標変換）で触る箇所を減らす。
@@ -260,27 +260,30 @@ pump を起動している。`start_script` と `start_plugin_script` はほぼ�
 
 ### Phase D: セッションとプラグインのライフサイクル
 
-- [ ] `crates/vy-app/src/session.rs` を新設し、`SessionState` を定義する。
+- [x] `crates/vy-app/src/session.rs` を新設し、`SessionState` を定義する。
   - `Disconnected { attempts }`
   - `Connecting { generation }`
   - `Ready { generation }`
   - `Restoring { generation }`
-- [ ] `Initialize`
-      リクエストの組み立てを1箇所（`initialize_request`）に集約し、`connect` /
+- [x] `Initialize`
+      リクエストの組み立てを1箇所（`build_initialize_params` / `initialize_request`）に集約し、`connect` /
       `try_reconnect` の重複を削除する。
-- [ ] `reconnect_requested` を廃止し、`vy.reconnect_server`
+- [x] `reconnect_requested` を廃止し、`vy.reconnect_server`
       から直接接続を張り直す。
-- [ ] `view` 側のプラグイン状態を
+- [x] `view` 側のプラグイン状態を
       `RuntimeSlot { Spawning, Running { generation }, Stopped }`
       に置き換え、`started` フラグを削除する。
-- [ ] 16ms ポーリングの supervisor を削除し、ランタイム生成時に直接 pump
+- [x] 16ms ポーリングの supervisor を削除し、ランタイム生成時に直接 pump
       を開始する。
-- [ ] `start_script` と `start_plugin_script` を1関数に統合する。
-- [ ] テスト: `SessionState` の遷移（切断 → 再接続 → 復元）を GPUI
+- [x] `start_script` と `start_plugin_script` を1関数（`start_host_pumps`）に統合する。
+- [x] テスト: `SessionState` の遷移（切断 → 再接続 → 復元）と `RuntimeSlot` を GPUI
       なしで検証する。
 
 完了条件: 接続状態を表すフィールドが `SessionState`
 に集約される。プラグインの「起動待ち」がポーリングでなくなっている。
+
+実施記録: [`../worklogs/2026-11-07-logic-state-refactor-phase-d.md`](../worklogs/2026-11-07-logic-state-refactor-phase-d.md)
+（2026-11-07 完了。`SessionState` と `RuntimeSlot` の単体テスト 3 件を追加し、既存テスト 282 件を含む 285 件すべて合格）。
 
 ### Phase E: dispatch と定型の圧縮
 

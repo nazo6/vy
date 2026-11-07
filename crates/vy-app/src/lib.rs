@@ -19,6 +19,7 @@ pub mod paths;
 pub mod plugin;
 pub mod plugin_host;
 pub mod rpc;
+pub mod session;
 pub mod slots;
 pub mod state;
 pub mod statusline;
