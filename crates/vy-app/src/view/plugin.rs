@@ -242,10 +242,17 @@ impl EditorView {
     }
 
     /// Checks if opening `language_id` triggers any lazy-loaded plugin and activates them.
-    pub(super) fn activate_plugins_for_language(&mut self, language_id: &str) {
+    pub(super) fn activate_plugins_for_language(
+        &mut self,
+        language_id: &str,
+        cx: Option<&mut Context<Self>>,
+    ) {
         let to_activate = self.plugin_manager.plugins_for_language(language_id);
         for plugin in to_activate {
             self.evaluate_discovered_plugin(&plugin);
+        }
+        if let Some(cx) = cx {
+            self.start_pending_plugins(cx);
         }
     }
 

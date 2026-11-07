@@ -75,7 +75,7 @@ impl EditorView {
                     if this.connection_generation != generation {
                         return;
                     }
-                    this.handle(message);
+                    this.handle(message, cx);
                     if this.quit_requested {
                         cx.quit();
                     }
@@ -175,11 +175,11 @@ impl EditorView {
         }
     }
 
-    pub(super) fn handle(&mut self, message: RpcMessage) {
+    pub(super) fn handle(&mut self, message: RpcMessage, cx: &mut Context<Self>) {
         match message {
-            RpcMessage::Response { id, result } => self.handle_response(id, result),
+            RpcMessage::Response { id, result } => self.handle_response(id, result, cx),
             RpcMessage::Notification { method, params } => {
-                self.handle_notification(&method, params)
+                self.handle_notification(&method, params, cx)
             }
             RpcMessage::Stream {
                 stream_id, payload, ..
@@ -192,7 +192,7 @@ impl EditorView {
         }
     }
 
-    fn handle_response(&mut self, id: u64, result: RpcResult) {
+    fn handle_response(&mut self, id: u64, result: RpcResult, cx: &mut Context<Self>) {
         let Some(pending) = self.pending.remove(&id) else {
             return;
         };
@@ -206,7 +206,7 @@ impl EditorView {
                     self.status = format!("{code}: {message}").into();
                     // The session could not be restored, but the frontend
                     // settings from `init.ts` still have to apply.
-                    self.ensure_init_evaluated();
+                    self.ensure_init_evaluated(Some(cx));
                 }
                 Pending::Close | Pending::WriteQuit { .. } => {
                     self.status = message.into();
@@ -240,11 +240,11 @@ impl EditorView {
                     }
                 }
                 Pending::Layout => match decode_reply::<LayoutGet>(&value) {
-                    Some(result) => self.received_layout_get(result),
+                    Some(result) => self.received_layout_get(result, cx),
                     None => self.status = "layout/get response could not be decoded".into(),
                 },
                 Pending::Sync => match decode_reply::<SyncRequest>(&value) {
-                    Some(result) => self.received_sync(result),
+                    Some(result) => self.received_sync(result, cx),
                     None => self.status = "sync/request response could not be decoded".into(),
                 },
                 Pending::Open => match decode_reply::<PaneOpen>(&value) {
@@ -252,7 +252,7 @@ impl EditorView {
                     None => self.status = "pane/open response has no pane or document".into(),
                 },
                 Pending::Snapshot => match decode_reply::<BufferSnapshot>(&value) {
-                    Some(snapshot) => self.received_snapshot(snapshot),
+                    Some(snapshot) => self.received_snapshot(snapshot, cx),
                     None => self.status = "snapshot could not be decoded".into(),
                 },
                 Pending::Undo | Pending::Redo => match decode_reply::<BufferUndo>(&value) {
@@ -342,18 +342,21 @@ impl EditorView {
         }
     }
 
-    fn handle_notification(&mut self, method: &str, params: Value) {
+    fn handle_notification(&mut self, method: &str, params: Value, cx: &mut Context<Self>) {
         if method == Initialized::METHOD {
             self.status = "connected; restoring the session".into();
             self.request::<LayoutGet>((), Pending::Layout);
         } else if method == BufferResync::METHOD {
             match decode_notification::<BufferResync>(&params) {
-                Some(resync) => self.received_snapshot(SnapshotResult {
-                    document_id: resync.document_id,
-                    version: resync.version,
-                    line_count: None,
-                    text: resync.text,
-                }),
+                Some(resync) => self.received_snapshot(
+                    SnapshotResult {
+                        document_id: resync.document_id,
+                        version: resync.version,
+                        line_count: None,
+                        text: resync.text,
+                    },
+                    cx,
+                ),
                 None => self.status = "buffer/resync could not be decoded".into(),
             }
         } else if method == LayoutDidChange::METHOD {
@@ -417,7 +420,7 @@ impl EditorView {
     ///
     /// The client keeps its text and cursor by URI; document and pane IDs may
     /// differ from the previous connection.
-    fn received_layout_get(&mut self, result: LayoutGetResult) {
+    fn received_layout_get(&mut self, result: LayoutGetResult, cx: &mut Context<Self>) {
         if result.layout.is_none() && result.panes.is_empty() {
             self.layout = None;
             self.layout_revision = 0;
@@ -476,12 +479,12 @@ impl EditorView {
         self.panes = panes;
         self.documents = documents;
         self.activate_active_view();
-        self.send_sync();
+        self.send_sync(cx);
     }
 
     /// Sends the client's open documents after a reconnect. Only dirty documents
     /// carry their text; the core reads the rest from disk.
-    fn send_sync(&mut self) {
+    fn send_sync(&mut self, cx: &mut Context<Self>) {
         let documents: Vec<SyncDocument> = self
             .documents
             .values()
@@ -495,7 +498,7 @@ impl EditorView {
 
         if documents.is_empty() {
             self.status = "reconnected; there are no open documents".into();
-            self.ensure_init_evaluated();
+            self.ensure_init_evaluated(Some(cx));
             return;
         }
 
@@ -504,7 +507,7 @@ impl EditorView {
     }
 
     /// Applies the text and versions returned by `sync/request`.
-    fn received_sync(&mut self, result: SyncRequestResult) {
+    fn received_sync(&mut self, result: SyncRequestResult, cx: &mut Context<Self>) {
         let idle = Duration::from_millis(self.config.transaction_idle_ms());
         let mut documents = std::collections::HashMap::new();
         for document in result.documents {
@@ -557,7 +560,7 @@ impl EditorView {
             }
         }
 
-        self.ensure_init_evaluated();
+        self.ensure_init_evaluated(Some(cx));
     }
 
     /// Evaluates `init.ts` once the client has a document to read.
@@ -565,13 +568,13 @@ impl EditorView {
     /// A session restored from the core has no first snapshot, so the sync reply
     /// is the point where `init.ts` can run. Later reconnects keep the
     /// registrations from the first evaluation.
-    fn ensure_init_evaluated(&mut self) {
+    fn ensure_init_evaluated(&mut self, cx: Option<&mut Context<Self>>) {
         self.session_state.mark_ready();
         if self.init_evaluated {
             return;
         }
         self.init_evaluated = true;
-        self.evaluate_init(None);
+        self.evaluate_init(cx);
     }
 
     fn opened(&mut self, opened: PaneOpenResult) {
@@ -674,7 +677,7 @@ impl EditorView {
         self.status = format!("saved {}", saved.path).into();
     }
 
-    fn received_snapshot(&mut self, snapshot: SnapshotResult) {
+    fn received_snapshot(&mut self, snapshot: SnapshotResult, cx: &mut Context<Self>) {
         let started = Instant::now();
         let document_id = snapshot.document_id;
         let text = snapshot.text;
@@ -705,7 +708,7 @@ impl EditorView {
 
         if let Some(document) = self.documents.get(&document_id) {
             let lang = super::plugin::detect_language_id(&document.uri);
-            self.activate_plugins_for_language(lang);
+            self.activate_plugins_for_language(lang, Some(cx));
         }
 
         let (line_count, version) = self
@@ -725,7 +728,7 @@ impl EditorView {
 
         // `init.ts` reads documents and settings, so it runs after the first
         // snapshot and before any user command.
-        self.ensure_init_evaluated();
+        self.ensure_init_evaluated(Some(cx));
     }
 
     fn received_history(&mut self, history: HistoryResult) {
