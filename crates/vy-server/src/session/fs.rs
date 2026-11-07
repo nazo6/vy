@@ -43,9 +43,72 @@ pub fn uri_to_path(uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
         })
 }
 
+/// Canonicalizes an existing path or the lowest existing ancestor of a non-existing path.
+pub fn canonicalize_with_ancestors(path: &std::path::Path) -> std::io::Result<PathBuf> {
+    if path.exists() {
+        return std::fs::canonicalize(path);
+    }
+    let mut ancestors = Vec::new();
+    let mut current = path;
+    while !current.exists() {
+        if let Some(parent) = current.parent() {
+            if let Some(file_name) = current.file_name() {
+                ancestors.push(file_name);
+            }
+            current = parent;
+        } else {
+            break;
+        }
+    }
+    let canonical_parent = std::fs::canonicalize(current)?;
+    let mut resolved = canonical_parent;
+    for component in ancestors.into_iter().rev() {
+        resolved.push(component);
+    }
+    Ok(resolved)
+}
+
 impl Session {
+    /// Resolves an `fs` URI or path, normalizing `.` and `..`, and ensuring it stays within the workspace sandbox if configured.
+    pub(super) fn resolve_fs_path(&self, uri_str: &str) -> Result<PathBuf, (ErrorCode, String)> {
+        let path = uri_to_path(uri_str)?;
+        let normalized = vy_capabilities::normalize_path(&path);
+
+        if let Some(ref workspace_uri) = self.workspace {
+            let ws_path = uri_to_path(workspace_uri.as_str())?;
+            let canonical_ws = std::fs::canonicalize(&ws_path).map_err(|e| {
+                (
+                    ErrorCode::Internal,
+                    format!(
+                        "failed to canonicalize workspace {}: {e}",
+                        ws_path.display()
+                    ),
+                )
+            })?;
+
+            let canonical_target = canonicalize_with_ancestors(&normalized).map_err(|e| {
+                (
+                    ErrorCode::NotFound,
+                    format!("{}: {e}", normalized.display()),
+                )
+            })?;
+
+            if !canonical_target.starts_with(&canonical_ws) {
+                return Err((
+                    ErrorCode::CapabilityDenied,
+                    format!(
+                        "access denied: path outside workspace ({})",
+                        normalized.display()
+                    ),
+                ));
+            }
+        }
+
+        Ok(normalized)
+    }
+
     pub(super) fn fs_read_file(&self, id: u64, params: FsReadFileParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -67,7 +130,7 @@ impl Session {
     }
 
     pub(super) fn fs_read_text_file(&self, id: u64, params: FsReadTextFileParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -89,7 +152,7 @@ impl Session {
     }
 
     pub(super) fn fs_write_file(&self, id: u64, params: FsWriteFileParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -101,7 +164,7 @@ impl Session {
             Vec::new()
         };
         let len = bytes_to_write.len() as u64;
-        match std::fs::write(&path, bytes_to_write) {
+        match super::atomic::atomic_write(&path, &bytes_to_write) {
             Ok(()) => ok_response::<FsWriteFile>(id, &FsWriteFileResult { bytes_written: len }),
             Err(err) => Outcome::one(RpcMessage::err(
                 id,
@@ -112,7 +175,7 @@ impl Session {
     }
 
     pub(super) fn fs_read_dir(&self, id: u64, params: FsReadDirParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -153,7 +216,7 @@ impl Session {
     }
 
     pub(super) fn fs_stat(&self, id: u64, params: FsStatParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -191,15 +254,20 @@ impl Session {
     }
 
     pub(super) fn fs_exists(&self, id: u64, params: FsExistsParams) -> Outcome {
-        let exists = match uri_to_path(&params.uri) {
-            Ok(path) => path.exists(),
-            Err(_) => false,
+        let path = match self.resolve_fs_path(&params.uri) {
+            Ok(path) => path,
+            Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
-        ok_response::<FsExists>(id, &FsExistsResult { exists })
+        ok_response::<FsExists>(
+            id,
+            &FsExistsResult {
+                exists: path.exists(),
+            },
+        )
     }
 
     pub(super) fn fs_create_dir(&self, id: u64, params: FsCreateDirParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -219,7 +287,7 @@ impl Session {
     }
 
     pub(super) fn fs_remove(&self, id: u64, params: FsRemoveParams) -> Outcome {
-        let path = match uri_to_path(&params.uri) {
+        let path = match self.resolve_fs_path(&params.uri) {
             Ok(path) => path,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -250,11 +318,11 @@ impl Session {
     }
 
     pub(super) fn fs_rename(&self, id: u64, params: FsRenameParams) -> Outcome {
-        let from = match uri_to_path(&params.from) {
+        let from = match self.resolve_fs_path(&params.from) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
-        let to = match uri_to_path(&params.to) {
+        let to = match self.resolve_fs_path(&params.to) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
@@ -269,11 +337,11 @@ impl Session {
     }
 
     pub(super) fn fs_copy(&self, id: u64, params: FsCopyParams) -> Outcome {
-        let from = match uri_to_path(&params.from) {
+        let from = match self.resolve_fs_path(&params.from) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };
-        let to = match uri_to_path(&params.to) {
+        let to = match self.resolve_fs_path(&params.to) {
             Ok(p) => p,
             Err((code, msg)) => return Outcome::one(RpcMessage::err(id, code, msg)),
         };

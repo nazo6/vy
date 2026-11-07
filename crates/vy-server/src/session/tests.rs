@@ -936,3 +936,298 @@ fn resizes_pane_and_notifies_layout_change() {
     };
     assert!((ratio - 0.6).abs() < 1e-4);
 }
+
+#[test]
+fn test_save_document_atomic_and_external_modification() {
+    let mut session = Session::new();
+    initialize(&mut session);
+
+    let dir = std::env::temp_dir().join(format!("vy-atomic-save-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file_path = dir.join("test_save.txt");
+    std::fs::write(&file_path, "initial line\n").unwrap();
+    let file_uri = format!("file://{}", file_path.display());
+
+    let (_untitled_doc, _pane_id) = open_untitled(&mut session);
+
+    // Open the document in the active pane
+    let outcome = request(
+        &mut session,
+        3,
+        "editor/open",
+        to_value(&vy_proto::EditorOpenParams {
+            uri: file_uri.clone(),
+            pane_id: None,
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 1);
+    let open_res: vy_proto::PaneOpenResult =
+        decode_params(ok_value(&outcome.messages[0])).expect("open result");
+    let document_id = open_res.document_id;
+
+    // Make an edit
+    session.handle(RpcMessage::notification(
+        "buffer/did_change",
+        to_value(&vy_proto::DidChangeParams {
+            document_id,
+            base_version: 0,
+            version: 1,
+            transaction_id: 1,
+            edits: vec![TextEdit::insert(
+                Position {
+                    line: 1,
+                    character: 0,
+                },
+                "appended line\n",
+            )],
+            selection_before: vec![Selection::caret(Position {
+                line: 0,
+                character: 0,
+            })],
+            selection_after: vec![Selection::caret(Position {
+                line: 1,
+                character: 0,
+            })],
+        }),
+    ));
+
+    // Save document atomically
+    let outcome = request(
+        &mut session,
+        4,
+        "document/save",
+        to_value(&vy_proto::DocumentSaveParams {
+            document_id,
+            force: false,
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 1);
+    assert!(!outcome.close);
+    let saved_content = std::fs::read_to_string(&file_path).unwrap();
+    assert_eq!(saved_content, "initial line\nappended line\n");
+
+    // Modify file externally on disk
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    std::fs::write(&file_path, "externally modified\n").unwrap();
+
+    // Trying to save without force should fail
+    let outcome = request(
+        &mut session,
+        5,
+        "document/save",
+        to_value(&vy_proto::DocumentSaveParams {
+            document_id,
+            force: false,
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 1);
+    assert!(is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+
+    // Saving with force = true should succeed
+    let outcome = request(
+        &mut session,
+        6,
+        "document/save",
+        to_value(&vy_proto::DocumentSaveParams {
+            document_id,
+            force: true,
+        }),
+    );
+    assert_eq!(outcome.messages.len(), 1);
+    assert!(!is_error(&outcome.messages[0], ErrorCode::InvalidRequest));
+    let overwritten_content = std::fs::read_to_string(&file_path).unwrap();
+    assert_eq!(overwritten_content, "initial line\nappended line\n");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_sandbox_enforcement_and_symlinks() {
+    let mut session = Session::new();
+    let temp_root = std::env::temp_dir().join(format!("vy-sandbox-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&temp_root);
+    let ws_dir = temp_root.join("workspace");
+    let outside_dir = temp_root.join("outside");
+    std::fs::create_dir_all(&ws_dir).expect("ws dir");
+    std::fs::create_dir_all(&outside_dir).expect("outside dir");
+
+    let outside_file = outside_dir.join("secret.txt");
+    std::fs::write(&outside_file, "super-secret").expect("outside file");
+
+    let inside_sub = ws_dir.join("sub");
+    std::fs::create_dir_all(&inside_sub).expect("inside sub dir");
+    let inside_file = inside_sub.join("note.txt");
+    std::fs::write(&inside_file, "inside note").expect("inside file");
+
+    // Symlink pointing outside
+    let link_to_outside = ws_dir.join("link_to_outside");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside_dir, &link_to_outside).expect("symlink outside");
+
+    // Symlink pointing inside
+    let link_to_inside = ws_dir.join("link_to_inside");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&inside_sub, &link_to_inside).expect("symlink inside");
+
+    let ws_uri = format!("file://{}", ws_dir.display());
+    request(
+        &mut session,
+        1,
+        "initialize",
+        object([
+            ("protocol_version", Value::from(PROTOCOL_VERSION)),
+            ("client_capabilities", Value::Array(Vec::new())),
+            ("workspace", Value::from(ws_uri)),
+        ]),
+    );
+
+    // 1. Reading file inside workspace succeeds
+    let outcome = request(
+        &mut session,
+        2,
+        "fs/read_text_file",
+        object([(
+            "uri",
+            Value::from(format!("file://{}", inside_file.display())),
+        )]),
+    );
+    let val = ok_value(&outcome.messages[0]);
+    assert_eq!(
+        get(val, "text").and_then(Value::as_str),
+        Some("inside note")
+    );
+
+    // 2. Traversal using `..` is denied
+    let traversal_uri = format!("file://{}/../outside/secret.txt", ws_dir.display());
+    let outcome = request(
+        &mut session,
+        3,
+        "fs/read_text_file",
+        object([("uri", Value::from(traversal_uri))]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    // 3. Traversal using percent-encoded `%2e%2e` is denied
+    let encoded_traversal_uri = format!("file://{}/%2e%2e/outside/secret.txt", ws_dir.display());
+    let outcome = request(
+        &mut session,
+        4,
+        "fs/read_text_file",
+        object([("uri", Value::from(encoded_traversal_uri))]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    // 4. Reading outside file directly is denied
+    let direct_outside_uri = format!("file://{}", outside_file.display());
+    let outcome = request(
+        &mut session,
+        5,
+        "fs/read_text_file",
+        object([("uri", Value::from(direct_outside_uri))]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    #[cfg(unix)]
+    {
+        // 5. Reading outside file through symlink is denied
+        let symlink_outside_file_uri = format!("file://{}/secret.txt", link_to_outside.display());
+        let outcome = request(
+            &mut session,
+            6,
+            "fs/read_text_file",
+            object([("uri", Value::from(symlink_outside_file_uri))]),
+        );
+        assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+        // 6. Writing through symlink to outside is denied
+        let symlink_write_uri = format!("file://{}/new_evil.txt", link_to_outside.display());
+        let outcome = request(
+            &mut session,
+            7,
+            "fs/write_file",
+            object([
+                ("uri", Value::from(symlink_write_uri)),
+                ("text", Value::from("evil")),
+            ]),
+        );
+        assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+        // 7. Reading inside file through symlink pointing inside succeeds
+        let symlink_inside_file_uri = format!("file://{}/note.txt", link_to_inside.display());
+        let outcome = request(
+            &mut session,
+            8,
+            "fs/read_text_file",
+            object([("uri", Value::from(symlink_inside_file_uri))]),
+        );
+        let val = ok_value(&outcome.messages[0]);
+        assert_eq!(
+            get(val, "text").and_then(Value::as_str),
+            Some("inside note")
+        );
+    }
+
+    // 8. Writing outside workspace is denied
+    let evil_write_uri = format!("file://{}/../outside/evil.txt", ws_dir.display());
+    let outcome = request(
+        &mut session,
+        9,
+        "fs/write_file",
+        object([
+            ("uri", Value::from(evil_write_uri)),
+            ("text", Value::from("evil")),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    // 9. Renaming to outside workspace is denied
+    let outcome = request(
+        &mut session,
+        10,
+        "fs/rename",
+        object([
+            (
+                "from",
+                Value::from(format!("file://{}", inside_file.display())),
+            ),
+            (
+                "to",
+                Value::from(format!("file://{}/escaped.txt", outside_dir.display())),
+            ),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    // 10. Copying from outside workspace is denied
+    let outcome = request(
+        &mut session,
+        11,
+        "fs/copy",
+        object([
+            (
+                "from",
+                Value::from(format!("file://{}", outside_file.display())),
+            ),
+            (
+                "to",
+                Value::from(format!("file://{}/copied.txt", ws_dir.display())),
+            ),
+        ]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    // 11. Checking existence outside workspace is denied
+    let outcome = request(
+        &mut session,
+        12,
+        "fs/exists",
+        object([(
+            "uri",
+            Value::from(format!("file://{}", outside_file.display())),
+        )]),
+    );
+    assert!(is_error(&outcome.messages[0], ErrorCode::CapabilityDenied));
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}

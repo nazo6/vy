@@ -55,8 +55,12 @@ pub(crate) fn check_capability(
                 Uri::parse(target)
                     .ok()
                     .and_then(|uri| uri.file_path())
-                    .map(|path| path.display().to_string())
+                    .map(|path| vy_capabilities::normalize_path(&path).display().to_string())
                     .unwrap_or_else(|| target.to_string())
+            } else if kind.starts_with("fs:") {
+                vy_capabilities::normalize_path(std::path::Path::new(target))
+                    .display()
+                    .to_string()
             } else {
                 target.to_string()
             };
@@ -86,6 +90,30 @@ pub(crate) fn check_capability(
             vy_proto::ErrorCode::CapabilityDenied,
             format!("capability denied: {requested}"),
         ));
+    }
+
+    // For filesystem operations, also verify that canonical paths (e.g. symlinks) do not escape granted capabilities.
+    if kind.starts_with("fs:")
+        && let Some(target_str) = target
+    {
+        let path = if target_str.starts_with("file:") {
+            Uri::parse(target_str).ok().and_then(|u| u.file_path())
+        } else {
+            Some(std::path::PathBuf::from(target_str))
+        };
+        if let Some(path) = path
+            && let Ok(canonical) = std::fs::canonicalize(&path)
+        {
+            let canonical_request = format!("{kind}:{}", canonical.display());
+            if let Ok(canonical_cap) = vy_capabilities::Capability::parse(&canonical_request)
+                && !granted.has(&canonical_cap, &roots)
+            {
+                return Err(CallError::new(
+                    vy_proto::ErrorCode::CapabilityDenied,
+                    format!("capability denied: {canonical_cap}"),
+                ));
+            }
+        }
     }
     Ok(())
 }
